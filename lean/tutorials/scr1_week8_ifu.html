@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IFU 指令取指单元深度剖析 | SCR1 第 8 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1020px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #1a365d; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.88em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.82em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 230px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.84em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 20px 0; font-family: monospace; font-size: 0.85em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.4; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>IFU 指令取指单元深度剖析 | SCR1 第 8 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#fsm">IFU FSM (2 状态)</a>
+  <a href="#queue-data">指令队列数据结构</a>
+  <a href="#queue-rw">队列读写与空满判定</a>
+  <a href="#instr-type">指令类型译码 (instr_type)</a>
+  <a href="#cross-boundary">跨边界 RVI 拼接</a>
+  <a href="#imem-if">IMEM 接口与在途跟踪</a>
+  <a href="#discard">丢弃计数器: 不看他,不用他</a>
+  <a href="#bypass">指令旁路机制</a>
+  <a href="#idu-out">IDU 输出接口</a>
+  <a href="#new-pc-reg">NEW_PC_REG: 频率-惩罚权衡</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: IFU 模块全景</h2>
+
+<div class="box">
+  <div class="box-title">IFU 是什么?</div>
+  IFU (Instruction Fetch Unit) 是 SCR1 流水线的<strong>第一级</strong>,职责是从指令存储器 (IMEM) 取指令,送给 IDU 译码。源码文件: <code>src/core/pipeline/scr1_pipe_ifu.sv</code> (826 行)。
+</div>
+
+<h3>IFU 内部 5 个子系统</h3>
+
+<table>
+<tr><th>子系统</th><th>源码行</th><th>功能</th></tr>
+<tr><td>IFU FSM</td><td>464-484</td><td>IDLE/FETCH 两个状态</td></tr>
+<tr><td>指令队列</td><td>107-177, 381-456</td><td>4x16bit 环形队列</td></tr>
+<tr><td>指令类型译码</td><td>279-297</td><td>识别 RVI/RVC/跨边界</td></tr>
+<tr><td>IMEM 接口</td><td>496-603</td><td>握手协议 + 在途跟踪 + 丢弃</td></tr>
+<tr><td>输出/旁路</td><td>626-736</td><td>指令拼接 + 调试注入</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="fsm">第二课: IFU FSM -- 只有 2 个状态</h2>
+
+<pre>
+<span class="cm">// scr1_pipe_ifu.sv:91-94 -- 状态枚举</span>
+<span class="kw">typedef enum</span> <span class="kw">logic</span> {
+    SCR1_IFU_FSM_IDLE,        <span class="cm">// 不取指</span>
+    SCR1_IFU_FSM_FETCH        <span class="cm">// 取指中</span>
+} type_scr1_ifu_fsm_e;
+</pre>
+
+<div class="fig">
+                    ifu_fetch_req
+    ┌───────────┐  ──────────▶  ┌───────────┐
+    │   IDLE    │               │   FETCH   │
+    │  (不取指)  │  ◀──────────  │  (取指中)  │
+    └───────────┘   ifu_stop_req └───────────┘
+</div>
+
+<pre>
+<span class="cm">// scr1_pipe_ifu.sv:465-467</span>
+<span class="kw">assign</span> ifu_fetch_req = exu2ifu_pc_new_req_i &amp; ~pipe2ifu_stop_fetch_i;
+<span class="kw">assign</span> ifu_stop_req  = pipe2ifu_stop_fetch_i
+                     | (imem_resp_er_discard_pnd &amp; ~exu2ifu_pc_new_req_i);
+</pre>
+
+<div class="box">
+  <div class="box-title">3 种状态转移场景</div>
+  <strong>(A)</strong> EXU 发出新 PC 请求 + 流水线没停 → IDLE→FETCH,开始取指<br>
+  <strong>(B)</strong> 流水线停止信号拉高 → FETCH→IDLE,停止取指<br>
+  <strong>(C)</strong> IMEM 报错,但丢弃计数器还没消化完 → FETCH→IDLE,等错误响应处理完
+</div>
+
+<div class="box warn">
+  <div class="box-title">停止取指 ≠ 复位</div>
+  <code>pipe2ifu_stop_fetch_i</code> 是来自流水线顶层的信号,在 Stall/Flush/调试暂停时拉高。IFU 回到 IDLE 后,队列也被清空 (<code>q_flush_req=1</code>),但已发出的 IMEM 请求不会收回 -- 靠丢弃计数器处理。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="queue-data">第三课: 指令队列数据结构</h2>
+
+<pre>
+<span class="cm">// scr1_pipe_ifu.sv:77-78 -- 容量参数</span>
+<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_WORD = <span class="num">2</span>;       <span class="cm">// 2 字 = 64 位</span>
+<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_HALF = <span class="num">4</span>;       <span class="cm">// 4 半字 = 64 位</span>
+
+<span class="cm">// scr1_pipe_ifu.sv:81-82 -- 指针位宽</span>
+<span class="kw">localparam</span> SCR1_IFU_QUEUE_ADR_W = <span class="num">2</span>;       <span class="cm">// 寻址需要 2 位</span>
+<span class="kw">localparam</span> SCR1_IFU_QUEUE_PTR_W = <span class="num">3</span>;       <span class="cm">// 读写指针 3 位(地址位+圈数位)</span></pre>
+
+<h3>为什么半字粒度?</h3>
+
+<table>
+<tr><th>粒度</th><th>RVC (16bit)</th><th>RVI (32bit)</th></tr>
+<tr><td>字粒度 (32bit)</td><td style="color:#d32f2f">浪费 50% 空间</td><td>刚好 1 槽</td></tr>
+<tr><td style="background:#e8f5e9">半字粒度 (16bit)</td><td style="background:#e8f5e9">刚好 1 槽</td><td style="background:#e8f5e9">占用 2 个连续槽</td></tr>
+</table>
+
+<div class="fig">
+       slot 0              slot 1              slot 2              slot 3
+  ┌──────────┬───┐    ┌──────────┬───┐    ┌──────────┬───┐    ┌──────────┬───┐
+  │ q_data[0]│err│    │ q_data[1]│err│    │ q_data[2]│err│    │ q_data[3]│err│
+  │  (16bit) │(1)│    │  (16bit) │(1)│    │  (16bit) │(1)│    │  (16bit) │(1)│
+  └──────────┴───┘    └──────────┴───┘    └──────────┴───┘    └──────────┴───┘
+</div>
+
+每槽 16 bit + 1 bit 错误标志 (来自 IMEM 响应)。4 个槽可以存储 2 条 RVI、4 条 RVC,或任意混编。
+
+<!-- ============================================================ -->
+<h2 id="queue-rw">第四课: 队列读写与空满判定</h2>
+
+<h3>写指针更新 (scr1_pipe_ifu.sv:384, 394)</h3>
+
+<pre>
+<span class="kw">assign</span> q_wptr_upd  = q_flush_req | ~q_wr_none;           <span class="cm">// L384</span>
+<span class="kw">assign</span> q_wptr_next = q_flush_req ? <span class="num">'0</span>                    <span class="cm">// L394: 清空归零</span>
+                                    : q_wptr       <span class="cm">// 写 FULL(+2) 或 HI(+1)</span>
+                                      + SCR1_IFU_QUEUE_PTR_W'(q_wr_cnt);
+</pre>
+
+<h3>读指针更新 (scr1_pipe_ifu.sv:399, 409)</h3>
+
+<pre>
+<span class="kw">assign</span> q_rptr_upd  = q_flush_req | ~q_rd_none;           <span class="cm">// L399</span>
+<span class="kw">assign</span> q_rptr_next = q_flush_req ? <span class="num">'0</span>                    <span class="cm">// L409: 清空归零</span>
+                                    : q_rptr       <span class="cm">// 读 WORD(+2) 或 HWORD(+1)</span>
+                                      + SCR1_IFU_QUEUE_PTR_W'(q_rd_cnt);
+</pre>
+
+<h3>空/满判定</h3>
+
+<table>
+<tr><th>条件</th><th>公式</th></tr>
+<tr><td>判空</td><td><code>q_rptr == q_wptr</code></td></tr>
+<tr><td>占用度</td><td><code>q_ocpd_h = q_wptr - q_rptr</code> (0~4)</td></tr>
+<tr><td>剩余空间</td><td><code>q_free_h = 4 - (q_wptr - q_rptr_next)</code> (保守估计)</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">3 位指针 = 2 位地址 + 1 位圈数</div>
+  例如指针值 <code>3'b101</code>: 圈数位 = 1,地址位 = <code>2'b01</code>,表示第 2 圈的 slot 1。环形写指针超前读指针时,差值自己带圈数信息,不用额外标志位。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="instr-type">第五课: 指令类型译码 -- 6 种 instr_type</h2>
+
+<pre>
+<span class="cm">// scr1_pipe_ifu.sv:96-104 -- instr_type 枚举</span>
+<span class="kw">typedef enum</span> <span class="kw">logic</span>[<span class="num">1</span>:<span class="num">0</span>] {
+    SCR1_IFU_INSTR_NONE,             <span class="cm">// 无有效指令 (IMEM 响应无效)</span>
+    SCR1_IFU_INSTR_RVI_LO_NV,        <span class="cm">// PC 未对齐,返回高 16 位 = RVI 低半</span>
+    SCR1_IFU_INSTR_RVC_NV,           <span class="cm">// PC 未对齐,返回高 16 位 = RVC</span>
+    SCR1_IFU_INSTR_RVI_LO_RVI_HI,    <span class="cm">// 对齐: 低 16=RVI 低半, 高 16=RVI 高半</span>
+    SCR1_IFU_INSTR_RVI_LO_RVC,       <span class="cm">// 对齐: 低 16=RVI 低半, 高 16=RVC</span>
+    SCR1_IFU_INSTR_RVC_RVI_HI,       <span class="cm">// 对齐: 低 16=RVC, 高 16=RVI 高半</span>
+    SCR1_IFU_INSTR_RVC_RVC,          <span class="cm">// 对齐: 低 16=RVC, 高 16=RVC</span>
+    SCR1_IFU_INSTR_RVI_HI_RVI_LO     <span class="cm">// 对齐: 低 16=RVI 高半, 高 16=RVI 低半</span>
+} type_scr1_ifu_instr_e;
+</pre>
+
+<pre>
+<span class="cm">// scr1_pipe_ifu.sv:279 -- RVI 判定: [1:0]==11?</span>
+<span class="kw">assign</span> instr_hi_is_rvi = &amp;imem2ifu_rdata_i[<span class="num">17</span>:<span class="num">16</span>];  <span class="cm">// 高 16 位是 RVI?</span>
+<span class="kw">assign</span> instr_lo_is_rvi = &amp;imem2ifu_rdata_i[ <span class="num">1</span>: <span class="num">0</span>];  <span class="cm">// 低 16 位是 RVI?</span></pre>
+
+<h3>译码真值表 (scr1_pipe_ifu.sv:283-297)</h3>
+
+<table>
+<tr><th>unalign</th><th>hi_prev_rvi_lo</th><th>hi_is_rvi</th><th>lo_is_rvi</th><th>instr_type</th></tr>
+<tr><td>1</td><td>—</td><td>1</td><td>—</td><td>RVI_LO_NV</td></tr>
+<tr><td>1</td><td>—</td><td>0</td><td>—</td><td>RVC_NV</td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>1</td><td>RVI_LO_RVI_HI</td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>0</td><td>RVI_LO_RVC</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>见 default</td><td>RVC_RVI_HI</td></tr>
+<tr><td>0</td><td>0</td><td>0</td><td>0</td><td>RVC_RVC</td></tr>
+<tr><td>0</td><td>0</td><td>1</td><td>0</td><td>RVI_LO_RVC</td></tr>
+<tr><td>0</td><td>0</td><td>—</td><td>1</td><td>RVI_HI_RVI_LO</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">RVI_HI_RVI_LO: 为什么高半在前?</div>
+  当取指地址 <code>addr[1:0] = 00</code> 且低 16 位是 RVI (<code>[1:0]=11</code>) 时,指令的数据排布是 <code>{ 高 16 位, 低 16 位 }</code>,即高半 (bits[31:16]) 在低地址。硬件按地址递增顺序接收数据,所以先收到高半、后收到低半。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="cross-boundary">第六课: 跨边界 RVI 拼接</h2>
+
+<h3>问题</h3>
+
+<div class="fig" style="text-align:left">
+    字 N-1                  字 N
+ ┌─────────┬─────────┐ ┌─────────┬─────────┐
+ │ RVC     │ RVI_LO  │ │ RVI_HI  │ RVC     │
+ │ [15:0]  │ [31:16] │ │ [15:0]  │ [31:16] │
+ └─────────┴─────────┘ └─────────┴─────────┘
+                    ↑                     ↑
+             这一半是 RVI 低半        这一半是 RVI 高半
+             需要记住,下次拼接      和上次记住的低半拼成完整指令
+</div>
+
+<h3>记忆寄存器 instr_hi_rvi_lo_ff (scr1_pipe_ifu.sv:320-322)</h3>
+
+<pre>
+<span class="kw">assign</span> instr_hi_rvi_lo_next = (instr_type == SCR1_IFU_INSTR_RVI_LO_NV)
+                             | (instr_type == SCR1_IFU_INSTR_RVI_LO_RVI_HI)
+                             | (instr_type == SCR1_IFU_INSTR_RVI_LO_RVC);
+</pre>
+
+三种情况都说明"这一轮返回的高 16 位是 RVI 的低半部分",需要记住,等下一轮 IMEM 返回时拼接。
+
+新 PC 跳转时强制清零: 跨边界状态属于旧 PC 流,跳过无效。
+
+<div class="box">
+  <div class="box-title">为什么只有 RVI 跨边界?</div>
+  RVC 只有 16 位,不会跨 32 位字边界。只有 32 位 RVI 指令可能被 32 位存储字切开:前半个 RVI 在字 N 的高 16 位,后半个在字 N+1 的低 16 位。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="imem-if">第七课: IMEM 接口与在途事务跟踪</h2>
+
+<h3>请求生成 (scr1_pipe_ifu.sv:598, 603)</h3>
+
+<pre>
+<span class="cm">// 新 PC 请求 (SCR1_NEW_PC_REG 关闭时):</span>
+ifu2imem_req_o = (exu2ifu_pc_new_req_i       <span class="cm">// 跳转请求当拍发出</span>
+                   &amp; ~imem_pnd_txns_q_full    <span class="cm">// 在途未满</span>
+                   &amp; ~pipe2ifu_stop_fetch_i)  <span class="cm">// 流水线未停止</span>
+               | (ifu_fsm_fetch               <span class="cm">// FSM 在 FETCH 状态</span>
+                   &amp; ~imem_pnd_txns_q_full    <span class="cm">// 在途未满</span>
+                   &amp; q_has_free_slots);       <span class="cm">// 队列有空位</span></pre>
+
+<h3>地址寄存器 (scr1_pipe_ifu.sv:237-248)</h3>
+
+<pre>
+imem_addr_next = exu2ifu_pc_new_req_i ? exu2ifu_pc_new_i[XLEN-<span class="num">1</span>:<span class="num">2</span>] + handshake_done
+                                      : imem_addr_ff          + handshake_done;
+
+ifu2imem_addr_o = {imem_addr_ff, <span class="num">2'b00</span>};  <span class="cm">// 输出字对齐地址</span></pre>
+
+<h3>在途事务计数 (scr1_pipe_ifu.sv:267-269)</h3>
+
+<div class="fig" style="text-align:left">
+                请求握手完成 → +1        收到响应 → -1
+                       │                       │
+                       ▼                       ▼
+                 ┌───────────────────────────────┐
+                 │   imem_pnd_txns_cnt (0~7)      │
+                 └───────────────────────────────┘
+                        │              │
+                  q_full=1?     imem_vd_pnd_txns_cnt
+                                 = 总数 - 丢弃数 → 用于队列容量预测
+</div>
+
+<h3>预测性空间检查 (scr1_pipe_ifu.sv:454)</h3>
+
+<pre>
+q_free_w_next = (<span class="num">4</span> - (q_wptr - q_rptr_next)) >> <span class="num">1</span>;  <span class="cm">// 下一拍的空闲字</span>
+q_has_free_slots = (q_free_w_next > imem_vd_pnd_txns_cnt);  <span class="cm">// 够容纳在途响应?</span></pre>
+
+用 <code>q_rptr_next</code> (下一拍读指针) 而非 <code>q_rptr</code>: 如果当前周期 IDU 在读取队列,队列空间会增加,但设计者选择保守 -- 假设读操作不发生,确保不会欠估计导致溢出。
+
+<!-- ============================================================ -->
+<h2 id="discard">第八课: 丢弃计数器 -- 不看他、不用他、不理他</h2>
+
+<h3>为什么需要丢弃?</h3>
+
+PC 跳转后,之前发出的 IMEM 请求还在回来的路上(在途)。这些"过期"的响应不能进入队列 -- 它们是旧 PC 流的指令。最简单的方案: 数一数有多少个在途,然后跳过这么多响应。
+
+<h3>丢弃计数器的 3 个入口 (scr1_pipe_ifu.sv:569-587)</h3>
+
+<pre>
+imem_resp_discard_cnt_upd = exu2ifu_pc_new_req_i           <span class="cm">// PC 跳转</span>
+                          | imem_resp_er                    <span class="cm">// IMEM 错误</span>
+                          | (imem_resp_ok &amp; imem_resp_discard_req);  <span class="cm">// 丢弃收到了一个</span>
+
+<span class="cm">// PC 跳转时: 丢弃数 = 在途总数 - 同拍握手的补偿</span>
+imem_resp_discard_cnt_next = exu2ifu_pc_new_req_i  ? imem_pnd_txns_cnt_next - handshake_done
+                            <span class="cm">// IMEM 错误且尚未丢弃: 丢弃全部在途</span>
+                            : imem_resp_er_discard_pnd ? imem_pnd_txns_cnt_next
+                            <span class="cm">// 正在丢弃中: 每收到一个响应 -1</span>
+                            : imem_resp_discard_cnt - <span class="num">1'b1</span>;</pre>
+
+<h3>有效响应被屏蔽 (scr1_pipe_ifu.sv:510, 590-591)</h3>
+
+<pre>
+imem_resp_discard_req = |imem_resp_discard_cnt;             <span class="cm">// 丢弃计数 > 0?</span>
+imem_resp_vd          = imem_resp_received &amp; ~imem_resp_discard_req;  <span class="cm">// 筛掉被丢弃的</span>
+imem_vd_pnd_txns_cnt  = imem_pnd_txns_cnt - imem_resp_discard_cnt;   <span class="cm">// 有效在途</span></pre>
+
+<div class="box tip">
+  <div class="box-title">设计智慧</div>
+  不修改 IMEM 协议 (无需 abort 信号),不引入复杂接口。只用 1 个 3 位计数器 + 1 个门控信号, 代价极低地实现了"忽略过期响应"。这是硬件设计中的常见模式: <strong>与其撤回,不如丢弃。</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="bypass">第九课: 指令旁路机制</h2>
+
+<h3>触发条件 (仅 SCR1_NO_DEC_STAGE)</h3>
+
+当没有独立译码阶段时,IFU 可以绕开队列,直接把 IMEM 返回的指令送到 IDU:
+
+<table>
+<tr><th>旁路类型</th><th>条件</th><th>数据来源</th></tr>
+<tr><td><code>BYPASS_RVC</code></td><td>队列空 + 新指令为 RVC</td><td>IMEM 高/低 16 位</td></tr>
+<tr><td><code>BYPASS_RVI_RDATA</code></td><td>队列空 + 新指令为完整 RVI</td><td>IMEM 32 位数据</td></tr>
+<tr><td><code>BYPASS_RVI_RDATA_QUEUE</code></td><td>队列有 1 个半字 RVI 头 + 新指令可拼接</td><td>IMEM 低 16 位 + 队首半字</td></tr>
+</table>
+
+<h3>旁路对队列写入的影响 (scr1_pipe_ifu.sv:345-367)</h3>
+
+旁路成功后,不写队列。但跨边界类型(如 RVI_HI_RVI_LO)的部分半字仍需暂存:
+
+<table>
+<tr><th>instr_type</th><th>无旁路写入</th><th>有旁路写入</th></tr>
+<tr><td>RVC_NV / RVI_HI_RVI_LO</td><td>HI / FULL</td><td><strong>NONE</strong></td></tr>
+<tr><td>RVI_LO_RVI_HI / RVI_LO_RVC / RVC_RVI_HI</td><td>FULL</td><td><strong>HI</strong> (只暂存高 16 位)</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="idu-out">第十课: IDU 输出接口 -- 指令如何拼接?</h2>
+
+<h3>指令拼接的 6 种来源 (scr1_pipe_ifu.sv:693-700)</h3>
+
+<pre>
+<span class="cm">// RVC 场景: 高 16 位补 0,低 16 位 = 队首</span>
+SCR1_BYPASS_RVC:  ifu2idu_instr_o = {<span class="num">16'b0</span>, rdata_hi_or_lo};
+
+<span class="cm">// 旁路 RVI: IMEM 原始 32 位数据</span>
+SCR1_BYPASS_RVI_RDATA: ifu2idu_instr_o = imem2ifu_rdata_i;
+
+<span class="cm">// 旁路拼接: IMEM 低 16 位 + 队列留下的高 16 位</span>
+SCR1_BYPASS_RVI_RDATA_QUEUE: ifu2idu_instr_o = {imem2ifu_rdata_i[<span class="num">15</span>:<span class="num">0</span>], q_data_head};
+
+<span class="cm">// 队列 RVI: 队首+1 (高半) + 队首 (低半)</span>
+<span class="kw">default</span>: ifu2idu_instr_o = {q_data_next, q_data_head};</pre>
+
+<h3>有效信号生成 (scr1_pipe_ifu.sv:658-675)</h3>
+
+<pre>
+ifu2idu_vd_o = <span class="num">1'b0</span>;  <span class="cm">// 默认无效</span>
+<span class="kw">if</span> (instr_bypass_vd &amp; idu2ifu_rdy_i) begin
+    ifu2idu_vd_o = <span class="num">1'b1</span>;              <span class="cm">// 旁路有效 → 直接送出</span>
+<span class="kw">end else if</span> (~q_is_empty) begin
+    <span class="kw">if</span> (q_head_is_rvi &amp; (q_ocpd_h == <span class="num">1</span>))  <span class="cm">// 队首 RVI 但只有 1 个半字</span>
+        ifu2idu_vd_o = <span class="num">1'b0</span>;             <span class="cm">→ 还不能送出,等另一半</span>
+    <span class="kw">else if</span> (q_head_is_rvi | (q_ocpd_h >= <span class="num">2</span>))
+        ifu2idu_vd_o = <span class="num">1'b1</span>;             <span class="cm">→ 完整 RVI 或有足够半字</span>
+    <span class="kw">else</span>
+        ifu2idu_vd_o = q_head_is_rvc | q_err_head;  <span class="cm">→ RVC 只要有就能送出</span>
+<span class="kw">end</span></pre>
+
+<h3>错误信息 (scr1_pipe_ifu.sv:67-69, 347)</h3>
+
+<table>
+<tr><th>信号</th><th>含义</th></tr>
+<tr><td><code>ifu2idu_imem_err_o</code></td><td>指令访问异常 (IMEM 返回错误)</td></tr>
+<tr><td><code>ifu2idu_err_rvi_hi_o</code></td><td>RVI 高半取指错误: 队首(低半)正常,队首+1(高半)有错误标志</td></tr>
+</table>
+
+两个信号独立:<code>err_rvi_hi</code> 精确定位到 RVI 指令的高半部分出错,即使在 <code>imem_err</code> 为 0 的情况下也可能单独为 1。
+
+<!-- ============================================================ -->
+<h2 id="new-pc-reg">第十一课: SCR1_NEW_PC_REG -- 频率 vs 惩罚的权衡</h2>
+
+<table>
+<tr><th>维度</th><th>无此宏 (默认)</th><th>有此宏</th></tr>
+<tr><td>跳转首拍的请求发出</td><td>同拍</td><td>下一拍 (额外 1 周期)</td></tr>
+<tr><td>IMEM 地址路径</td><td>EXU→MUX→IFU→IMEM (长组合路径)</td><td>寄存器→IFU→IMEM (短)</td></tr>
+<tr><td>最高频率</td><td>受限于 EXU→IMEM 组合路径</td><td>更高</td></tr>
+<tr><td>地址生成逻辑</td><td>需补偿 handshake_done</td><td>单一来源,更简洁</td></tr>
+<tr><td>跳转惩罚</td><td>1 周期</td><td>2 周期</td></tr>
+</table>
+
+<h3>两侧的地址生成差异</h3>
+
+<pre>
+<span class="cm">// 无 NEW_PC_REG: 新 PC 和正常取指合并为同一表达式</span>
+imem_addr_next = exu2ifu_pc_new_req_i ? exu2ifu_pc_new_i[XLEN-<span class="num">1</span>:<span class="num">2</span>] + handshake_done
+                                      : imem_addr_ff          + handshake_done;
+
+<span class="cm">// 有 NEW_PC_REG: 新 PC 已寄存器化,直接输出</span>
+imem_addr_next = exu2ifu_pc_new_req_i ? pc_reg[XLEN-<span class="num">1</span>:<span class="num">2</span>]
+                                      : imem_addr_ff + handshake_done;</pre>
+
+<div class="box">
+  <div class="box-title">什么时候用?</div>
+  SCR1 默认不开启此宏 (EAS 表 25: jump penalty = 1 cycle)。高频场景下可开启,用 1 周期额外惩罚换取更高主频。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: 追踪一次取指完整流程</legend>
+  <p>假设 PC=0x200,执行 JAL 跳转到 0x300。画出 T3 (EXU 判定跳转) → T4 (IFU 收到 new_pc_req) → T5 (首次取指) → T6 (指令送达队列) 各周期 IFU 的关键信号值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: 跨边界场景分析</legend>
+  <p>假设 IMEM 字 N 的内容为 <code>{RVC_A, RVI_LO}</code>,字 N+1 的内容为 <code>{RVI_HI, RVC_B}</code>。IFU 从字 N 的低 16 位开始取指 (RVI_LO 是 RVI 的低半)。画出 <code>instr_type</code> 和 <code>instr_hi_rvi_lo_ff</code> 的变化序列。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: 丢弃计数器时序</legend>
+  <p>IFU 在途事务数 = 5。PC 跳转发生,但同拍有 1 次握手完成 (新 PC 请求发出)。计算 <code>imem_resp_discard_cnt_next</code> 的值,并列出后续 4 个响应的丢弃计数器递减过程。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: 预测性空间检查验证</legend>
+  <p>队列状态: <code>q_wptr=2, q_rptr=0, q_rptr_next=1</code> (IDU 正在读 1 个半字)。计算 <code>q_free_w_next</code> 和 <code>q_has_free_slots</code>。如果 <code>imem_vd_pnd_txns_cnt=2</code>,此时 IFU 是否继续发请求?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: 找源码</legend>
+  <p>打开 <code>src/core/pipeline/scr1_pipe_ifu.sv</code>,找到 SVA 断言块 (约 760-820 行)。阅读并翻译每一条断言的含义。</p>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>IFU FSM 只有哪两个状态? 转移条件各是什么?</li>
+    <li>指令队列为什么以半字为粒度? 空满判定用什么公式?</li>
+    <li>RVI 和 RVC 如何通过 <code>instr[1:0]</code> 区分? 8 种 instr_type 分别对应什么场景?</li>
+    <li>跨边界 RVI 为什么需要 <code>instr_hi_rvi_lo_ff</code> 寄存器? 三种置位条件是什么?</li>
+    <li><code>q_has_free_slots</code> 为什么用 <code>q_rptr_next</code> 而非 <code>q_rptr</code>?</li>
+    <li>IMEM 在途事务计数器如何 +1 和 -1? 有效在途数怎么算?</li>
+    <li>丢弃计数器的三个入口分别是什么? PC 跳转时如何计算初始丢弃数?</li>
+    <li>3 种指令旁路类型各在什么条件下触发?</li>
+    <li><code>ifu2idu_err_rvi_hi_o</code> 和 <code>ifu2idu_imem_err_o</code> 有什么区别?</li>
+    <li>SCR1_NEW_PC_REG 宏开启/关闭各有什么影响?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 9 周进入 IDU + EXU 模块剖析: IDU 译码器的 opcode 分割、指令队列过滤、双重译码 (硬连线+FDU) ; EXU 的 CSR 事件仲裁逻辑、MSTATUS/MIE 更新流水线冒泡、以及完整的 EVENT → PC/CSR → FLUSH 三线联动。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | IFU 指令取指单元 | 第 8 周</p>
+</body>
+</html>

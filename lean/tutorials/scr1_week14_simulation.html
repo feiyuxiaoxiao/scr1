@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仿真验证与项目收尾 | SCR1 第 14 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+</style>
+</head>
+<body>
+
+<h1>仿真验证与项目收尾 | SCR1 第 14 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#sim-setup">仿真环境搭建</a>
+  <a href="#makefile">sim/Makefile 编译流程</a>
+  <a href="#tests">测试套件 (7 类)</a>
+  <a href="#tb">Testbench 架构 (<code>_tb.sv</code>)</a>
+  <a href="#verilator">Verilator C++ 协同仿真</a>
+  <a href="#sva">SVA 断言汇总</a>
+  <a href="#pipeline-recap">14 周知识总复习</a>
+  <a href="#next-steps">进阶方向推荐</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">最终总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述 -- 最后一程</h2>
+
+<div class="box">
+  <div class="box-title">本周目标</div>
+  学会将 SCR1 搭建到仿真环境中, 运行已有测试套件, 理解 testbench 是如何驱动 CPU 执行并验证结果的。最后回顾 14 周全部学习内容, 并为继续深入 RISC-V 处理器设计指明方向。
+</div>
+
+<!-- ============ 仿真环境 ============ -->
+<h2 id="sim-setup">第二课: 仿真环境搭建 -- 文件组织与前置条件</h2>
+
+<pre>
+<span class="cm">// SCR1 仿真文件目录结构</span>
+sim/
+├── Makefile                        <span class="cm">// 主构建文件</span>
+├── verilator_wrap/
+│   ├── scr1_ahb_wrapper.c          <span class="cm">// Verilator AHB 封装</span>
+│   └── scr1_axi_wrapper.c          <span class="cm">// Verilator AXI 封装</span>
+├── tests/
+│   ├── riscv_isa/                  <span class="cm">// RV32I 指令集测试</span>
+│   ├── riscv_compliance/           <span class="cm">// RISC-V 合规测试</span>
+│   ├── riscv_arch/                 <span class="cm">// 架构级微测试</span>
+│   ├── hello/                      <span class="cm">// Hello World!</span>
+│   ├── isr_sample/                 <span class="cm">// 中断服务例程示例</span>
+│   └── benchmarks/
+│       ├── coremark/               <span class="cm">// CoreMark 性能基准</span>
+│       └── dhrystone21/            <span class="cm">// Dhrystone 2.1 基准</span>
+src/
+├── core.files                      <span class="cm">// 核心 RTL 文件列表</span>
+├── ahb_top.files / axi_top.files   <span class="cm">// 顶层 RTL 文件列表</span>
+├── ahb_tb.files / axi_tb.files     <span class="cm">// Testbench 文件列表</span>
+└── includes/
+    ├── scr1_memif.svh              <span class="cm">// 存储器接口头文件</span>
+    └── scr1_arch_description.svh   <span class="cm">// 架构描述头文件</span></pre>
+
+<div class="box warn">
+  <div class="box-title">前置要求</div>
+  需要 ModelSim / VCS / NCsim / Verilator 中至少一种仿真器。确保 RISC-V 工具链 (riscv32-unknown-elf-gcc) 已安装用于编译测试程序。
+</div>
+
+<!-- ============ Makefile ============ -->
+<h2 id="makefile">第三课: sim/Makefile -- 4 种仿真器的编译流程</h2>
+
+<h3>支持 4 种仿真器: modelsim / vcs / ncsim / verilator</h3>
+
+<pre>
+<span class="cm">// sim/Makefile -- 核心流程</span>
+rtl_src_dir := $(root_dir)/src/
+rtl_core_files ?= core.files          <span class="cm">// 流水线核心 (IFU/IDU/EXU/LSU/MPRF/CSR...)</span>
+rtl_top_files ?= ahb_top.files        <span class="cm">// 顶层封装 (top_ahb/dp_memory/tcm/timer...)</span>
+rtl_tb_files ?= ahb_tb.files          <span class="cm">// Testbench (top_tb_ahb/memory_tb_ahb)</span>
+top_module ?= scr1_top_tb_ahb
+
+sv_list := $(rtl_core_list) $(rtl_top_list) $(rtl_tb_list)</pre>
+
+<h3>4 个仿真器的编译命令对比</h3>
+
+<table>
+<tr><th>仿真器</th><th>命令</th><th>关键参数</th></tr>
+<tr><td><strong>ModelSim</strong></td><td><code>vlog + vmap</code></td><td><code>-O1 -mfcu -sv</code> (优化 + 多文件编译)</td></tr>
+<tr><td><strong>VCS</strong></td><td><code>vcs</code></td><td><code>-full64 -lca -sverilog -debug_all</code></td></tr>
+<tr><td><strong>NCsim</strong></td><td><code>irun</code></td><td><code>-elaborate -64bit -disable_sem2009</code></td></tr>
+<tr><td><strong>Verilator</strong></td><td><code>verilator</code></td><td><code>-cc -sv -Wno-fatal --clk clk</code></td></tr>
+</table>
+
+<h3>编译宏定义</h3>
+
+<pre>
+<span class="cm">// 所有仿真器共享的宏</span>
+<span class="kw">define</span> SCR1_TRGT_SIMULATION      <span class="cm">// 使能仿真专用信号和 SVA</span>
+<span class="kw">define</span> $(SIM_TRACE_DEF)          <span class="cm">// 仿真追踪 (log 输出)</span>
+<span class="kw">define</span> $(SIM_CFG_DEF)            <span class="cm">// 仿真配置 (流水线深度等)</span></pre>
+
+<!-- ============ 测试套件 ============ -->
+<h2 id="tests">第四课: 测试套件 -- 7 类测试的渐进分级</h2>
+
+<table>
+<tr><th>测试</th><th>层级</th><th>内容</th><th>预期结果</th></tr>
+<tr><td><strong>riscv_isa</strong></td><td>单元级</td><td>单条指令逐一验证 (ADD/SUB/BEQ/JAL/...)</td><td>每条指令计算结果与 Golden Model 一致</td></tr>
+<tr><td><strong>riscv_compliance</strong></td><td>合规级</td><td>RISC-V 架构合规测试套件</td><td>所有 test 签名 = OK</td></tr>
+<tr><td><strong>riscv_arch</strong></td><td>微架构</td><td>SCR1 特定功能: CSR 读写、中断、异常处理</td><td>异常码/CSR 值一致</td></tr>
+<tr><td><strong>hello</strong></td><td>系统级</td><td>C 程序 "Hello World!"</td><td>串口输出 "Hello World!"</td></tr>
+<tr><td><strong>isr_sample</strong></td><td>系统级</td><td>定时器中断 + 外部中断服务例程</td><td>ISR 正确保存/恢复上下文</td></tr>
+<tr><td><strong>dhrystone</strong></td><td>性能级</td><td>Dhrystone 2.1 整数基准</td><td>分数 = 1.x DMIPS/MHz</td></tr>
+<tr><td><strong>coremark</strong></td><td>性能级</td><td>CoreMark 嵌入式基准</td><td>分数 = 2.x CoreMark/MHz</td></tr>
+</table>
+
+<h3>运行一个测试的完整流程</h3>
+
+<div class="step">
+  <span class="step-num">1</span> 编译 RISC-V 测试程序: <code>riscv32-unknown-elf-gcc -march=rv32imc test.S -o test.elf</code>
+</div>
+<div class="step">
+  <span class="step-num">2</span> 提取 hex 文件: <code>riscv32-unknown-elf-objcopy -O verilog test.elf test.hex</code>
+</div>
+<div class="step">
+  <span class="step-num">3</span> 将 hex 加载到仿真器的 IMEM 中
+</div>
+<div class="step">
+  <span class="step-num">4</span> 运行仿真 10000+ 时钟周期
+</div>
+<div class="step">
+  <span class="step-num">5</span> 检查: tohost 地址 = 0 (成功) 或 1 (失败)
+</div>
+
+<!-- ============ Testbench ============ -->
+<h2 id="tb">第五课: Testbench 架构 -- sr1_top_tb_ahb.sv</h2>
+
+<pre>
+┌─────────────────────────────────────────────────────────┐
+│                   scr1_top_tb_ahb                       │
+│                                                         │
+│  ┌─────────────────┐                                   │
+│  │ Device Under Test │  scr1_top_ahb (DUT)              │
+│  │ (DUT)            │                                   │
+│  └────────┬────────┘                                   │
+│           │                                             │
+│  ┌────────┴────────────────────────────────────────┐   │
+│  │  AHB Memory Model                                │   │
+│  │  scr1_memory_tb_ahb                              │   │
+│  │  - 加载 hex 到 IMEM/DMEM                          │   │
+│  │  - 响应 AHB 读写请求                              │   │
+│  │  - 监控 tohost 地址以判定测试通过/失败             │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Clock + Reset 生成                                 │  │
+│  │  - clk: 周期 10ns (100MHz)                          │  │
+│  │  - rst_n: 初始 0, 100ns 后拉高                      │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  IRQ 模拟 (定时器 / 外部 / 软件中断)               │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Pass/Fail 判定                                    │  │
+│  │  - 超时: $time > TIMEOUT → FAIL                   │  │
+│  │  - tohost = 0 → PASS                              │  │
+│  │  - tohost = 1 → FAIL                              │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘</pre>
+
+<h3>关键信号监控</h3>
+
+<pre>
+<span class="cm">// Testbench 监控的关键信号</span>
+tohost     <span class="cm">// 标准 RISC-V 测试 exit 协议: 0=PASS, 1=FAIL</span>
+mcycle     <span class="cm">// 周期计数器 (用于性能评估)</span>
+minstret   <span class="cm">// 退休指令计数器 (IPC = minstret/mcycle)</span>
+pc         <span class="cm">// 当前 PC (用于追踪执行路径)</span></pre>
+
+<!-- ============ Verilator ============ -->
+<h2 id="verilator">第六课: Verilator C++ 协同仿真</h2>
+
+<pre>
+<span class="cm">// Verilator 将 SystemVerilog 转为 C++ 模型, 再用 C++ testbench 驱动</span>
+
+<span class="cm">// scr1_ahb_wrapper.c 工作流程:</span>
+<span class="num">1</span>. 解析命令行参数: <span class="cm">// 获取 hex 文件路径, 仿真时间</span>
+<span class="num">2</span>. 初始化 DUT:        <span class="cm">// 创建 Verilated 模型实例</span>
+<span class="num">3</span>. 加载 hex 到 IMEM:  <span class="cm">// $readmemh("firmware.hex", imem_array)</span>
+<span class="num">4</span>. 主循环:            <span class="cm">// 逐周期推进: dut->clk=0; dut->eval(); dut->clk=1; dut->eval()</span>
+<span class="num">5</span>. 监控 tohost:       <span class="cm">// 检测 tohost 变化, 判定 pass/fail</span>
+<span class="num">6</span>. 生成 VCD 波形:     <span class="cm">// 可选 trace_enable</span></pre>
+
+<div class="box tip">
+  <div class="box-title">Verilator 的优势</div>
+  Verilator 编译的 C++ 模型比商业仿真器快 5-10 倍。适合快速迭代验证和 CI/CD 回归测试。缺点是时序精度低于事件驱动仿真器 (如 ModelSim/VCS)。
+</div>
+
+<!-- ============ SVA ============ -->
+<h2 id="sva">第七课: SVA 断言汇总 -- 11 个模块的验证覆盖</h2>
+
+<table>
+<tr><th>模块</th><th>断言数量</th><th>验证内容</th></tr>
+<tr><td>IFU</td><td>8</td><td>X 态检测, 丢弃计数器边界, 队列不上溢, 错误后回 IDLE</td></tr>
+<tr><td>IDU</td><td>2</td><td>X 态检测, IALU 命令范围</td></tr>
+<tr><td>EXU</td><td>5+</td><td>PC 更新之前已初始化, new_pc_req 之前已初始化, 新 PC 请求与 flush 的一致性</td></tr>
+<tr><td>IALU</td><td>N</td><td>MDU 状态转移, 除法 CORR 前提条件</td></tr>
+<tr><td>LSU</td><td>2+</td><td>FSM 状态 + 请求的合法性</td></tr>
+<tr><td>MPRF</td><td>1</td><td>写请求时数据/地址无 X 态 (<code>negedge clk</code>)</td></tr>
+<tr><td>CSR</td><td>4+</td><td>MRET+IRQ 互斥, MCYCLE 递增边界, MSTATUS 位域</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">SVA 的三个检查层次</div>
+  <strong>X 态</strong>: 信号不应有未知值 → 防止未初始化的寄存器<br>
+  <strong>边界</strong>: 计数器、队列、FSM 状态必须在合法范围 → 防止设计缺陷<br>
+  <strong>行为</strong>: 关键时序约束 (如: 错误后必回 IDLE) → 防止功能错误
+</div>
+
+<!-- ============ 14周总复习 ============ -->
+<h2 id="pipeline-recap">第八课: 14 周 SCR1 知识总复习</h2>
+
+<table>
+<tr><th>周</th><th>主题</th><th>核心收获</th></tr>
+<tr><td>1-2</td><td>SystemVerilog 基础</td><td>logic/wire/reg, always_comb/ff, struct/enum, parameter/localparam, unpacked/packed array</td></tr>
+<tr><td>3</td><td>RISC-V ISA 基础</td><td>32 个寄存器 + PC, 6 种指令格式 (R/I/S/B/U/J), 特权级与 CSR</td></tr>
+<tr><td>4</td><td>特权架构与 CSR</td><td>MSTATUS/MIE/MIP/MTVEC/MEPC/MCAUSE/MTVAL, ECALL/MRET 陷阱流程</td></tr>
+<tr><td>5</td><td>SCR1 整体架构</td><td>哈佛架构, 8 级功能划分, 3 种配置 (MIN/BASE/MAX), 2/3/4 级流水线</td></tr>
+<tr><td>6</td><td>数据通路追踪</td><td>6 指令逐周期追踪, 反压传播, 流水线清空机制</td></tr>
+<tr><td>7</td><td>控制流</td><td>6 路 PC 多路器, Stall/Flush, WFI 状态机, ECALL/MRET, 异常优先级</td></tr>
+<tr><td>8</td><td>IFU 取指单元</td><td>2 状态 FSM, 4x16bit 环形队列, instr_type 译码, 丢弃计数器, 旁路, 预测性空间检查</td></tr>
+<tr><td>9</td><td>IDU + EXU 仲裁</td><td>18 字段 EXU 命令, 立即数拼接, 三级非法检测, 三条算术通路, EXU 就绪/屏障</td></tr>
+<tr><td>10</td><td>IALU + LSU + MPRF</td><td>33 位主加法器, 4 个标志位, Radix-2 乘除, LSU 2 状态 FSM, MPRF 写优先旁路</td></tr>
+<tr><td>11</td><td>CSR + IPIC</td><td>3 事件处理, MSTATUS 状态转移, 64 位计数器, search_one_16 优先级树</td></tr>
+<tr><td>12</td><td>HDU + TDU 调试</td><td>4 状态调试 FSM, Program Buffer, mcontrol/icount 触发器, 链</td></tr>
+<tr><td>13</td><td>总线接口</td><td>mem_if 协议, Router 仲裁, TCM 0 延迟, dp_memory 字节写使能, AHB/AXI</td></tr>
+<tr><td>14</td><td>仿真与收尾</td><td>4 种仿真器, 7 类测试套件, Verilator, SVA 断言</td></tr>
+</table>
+
+<!-- ============ 进阶方向 ============ -->
+<h2 id="next-steps">第九课: 进阶方向推荐</h2>
+
+<table>
+<tr><th>方向</th><th>关键技能</th><th>推荐项目</th></tr>
+<tr><td><strong>双发射</strong></td><td>超标量调度, 寄存器重命名, 乱序执行</td><td>CVA6 (Ariane), BOOM</td></tr>
+<tr><td><strong>Cache 系统</strong></td><td>L1 I$/D$ 设计, 一致性协议 (MESI/MOESI), 预取</td><td>SCR1 + L1 Cache 扩展</td></tr>
+<tr><td><strong>FPU 浮点</strong></td><td>IEEE 754, F/D 扩展, 流水线化浮点单元</td><td>FPnew (PULP), HardFloat</td></tr>
+<tr><td><strong>多核 / NoC</strong></td><td>TileLink/ACE 一致性, Network-on-Chip, 缓存一致性</td><td>Rocket Chip, OpenPiton</td></tr>
+<tr><td><strong>形式化验证</strong></td><td>JasperGold, riscv-formal, 属性检查</td><td>SCR1 + riscv-formal</td></tr>
+<tr><td><strong>FPGA 验证</strong></td><td>Vivado/Quartus, ILA/SignalTap, 时序收敛</td><td>SCR1 + Zynq/Arty 开发板</td></tr>
+<tr><td><strong>Linux 启动</strong></td><td>S/U 特权级, MMU (SV32), 页表遍历, PMP</td><td>Rocket Chip, VexRiscv</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">从 SCR1 到 Linux 的距离</div>
+  SCR1 只实现了 M-mode。要跑 Linux 需要: S/U mode + MMU (SV32 虚拟内存) + 页故障处理 + 外部中断控制器 (PLIC) + Timer + 更多 CSR。建议从 Rocket Chip 或 CVA6 入手学习完整的特权架构。
+</div>
+
+<!-- ============ 练习 ============ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: 运行 hello 测试</legend>
+  <p>用 ModelSim 或 Verilator 运行 <code>sim/tests/hello/</code> 测试。记录 mcycle 和 minstret 值, 计算 IPC。在波形中查看 tohost 信号从非零变为 0 的时刻。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: 编写一个自定义测试</legend>
+  <p>写一个简短的 RISC-V 汇编程序: 将 x1-x4 初始化, 计算 (x1+x2)*(x3-x4), 结果存入 x5。编译后在 SCR1 上运行, 验证 x5 的值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: 添加一条 SVA 断言</legend>
+  <p>在 <code>scr1_pipe_ifu.sv</code> 的断言区域添加一条断言: "指令队列的占用度永远不会超过 4"。用仿真验证断言通过。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: 修改流水线深度</legend>
+  <p>修改 <code>SCR1_NO_EXE_STAGE</code> / <code>SCR1_NO_DEC_STAGE</code> 宏, 从 4 级流水线切换到 2 级流水线。重新编译和仿真, 观察 IPC 和最高频率的变化。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: 性能分析</legend>
+  <p>运行 CoreMark 基准测试, 记录 CoreMark/MHz 分数。分析哪些指令类型导致了最多的流水线 Stall? 如何优化?</p>
+</fieldset>
+
+<!-- ============ 最终总结 ============ -->
+<h2 id="summary">最终总结 -- 14 周, 你学到了什么</h2>
+
+<div class="box">
+  <div class="box-title">你已完成 SCR1 完整教程 -- 共计 14 周</div>
+  从 SystemVerilog 语法到 RISC-V ISA, 从单周期数据通路到流水线控制流, 从 IFU 环形队列到 IALU 非恢复式除法, 从 CSR 事件处理到 IPIC 优先级树, 从 TDU 硬件断点到 AHB 总线封装, 从仿真测试套件到 Verilator 协同仿真 -- 你已经拥有开发自己 RISC-V 处理器的完整知识体系。
+</div>
+
+<div class="box tip">
+  <div class="box-title">建议后续 4 周</div>
+  第 15 周 -- 用 SCR1 跑 Dhrystone/CoreMark, 分析瓶颈<br>
+  第 16 周 -- 添加 L1 指令缓存 (ICache), 对比 IPC 提升<br>
+  第 17 周 -- 实现 RV32F (单精度浮点) 扩展<br>
+  第 18 周 -- 烧录到 FPGA 开发板, 点亮 LED
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 教程全 14 周完成 | 2026-07</p>
+</body>
+</html>

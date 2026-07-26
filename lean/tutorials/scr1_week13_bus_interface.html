@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>总线接口与存储子系统 | SCR1 第 13 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 16px 0; font-family: monospace; font-size: 0.83em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.35; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>总线接口与存储子系统 | SCR1 第 13 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#memif">mem_if 通用存储器协议</a>
+  <a href="#router">IMEM/DMEM Router (仲裁 + 截获)</a>
+  <a href="#tcm">TCM 紧耦合存储器 (0 延迟)</a>
+  <a href="#dp-memory">dp_memory 双端口 RAM</a>
+  <a href="#ahb">AHB 总线封装 (scr1_top_ahb)</a>
+  <a href="#axi">AXI 总线封装 (scr1_top_axi)</a>
+  <a href="#timer">Timer 定时器</a>
+  <a href="#top-hierarchy">顶层模块层次树</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周覆盖 7 个文件</div>
+  <code>scr1_memif.svh</code> — 通用存储器握手协议定义<br>
+  <code>scr1_imem_router.sv</code> / <code>scr1_dmem_router.sv</code> — 指令/数据存储器仲裁路由器<br>
+  <code>scr1_tcm.sv</code> — 紧耦合存储器 (Tightly Coupled Memory) 0 延迟访问<br>
+  <code>scr1_dp_memory.sv</code> — 双端口同步 RAM (带字节写使能)<br>
+  <code>scr1_top_ahb.sv</code> / <code>scr1_top_axi.sv</code> — AHB/AXI 总线封装顶层<br>
+  <code>scr1_timer.sv</code> — 64 位 mtime 定时器
+</div>
+
+<!-- ============ memif ============ -->
+<h2 id="memif">第二课: mem_if — 通用存储器握手协议</h2>
+
+<pre>
+<span class="cm">// scr1_memif.svh: 所有存储器接口的共享协议</span>
+
+<span class="cm">// 请求通道: 主设备 → 从设备</span>
+req              <span class="cm">// 请求有效</span>
+req_ack          <span class="cm">// 从设备确认 (握手完成)</span>
+cmd              <span class="cm">// READ / WRITE</span>
+width            <span class="cm">// BYTE / HWORD / WORD</span>
+addr             <span class="cm">// 地址</span>
+wdata            <span class="cm">// 写数据 (仅 WRITE 时)</span>
+
+<span class="cm">// 响应通道: 从设备 → 主设备</span>
+resp             <span class="cm">// OK / ERROR</span>
+rdata            <span class="cm">// 读数据 (仅 READ 时)</span></pre>
+
+<div class="box">
+  <div class="box-title">握手模式: Valid/Ack 配对</div>
+  主设备拉高 <code>req</code>, 从设备拉高 <code>req_ack</code> → 握手完成。IFU 作为 IMEM 的主设备, LSU 作为 DMEM 的主设备, 都使用同一套协议。
+</div>
+
+<table>
+<tr><th>信号</th><th>IMEM</th><th>DMEM</th></tr>
+<tr><td>主设备</td><td>IFU (<code>ifu2imem_req</code>)</td><td>LSU (<code>lsu2dmem_req</code>)</td></tr>
+<tr><td>从设备</td><td>IMEM Router / TCM</td><td>DMEM Router / TCM</td></tr>
+<tr><td>请求类型</td><td>仅 READ</td><td>READ + WRITE</td></tr>
+</table>
+
+<!-- ============ Router ============ -->
+<h2 id="router">第三课: IMEM/DMEM Router — 地址空间仲裁与截获</h2>
+
+<pre>
+<span class="cm">// Router 的核心功能: 地址译码 → 路由到不同从设备</span>
+                 ifu2imem_addr
+                      │
+                      ▼
+              ┌───────────────┐
+              │  Address Map  │   地址 0x0000_???? → TCM (紧耦合)
+              │  Decoder      │   地址 0x0040_???? → Debug
+              └───────┬───────┘   地址 else → AHB Bus
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+       ┌──────┐  ┌─────────┐  ┌───────┐
+       │ TCM  │  │  Debug  │  │  AHB  │
+       │ Port │  │  Bus    │  │  Bus  │
+       └──────┘  └─────────┘  └───────┘</pre>
+
+<h3>IMEM Router 的地址空间划分</h3>
+
+<table>
+<tr><th>地址范围</th><th>目标</th><th>用途</th></tr>
+<tr><td>TCM 基址区域</td><td>TCM (IMEM Port)</td><td>程序代码在紧耦合存储器中</td></tr>
+<tr><td>调试区域</td><td>Debug Bus</td><td>调试器注入的存储器访问</td></tr>
+<tr><td>其余 (default)</td><td>AHB Bus</td><td>通过 AHB 总线访问外部存储器</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">Router 的关键约束: 单主设备 → 多从设备</div>
+  一次请求只能路由到一个从设备。Router 是纯组合逻辑地址译码, 无状态, 不缓冲 — 所有握手和反压由下游从设备 (TCM / AHB) 各自处理。
+</div>
+
+<h3>DMEM Router 的额外职责 — 截获 TDU 断点地址</h3>
+
+<pre>
+<span class="cm">// DMEM Router 在路由数据地址时, 还向 TDU 提供 dmon 监视数据</span>
+lsu2tdu_dmon.vd    = exu2lsu_req &amp; lsu_fsm_idle;
+lsu2tdu_dmon.addr  = exu2lsu_addr;
+lsu2tdu_dmon.load  = cmd_is_load;
+lsu2tdu_dmon.store = cmd_is_store;</pre>
+
+<!-- ============ TCM ============ -->
+<h2 id="tcm">第四课: TCM 紧耦合存储器 — 0 延迟访问</h2>
+
+<pre>
+<span class="cm">// scr1_tcm.sv: 绕过 AHB 总线, 直接连 dp_memory</span>
+<span class="cm">// 两个端口: IMEM Port (指令) + DMEM Port (数据)</span>
+
+┌─────────────────────────────────────┐
+│               scr1_tcm              │
+│                                     │
+│  IMEM Port ──────────▶ Port A (读)  │
+│                    ┌──┴──────────┐  │
+│  DMEM Port ───────▶│ Port B (读写)│──┤  scr1_dp_memory
+│                    └─────────────┘  │
+│                                     │
+│  仲裁: IMEM 优先                    │
+└─────────────────────────────────────┘</pre>
+
+<div class="box tip">
+  <div class="box-title">TCM 的 0 延迟: 为什么</div>
+  TCM 直连 dp_memory 的同步端口, 请求发出后 1 拍返回数据。相比通过 AHB 总线 (需要仲裁 + 多拍握手), TCM 消除了所有协议开销, 实现 1 拍吞吐。代价: TCM 容量受芯片面积限制 (通常 64KB-256KB)。
+</div>
+
+<!-- ============ dp_memory ============ -->
+<h2 id="dp-memory">第五课: dp_memory — 双端口同步 RAM</h2>
+
+<pre>
+<span class="cm">// scr1_dp_memory.sv: 双端口 + 字节写使能</span>
+<span class="kw">module</span> scr1_dp_memory
+    parameter SCR1_WIDTH = <span class="num">32</span>,      <span class="cm">// 数据宽度</span>
+    parameter SCR1_SIZE  = ...        <span class="cm">// 存储器大小 (字节)</span>
+(
+    <span class="cm">// Port A: 只读 (IMEM)</span>
+    input  rena, addra,
+    output qa,
+    <span class="cm">// Port B: 读写 (DMEM), 带字节写使能</span>
+    input  renb, wenb, webb[<span class="num">3</span>:<span class="num">0</span>], addrb, datab,
+    output qb
+);</pre>
+
+<h3>字节写使能 (webb) 的实现 (Intel FPGA)</h3>
+
+<pre>
+wenbb = <span class="num">{4{wenb}}</span> &amp; webb;        <span class="cm">// 4 个字节独立控制</span>
+
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (wenb) <span class="kw">begin</span>
+        <span class="kw">if</span> (wenbb[<span class="num">0</span>]) memory_array[addrb][<span class="num">0</span>] &lt;= datab[ <span class="num">0</span>:<span class="num">7</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">1</span>]) memory_array[addrb][<span class="num">1</span>] &lt;= datab[ <span class="num">8</span>:<span class="num">15</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">2</span>]) memory_array[addrb][<span class="num">2</span>] &lt;= datab[<span class="num">16</span>:<span class="num">23</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">3</span>]) memory_array[addrb][<span class="num">3</span>] &lt;= datab[<span class="num">24</span>:<span class="num">31</span>];
+    <span class="kw">end</span>
+    qb &lt;= memory_array[addrb];
+<span class="kw">end</span></pre>
+
+<div class="box">
+  <div class="box-title">为什么需要字节写使能?</div>
+  SB 指令只写 1 字节, SH 写 2 字节, SW 写 4 字节。RAM 必须按字节粒度控制, 否则 SB 会将整个 32 位字全部覆盖, 破坏相邻字节。webb[3:0] 由 LSU 根据 lsu_cmd 译码生成。
+</div>
+
+<h3>非 FPGA 实现 (ASIC / 仿真)</h3>
+
+<pre>
+<span class="cm">// 直接使用 32 位宽的 RAM block (无字节写使能)</span>
+<span class="cm">// 由 synthesis 工具推断为 SRAM / register file</span>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (wenb) ram_block[addrb] &lt;= datab;
+    qb &lt;= ram_block[addrb];
+<span class="kw">end</span>
+<span class="kw">always_ff</span> @(posedge clk)
+    qa &lt;= ram_block[addra];</pre>
+
+<!-- ============ AHB ============ -->
+<h2 id="ahb">第六课: AHB 总线封装 — scr1_top_ahb</h2>
+
+<pre>
+<span class="cm">// scr1_top_ahb.sv: SCR1 核心 + AHB 总线封装</span>
+
+┌────────────────────────────────────────────────┐
+│                 scr1_top_ahb                   │
+│                                                │
+│  ┌──────────┐   ┌──────────────┐              │
+│  │ scr1_core│──▶│ imem_ahb     │──▶ AHB Bus   │
+│  │ (pipeline│   │ (AHB master) │              │
+│  │  + CSRs) │──▶│ dmem_ahb     │──▶ AHB Bus   │
+│  └──────────┘   └──────────────┘              │
+│                                                │
+│  外设: timer, IPIC IRQ lines ...               │
+└────────────────────────────────────────────────┘</pre>
+
+<h3>AHB 主设备封装 (scr1_imem_ahb / scr1_dmem_ahb)</h3>
+
+<pre>
+<span class="cm">// mem_if 协议 → AHB 总线协议转换</span>
+<span class="cm">// 关键信号:</span>
+HADDR    <span class="cm">// AHB 地址 (32-bit)</span>
+HBURST   <span class="cm">// 突发类型: SINGLE / INCR</span>
+HTRANS   <span class="cm">// 传输类型: IDLE / NONSEQ</span>
+HSIZE    <span class="cm">// 传输大小: BYTE / HWORD / WORD</span>
+HWDATA   <span class="cm">// 写数据</span>
+HRDATA   <span class="cm">// 读数据</span>
+HREADY   <span class="cm">// 就绪 (反压)</span>
+HRESP    <span class="cm">// 响应: OKAY / ERROR</span></pre>
+
+<!-- ============ AXI ============ -->
+<h2 id="axi">第七课: AXI 总线封装 — scr1_top_axi</h2>
+
+<pre>
+<span class="cm">// scr1_top_axi.sv: SCR1 核心 + AXI 总线封装</span>
+<span class="cm">// 通过 scr1_mem_axi 模块做 mem_if → AXI 转换</span>
+
+┌────────────────────────────────────────────────┐
+│                 scr1_top_axi                   │
+│  ┌──────────┐   ┌──────────────┐              │
+│  │ scr1_core│──▶│  mem_axi     │──▶ AXI Bus   │
+│  │          │   │ (AXI master) │              │
+│  └──────────┘   └──────────────┘              │
+└────────────────────────────────────────────────┘</pre>
+
+<table>
+<tr><th>维度</th><th>AHB</th><th>AXI</th></tr>
+<tr><td>通道</td><td>共享地址/数据总线</td><td>5 个独立通道: AW/W/B/AR/R</td></tr>
+<tr><td>读写并发</td><td>不支持 (半双工)</td><td>支持 (全双工)</td></tr>
+<tr><td>突发长度</td><td>固定/增量</td><td>可编程 (1-16)</td></tr>
+<tr><td>outstanding</td><td>单事务</td><td>支持多事务流水线</td></tr>
+<tr><td>SCR1 用途</td><td>简单 SoC</td><td>高性能系统</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">SCR1 用 AHB 还是 AXI?</div>
+  SCR1 是单发射顺序核, AHB 完全够用。AXI 版本主要用于与已有 AXI 系统集成、或需要 burst 访问的外部存储器。两个封装内部核心 (`scr1_core`) 完全复用同一套接口。
+</div>
+
+<!-- ============ Timer ============ -->
+<h2 id="timer">第八课: Timer 定时器 — mtime + mtimecmp</h2>
+
+<pre>
+<span class="cm">// scr1_timer.sv: 64 位 mtime 计数器 + mtimecmp 比较器</span>
+
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (~rst_n)
+        mtime &lt;= <span class="num">64'b0</span>;
+    <span class="kw">else</span>
+        mtime &lt;= mtime + <span class="num">1</span>;          <span class="cm">// 每个 clk 递增</span>
+
+    <span class="kw">if</span> (mtime >= mtimecmp)           <span class="cm">// mtime >= mtimecmp?</span>
+        mtip = <span class="num">1</span>;                      <span class="cm">// 定时器中断挂起</span>
+<span class="kw">end</span></pre>
+
+<h3>寄存器映射</h3>
+
+<table>
+<tr><th>地址</th><th>寄存器</th><th>位宽</th><th>说明</th></tr>
+<tr><td>0x????</td><td>mtime</td><td>64</td><td>当前定时器值 (只读)</td></tr>
+<tr><td>0x????</td><td>mtimecmp</td><td>64</td><td>比较值, mtime >= mtimecmp → 中断 (读写)</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">mtime 如何进入 CSR?</div>
+  <code>soc2csr_mtimer_val_i</code> → CSR 模块的 TIME/TIMEH 用户阴影寄存器 + MIP.MTIP。软件读 TIME CSR 获取当前时间, 写 mtimecmp 设定下一次中断时刻。
+</div>
+
+<!-- ============ 顶层层次 ============ -->
+<h2 id="top-hierarchy">第九课: 顶层模块完整层次树</h2>
+
+<pre>
+scr1_top_ahb / scr1_top_axi
+│
+├── scr1_core (流水线核心)
+│   ├── scr1_pipe_top
+│   │   ├── scr1_pipe_ifu        (取指)
+│   │   ├── scr1_pipe_idu        (译码)
+│   │   ├── scr1_pipe_exu        (执行)
+│   │   │   ├── scr1_pipe_ialu   (整型 ALU)
+│   │   │   ├── scr1_pipe_lsu    (访存)
+│   │   │   └── (MDU)            (乘除)
+│   │   ├── scr1_pipe_mprf       (寄存器文件)
+│   │   ├── scr1_pipe_csr        (控制状态)
+│   │   ├── scr1_ipic            (中断控制)
+│   │   ├── scr1_pipe_hdu        (调试)
+│   │   └── scr1_pipe_tdu        (触发)
+│   │
+├── scr1_imem_ahb / mem_axi      (指令总线封装)
+├── scr1_dmem_ahb / (mem_axi 共享)(数据总线封装)
+├── scr1_tcm                     (紧耦合存储, 可选)
+├── scr1_timer                   (定时器)
+└── scr1_dp_memory               (双端口 RAM, TCM 底层)
+</pre>
+
+<!-- ============ 练习 ============ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: mem_if 握手分析</legend>
+  <p>画出 IFU 向 IMEM 发起一次 4 字节读请求的 mem_if 握手时序。标注 req, req_ack, addr, rdata, resp 信号的波形。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: Router 地址译码</legend>
+  <p>假设 TCM 基址 = 0x0000, 大小 = 64KB。IFU 请求地址 0x0000_1000 和 0x0100_0000 分别路由到哪里?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: dp_memory 字节写使能</legend>
+  <p>执行 SH (存半字) 到地址 0x1002。写出 webb[3:0] 的值和各字节的写入行为。SD 指令 (4 字节) 和 SB 指令 (1 字节) 的区别?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: AHB vs AXI 对比</legend>
+  <p>在 SCR1 单发射顺序核中, AXI 的 5 独立通道有哪些被实际用到? 哪些优势在单核场景下体现不出来?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: mtime+mtimecmp 中断生成</legend>
+  <p>软件要设置 1ms 后触发定时器中断。时钟频率 = 100MHz。计算 mtimecmp 应写入的值, 并画出中断从产生到 CPU 跳转到 MTVEC 的完整路径。</p>
+</fieldset>
+
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>mem_if 协议的握手模式 (Valid/Ack) 如何工作? 命令和响应如何分离?</li>
+    <li>IMEM Router 如何根据地址路由请求到 TCM / Debug / AHB?</li>
+    <li>TCM 为什么能实现 0 延迟访问? 和通过 AHB 访问有什么区别?</li>
+    <li>dp_memory 的字节写使能 (webb[3:0]) 如何支持 SB/SH/SW?</li>
+    <li>AHB 总线的关键信号 (HADDR/HBURST/HTRANS/HSIZE/HREADY) 各代表什么?</li>
+    <li>AXI 的 5 个独立通道分别是什么? 和 AHB 的共享总线有什么区别?</li>
+    <li>Timer 的 mtime 和 mtimecmp 如何协作产生定时器中断?</li>
+    <li>scr1_top_ahb 和 scr1_top_axi 的区别在哪些模块? 哪些是共享的?</li>
+    <li>DMEM Router 如何向 TDU 提供数据地址监视 (dmon)?</li>
+    <li>scr1_core 模块和 scr1_pipe_top 的关系是什么? 层次树怎么画?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周 (最终周) 预告</div>
+  第 14 周进入仿真验证与项目收尾: 4 种仿真器 (Modelsim/VCS/NCsim/Verilator) 编译流程 + 测试套件 (riscv_isa/compliance/arch/hello/isr_sample/coremark/dhrystone) + 14 周知识总复习 + 进阶方向推荐。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 总线接口与存储子系统 | 第 13 周</p>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IDU 译码器 + EXU 执行仲裁 | SCR1 第 9 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #1a365d; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 16px 0; font-family: monospace; font-size: 0.83em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.35; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>IDU 译码器 + EXU 执行仲裁 | SCR1 第 9 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#idu-arch">IDU 纯组合逻辑</a>
+  <a href="#instr-class">指令类型两级分类</a>
+  <a href="#exu-cmd">EXU 命令结构体 (18 字段)</a>
+  <a href="#imm">6 种立即数拼接</a>
+  <a href="#rvi-decode">RV32I 译码映射表</a>
+  <a href="#rvc-decode">RVC 象限译码</a>
+  <a href="#c-tricks">C.MV / C.BEQZ 技巧</a>
+  <a href="#illegal">非法指令三级检测</a>
+  <a href="#splits">IDU 透传 与 三条算术通路</a>
+  <a href="#exu-arb">EXU 调度仲裁: ready &amp; barrier</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周聚焦两个模块</div>
+  <strong>IDU (Instruction Decode Unit)</strong> — 纯组合逻辑译码器,将 32 位指令编码译为一组控制信号 (<code>type_scr1_exu_cmd_s</code>),无内部状态。<br>
+  <strong>EXU (Execution Unit)</strong> — 在第 6-7 周已覆盖数据通路和控制流,本周深入其<strong>调度仲裁机制</strong>: 就绪信号合成、EXU 队列屏障、CSR 事件处理、指令退役与 PC 推进。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="idu-arch">第二课: IDU 架构 — 纯组合逻辑,无状态</h2>
+
+<div class="fig">
+  IFU ──32-bit instr──→  IDU  ──18-field exu_cmd──→  EXU
+                            │
+                    纯组合逻辑,单周期完成
+                    无流水线寄存器,无状态记忆
+</div>
+
+<pre>
+<span class="cm">// scr1_pipe_idu.sv -- IDU 没有时钟/复位端口,只有组合输入输出</span>
+<span class="kw">module</span> scr1_pipe_idu (
+    input   <span class="kw">logic</span>  ifu2idu_vd_i,        <span class="cm">// IFU 指令有效</span>
+    input   <span class="kw">logic</span>  ifu2idu_instr_i,     <span class="cm">// 32 位指令编码</span>
+    output  <span class="kw">logic</span>  idu2exu_req_o,       <span class="cm">// 到 EXU 的请求</span>
+    output  <span class="kw">logic</span>  idu2exu_cmd_o        <span class="cm">// 18 字段命令结构体</span>
+    ...
+);</pre>
+
+<div class="box">
+  <div class="box-title">为什么是组合逻辑?</div>
+  译码不需要时钟: 给定指令编码,译码结果瞬间确定。RISC-V 的规整编码使得大多数控制信号可以直接从 <code>opcode</code>/<code>funct3</code>/<code>funct7</code> 译出,无需多级状态机。唯一的"状态"来自 EXU 反压——IDU 通过 <code>idu2ifu_rdy_o = exu2idu_rdy_i</code> 直通反压。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="instr-class">第三课: 指令类型两级分类</h2>
+
+<h3>第一级: instr[1:0] → 4 种类型</h3>
+
+<table>
+<tr><th><code>instr[1:0]</code></th><th>enum</th><th>含义</th></tr>
+<tr><td><code>00</code></td><td><code>SCR1_INSTR_RVC0</code></td><td>RVC 象限 0 — 寄存器操作数在 x8-x15 (压缩地址)</td></tr>
+<tr><td><code>01</code></td><td><code>SCR1_INSTR_RVC1</code></td><td>RVC 象限 1 — 目标寄存器在 [11:7]</td></tr>
+<tr><td><code>10</code></td><td><code>SCR1_INSTR_RVC2</code></td><td>RVC 象限 2 — 栈指针和通用操作</td></tr>
+<tr><td><code>11</code></td><td><code>SCR1_INSTR_RVI</code></td><td>标准 32 位 RV32I 指令</td></tr>
+</table>
+
+<h3>第二级 (仅 RVI): instr[6:2] → rvi_opcode</h3>
+
+<pre>
+rvi_opcode = type_scr1_rvi_opcode_e'(instr[6:2]);
+</pre>
+
+<table>
+<tr><th>opcode</th><th>值</th><th>指令类</th></tr>
+<tr><td><code>LOAD</code></td><td>00000</td><td>LB/LH/LW/LBU/LHU</td></tr>
+<tr><td><code>MISC_MEM</code></td><td>00011</td><td>FENCE/FENCE.I</td></tr>
+<tr><td><code>OP_IMM</code></td><td>00100</td><td>ADDI/SLTI/XORI/ORI/ANDI/SLLI/SRLI/SRAI</td></tr>
+<tr><td><code>AUIPC</code></td><td>00101</td><td>AUIPC</td></tr>
+<tr><td><code>STORE</code></td><td>01000</td><td>SB/SH/SW</td></tr>
+<tr><td><code>OP</code></td><td>01100</td><td>ADD/SUB/SLL/SLT/SLTU/XOR/SRL/SRA/OR/AND + M 扩展</td></tr>
+<tr><td><code>LUI</code></td><td>01101</td><td>LUI</td></tr>
+<tr><td><code>BRANCH</code></td><td>11000</td><td>BEQ/BNE/BLT/BGE/BLTU/BGEU</td></tr>
+<tr><td><code>JALR</code></td><td>11001</td><td>JALR</td></tr>
+<tr><td><code>JAL</code></td><td>11011</td><td>JAL</td></tr>
+<tr><td><code>SYSTEM</code></td><td>11100</td><td>ECALL/EBREAK/MRET/WFI/CSR</td></tr>
+</table>
+
+<h3>funct3 跨 RVI/RVC 的统一提取</h3>
+
+<pre>
+<span class="cm">// RVI 用 [14:12], RVC 用 [15:13] — 共享变量名</span>
+funct3 = (instr_type == SCR1_INSTR_RVI) ? instr[14:12] : instr[15:13];
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="exu-cmd">第四课: EXU 命令结构体 — 18 个字段</h2>
+
+<table>
+<tr><th>字段</th><th>位宽</th><th>含义</th><th>示例值</th></tr>
+<tr><td><code>instr_rvc</code></td><td>1</td><td>是否为压缩指令</td><td>C.LW → 1</td></tr>
+<tr><td><code>ialu_op</code></td><td>1</td><td>ALU 操作数来源</td><td><code>REG_IMM</code> 或 <code>REG_REG</code></td></tr>
+<tr><td><code>ialu_cmd</code></td><td>5</td><td>整型 ALU 运算命令 (15-23 种)</td><td>ADD/SLL/SLT/SUB/MUL/DIV...</td></tr>
+<tr><td><code>sum2_op</code></td><td>1</td><td>地址加法器操作数来源</td><td><code>PC_IMM</code> (JAL/BRANCH) 或 <code>REG_IMM</code> (LOAD/JALR)</td></tr>
+<tr><td><code>lsu_cmd</code></td><td>4</td><td>加载/存储命令</td><td>LB/LH/LW/LBU/LHU/SB/SH/SW</td></tr>
+<tr><td><code>csr_op</code></td><td>1</td><td>CSR 操作数来源</td><td><code>IMM</code> (CSRRSI) 或 <code>REG</code> (CSRRS)</td></tr>
+<tr><td><code>csr_cmd</code></td><td>2</td><td>CSR 操作命令</td><td><code>WRITE</code>/<code>SET</code>/<code>CLEAR</code></td></tr>
+<tr><td><code>rd_wb_sel</code></td><td>3</td><td>回写到 rd 的数据来源</td><td>IALU/SUM2/IMM/INC_PC/LSU/CSR</td></tr>
+<tr><td><code>jump_req</code></td><td>1</td><td>无条件跳转 (JAL/JALR)</td><td>1 → 产生 jb_taken</td></tr>
+<tr><td><code>branch_req</code></td><td>1</td><td>条件分支 (BEQ/BNE/...)</td><td>1 + ialu_cmp → branch_taken</td></tr>
+<tr><td><code>mret_req</code></td><td>1</td><td>MRET 异常返回</td><td>1 → CSR 事件 e_mret</td></tr>
+<tr><td><code>fencei_req</code></td><td>1</td><td>FENCE.I 请求</td><td>1 → IFU flush + inc_pc</td></tr>
+<tr><td><code>wfi_req</code></td><td>1</td><td>WFI 等待中断请求</td><td>1 → WFI 状态机触发</td></tr>
+<tr><td><code>rs1_addr</code></td><td>5</td><td>rs1 寄存器地址</td><td>CSRRxI 时复用为 zimm</td></tr>
+<tr><td><code>rs2_addr</code></td><td>5</td><td>rs2 寄存器地址</td><td>STORE 的源数据寄存器</td></tr>
+<tr><td><code>rd_addr</code></td><td>5</td><td>rd 目标寄存器地址</td><td>WARL 合法性由 MPRF 负责</td></tr>
+<tr><td><code>imm</code></td><td>32</td><td>立即数</td><td>CSR 指令复用: {funct3,csr_addr}</td></tr>
+<tr><td><code>exc_req</code></td><td>1</td><td>异常请求</td><td>ECALL/EBREAK/ILLEGAL/FAULT → 1</td></tr>
+<tr><td><code>exc_code</code></td><td>4</td><td>异常类型编码</td><td>按 SCR1 编码表</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">imm 域的复用</div>
+  <code>imm</code> 域在不同场景下含义不同: 普通指令 = 立即数; CSR 指令 = <code>{funct3, csr_addr}</code>; 非法指令且 MTVAL_EN = 整条指令编码。靠上下文区分,不额外占用字段。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="imm">第五课: 6 种立即数拼接公式</h2>
+
+<table>
+<tr><th>格式</th><th>拼接表达式</th><th>符号</th><th>示例指令</th></tr>
+<tr><td>I-type</td><td><code>{ {21{instr[31]}}, instr[30:20] }</code></td><td>有符号</td><td>ADDI, LOAD, JALR</td></tr>
+<tr><td>S-type</td><td><code>{ {21{instr[31]}}, instr[30:25], instr[11:7] }</code></td><td>有符号</td><td>STORE</td></tr>
+<tr><td>B-type</td><td><code>{ {20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0 }</code></td><td>有符号</td><td>BRANCH</td></tr>
+<tr><td>U-type</td><td><code>{ instr[31:12], 12'b0 }</code></td><td>—</td><td>LUI, AUIPC</td></tr>
+<tr><td>J-type</td><td><code>{ {12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0 }</code></td><td>有符号</td><td>JAL</td></tr>
+<tr><td>shamt</td><td><code>{ 27'b0, instr[24:20] }</code></td><td>零扩展</td><td>SLLI, SRLI, SRAI</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">B-type 为什么需要 &lt;&lt;1?</div>
+  B-type 立即数最低位永远为 0 (未编码)。因为 RISC-V 的 16 位 RVC 指令要求分支目标地址也是 2 字节对齐,bit[0] 字段被省略以扩大范围。拼好后再 <code>&lt;&lt;1</code> 恢复——公式中的 <code>1'b0</code> 就是这一步。
+</div>
+
+<h3>为什么立即数位域被打散?</h3>
+
+RISC-V 故意把立即数 bit 散布到指令中不同位置,这不是随意为之——位域排布可使 RVI 和 RVC 的 rs1/rs2/rd 地址位在<strong>相同物理位置</strong>,简化寄存器文件读取逻辑。IDU 负责把散落的 bit 重新拼好。
+
+<!-- ============================================================ -->
+<h2 id="rvi-decode">第六课: RV32I 译码映射速查表</h2>
+
+<table>
+<tr><th>操作码</th><th>funct3</th><th>funct7</th><th>译出的关键信号</th><th>指令</th></tr>
+<tr><td>AUIPC (00101)</td><td>—</td><td>—</td><td><code>sum2_op=PC_IMM, rd_wb_sel=SUM2</code></td><td>AUIPC</td></tr>
+<tr><td>LUI (01101)</td><td>—</td><td>—</td><td><code>rd_wb_sel=IMM</code></td><td>LUI</td></tr>
+<tr><td>JAL (11011)</td><td>—</td><td>—</td><td><code>sum2_op=PC_IMM, rd_wb_sel=INC_PC, jump_req=1</code></td><td>JAL</td></tr>
+<tr><td>JALR (11001)</td><td>000</td><td>—</td><td><code>sum2_op=REG_IMM, rd_wb_sel=INC_PC, jump_req=1</code></td><td>JALR</td></tr>
+<tr><td>LOAD (00000)</td><td>000-101</td><td>—</td><td><code>sum2_op=REG_IMM, rd_wb_sel=LSU</code></td><td>LB/LH/LW/LBU/LHU</td></tr>
+<tr><td>STORE (01000)</td><td>000-010</td><td>—</td><td><code>sum2_op=REG_IMM, lsu_cmd=SB/SH/SW</code></td><td>SB/SH/SW</td></tr>
+<tr><td>OP (01100)</td><td>000-111</td><td>0000000</td><td><code>ialu_op=REG_REG, rd_wb_sel=IALU</code></td><td>ADD/SLL/SLT/...</td></tr>
+<tr><td>OP (01100)</td><td>000/101</td><td>0100000</td><td><code>ialu_cmd=SUB/SRA</code></td><td>SUB/SRA</td></tr>
+<tr><td>OP (01100)</td><td>000-111</td><td>0000001</td><td><code>ialu_cmd=MUL/DIV/...</code> (M 扩展)</td><td>MUL/DIV/REM</td></tr>
+<tr><td>OP-IMM (00100)</td><td>000-111</td><td>—</td><td><code>ialu_op=REG_IMM, rd_wb_sel=IALU</code></td><td>ADDI/XORI/ORI/ANDI</td></tr>
+<tr><td>OP-IMM (00100)</td><td>001/101</td><td>—</td><td><code>ialu_cmd=SLL/SRL/SRA, imm=shamt</code></td><td>SLLI/SRLI/SRAI</td></tr>
+<tr><td>BRANCH (11000)</td><td>000-111</td><td>—</td><td><code>sum2_op=PC_IMM, branch_req=1, ialu_cmd=SUB_EQ/NE/...</code></td><td>BEQ/BNE/BLT/...</td></tr>
+<tr><td>SYSTEM (11100)</td><td>000</td><td>funct12</td><td><code>exc_req</code>/<code>mret_req</code>/<code>wfi_req</code></td><td>ECALL/EBREAK/MRET/WFI</td></tr>
+<tr><td>SYSTEM (11100)</td><td>001-111</td><td>—</td><td><code>rd_wb_sel=CSR, csr_cmd=WRITE/SET/CLEAR</code></td><td>CSR 指令</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="rvc-decode">第七课: RVC 三个象限的核心指令</h2>
+
+<h3>象限 0 (RVC0): 寄存器映射到 x8-x15</h3>
+
+<table>
+<tr><th>funct3</th><th>指令</th><th>key 信号</th></tr>
+<tr><td>000</td><td>C.ADDI4SPN</td><td><code>ialu_op=REG_IMM, ialu_cmd=ADD, rs1=SP</code></td></tr>
+<tr><td>010</td><td>C.LW</td><td><code>sum2_op=REG_IMM, lsu_cmd=LW, rd_wb_sel=LSU</code></td></tr>
+<tr><td>110</td><td>C.SW</td><td><code>sum2_op=REG_IMM, lsu_cmd=SW</code></td></tr>
+</table>
+
+<h3>象限 1 (RVC1): 使用完整 5 位寄存器编号</h3>
+
+<table>
+<tr><th>funct3</th><th>指令</th><th>key 信号</th></tr>
+<tr><td>000</td><td>C.ADDI / C.NOP</td><td><code>ialu_op=REG_IMM, ialu_cmd=ADD</code></td></tr>
+<tr><td>001</td><td>C.JAL</td><td><code>sum2_op=PC_IMM, jump_req=1, rd=RA</code></td></tr>
+<tr><td>010</td><td>C.LI</td><td><code>rd_wb_sel=IMM</code></td></tr>
+<tr><td>011</td><td>C.LUI / C.ADDI16SP</td><td>rd=SP → ADDI16SP, 否则 LUI</td></tr>
+<tr><td>100</td><td>C.SRLI/C.SRAI/C.ANDI/C.SUB/C.XOR/C.OR/C.AND</td><td>按 <code>instr[11:10]</code> 二级译码</td></tr>
+<tr><td>101</td><td>C.J</td><td><code>sum2_op=PC_IMM, jump_req=1</code></td></tr>
+<tr><td>110</td><td>C.BEQZ</td><td><code>branch_req=1, ialu_cmd=SUB_EQ, rs2=x0</code></td></tr>
+<tr><td>111</td><td>C.BNEZ</td><td><code>branch_req=1, ialu_cmd=SUB_NE, rs2=x0</code></td></tr>
+</table>
+
+<h3>象限 2 (RVC2): 栈指针及高级操作</h3>
+
+<table>
+<tr><th>funct3</th><th>指令</th><th>key 信号</th></tr>
+<tr><td>000</td><td>C.SLLI</td><td><code>ialu_op=REG_IMM, ialu_cmd=SLL</code></td></tr>
+<tr><td>010</td><td>C.LWSP</td><td><code>sum2_op=REG_IMM, lsu_cmd=LW, rs1=SP</code></td></tr>
+<tr><td>100</td><td>C.MV / C.JR / C.JALR / C.ADD / C.EBREAK</td><td>按 <code>instr[12]</code> + <code>instr[6:2]</code> 多路分支</td></tr>
+<tr><td>110</td><td>C.SWSP</td><td><code>sum2_op=REG_IMM, lsu_cmd=SW, rs1=SP</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="c-tricks">第八课: C.MV 和 C.BEQZ 的实现技巧</h2>
+
+<h3>C.MV = ADD rd, x0, rs2</h3>
+
+<div class="box">
+  <div class="box-title">不需要专门的 MOVE 命令</div>
+  C.MV 直接复用 ALU 的 ADD 通路: <code>ialu_op=REG_REG, ialu_cmd=ADD, rs1_addr=x0, rd=rd, rs2=rs2</code>。x0 永远为 0,所以 ADD(x0, rs2) = rs2,完美实现寄存器复制。这是 RISC-V 设计哲学 '复用而非新增' 的体现。
+</div>
+
+<h3>C.BEQZ = SUB_EQ(rs1, x0)</h3>
+
+<pre>
+<span class="cm">// C.BEQZ/C.BNEZ 只有一个寄存器源操作数 (rs1')</span>
+<span class="cm">// 但 IDU 始终设置 use_rs2=1, rs2_addr=x0</span>
+<span class="cm">// 因为 IALU 需要两个操作数做减法比较</span>
+<span class="cm">// rs1 - 0 == 0  ⇔  rs1 == 0</span></pre>
+
+<div class="box tip">
+  <div class="box-title">C.BEQZ → ialu_cmd=SUB_EQ</div>
+  BEQZ 在硬件上是 <code>SUB_EQ(rs1, x0)</code>: rs1 减 0,判断零标志。如果 rs1==0 则 z=1, SUB_EQ 为真,分支采用。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="illegal">第九课: 非法指令三级检测</h2>
+
+<pre>
+<span class="cm">// 三级非法标志并行检测,最后一并汇总</span>
+<span class="kw">if</span> (rvi_illegal | rvc_illegal | rve_illegal) <span class="kw">begin</span>
+    <span class="cm">// 所有控制信号清空</span>
+    idu2exu_cmd_o.exc_req  = <span class="num">1'b1</span>;
+    idu2exu_cmd_o.exc_code = SCR1_EXC_CODE_ILLEGAL_INSTR;
+    <span class="cm">// 若 MTVAL_EN: idu2exu_cmd_o.imm = instr; // 整条指令写入 mtval</span>
+<span class="kw">end</span></pre>
+
+<table>
+<tr><th>级别</th><th>触发条件</th><th>示例</th></tr>
+<tr><td><code>rvi_illegal</code></td><td>未定义 opcode/funct3/funct7, SYSTEM 中 {rs1,rd}≠0 且非 CSR</td><td>FENCE 中非零字段, MUL 但无 M 扩展</td></tr>
+<tr><td><code>rvc_illegal</code></td><td>RVC 象限中 funct3 的保留编码</td><td>C.ADDI4SPN 中 <code>instr[12:5]=0</code></td></tr>
+<tr><td><code>rve_illegal</code></td><td>RVE 嵌入式扩展限制 (x0-x15),高地址寄存器位出现 1</td><td><code>reg[19]==1</code> 但 RVE 使能</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">未定义 RVC 扩展时</div>
+  所有 <code>instr[1:0]≠11</code> 的指令直接置 <code>rvi_illegal</code>,不进入 RVC 象限译码分支。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="splits">第十课: IDU 透传 与 三条算术通路</h2>
+
+<h3>IDU 的信号透传</h3>
+
+<pre>
+<span class="cm">// IDU 是无状态组合逻辑,有效和反压信号直接穿通</span>
+idu2ifu_rdy_o = exu2idu_rdy_i;      <span class="cm">// IDU 就绪 = EXU 就绪</span>
+idu2exu_req_o = ifu2idu_vd_i;       <span class="cm">// 指令有效 = IFU 数据有效</span></pre>
+
+<h3>IDU 译码出的三条并行算术通路</h3>
+
+<table>
+<tr><th>通路</th><th>控制信号</th><th>操作数</th><th>产生的值</th></tr>
+<tr><td><strong>IALU 主通路</strong></td><td><code>ialu_op + ialu_cmd</code></td><td>rs1, rs2/imm</td><td>算术逻辑结果 → 可回写 rd</td></tr>
+<tr><td><strong>SUM2 加法器</strong></td><td><code>sum2_op</code></td><td>PC/rs1, imm</td><td>跳转目标 / 访存地址</td></tr>
+<tr><td><strong>LSU</strong></td><td><code>lsu_cmd</code></td><td>SUM2 结果作地址</td><td>DMEM 读写</td></tr>
+</table>
+
+<h3>rd_wb_sel: 写回数据六选一</h3>
+
+<table>
+<tr><th>rd_wb_sel 值</th><th>来源通路</th><th>代表指令</th></tr>
+<tr><td><code>SCR1_RD_WB_IALU</code></td><td>IALU 主 ALU 结果</td><td>ADD/SUB/SLL/...</td></tr>
+<tr><td><code>SCR1_RD_WB_SUM2</code></td><td>SUM2 地址加法器</td><td>AUIPC</td></tr>
+<tr><td><code>SCR1_RD_WB_IMM</code></td><td>立即数 (直通)</td><td>LUI</td></tr>
+<tr><td><code>SCR1_RD_WB_INC_PC</code></td><td>PC+4 / PC+2</td><td>JAL/JALR</td></tr>
+<tr><td><code>SCR1_RD_WB_LSU</code></td><td>LSU 加载数据</td><td>LB/LH/LW/LBU/LHU</td></tr>
+<tr><td><code>SCR1_RD_WB_CSR</code></td><td>CSR 读回数据</td><td>CSRRW/CSRRS/CSRRC</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="exu-arb">第十一课: EXU 调度仲裁 — 就绪信号与队列屏障</h2>
+
+<h3>就绪 (Ready) 信号合成 (scr1_pipe_exu.sv:496-498)</h3>
+
+<pre>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        lsu_req :  <span class="cm">// 访存指令</span>
+            exu_rdy = lsu_rdy | lsu_exc_req;   <span class="cm">// LSU 就绪 或 访存异常</span>
+        csr2exu_rw_exc_req_i : <span class="cm">// CSR 异常</span>
+            exu_rdy = <span class="num">1'b1</span>;                     <span class="cm">// 异常直接通过</span>
+        ialu_vd :
+            exu_rdy = ialu_rdy;               <span class="cm">// IALU 就绪</span>
+        <span class="kw">default</span> :
+            exu_rdy = <span class="num">1'b1</span>;                     <span class="cm">// 其他 (无 ALU 操作) 直接通过</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>队列屏障 (Queue Barrier)</h3>
+
+<pre>
+<span class="cm">// 两种场景触发队列屏障</span>
+exu_queue_barrier = wfi_halted_ff                          <span class="cm">// WFI 暂停</span>
+                    | (hdu2exu_dbg_halted_i &amp; ~exu_queue_vd);  <span class="cm">// 调试暂停</span>
+
+<span class="cm">// 屏障时: IDU 无法发新指令</span>
+exu2idu_rdy_o = exu_rdy &amp; ~exu_queue_barrier;
+</pre>
+
+<div class="box">
+  <div class="box-title">屏障 vs 反压的区别</div>
+  普通反压 (exu_rdy=0) 只阻塞新指令传递,已有的指令仍在队列中。屏障 (exu_queue_barrier=1) 连 IDU 内部都停止了——WFI 和调试暂停需要"冻结整个流水线"。
+</div>
+
+<h3>EXU → IDU 接口完整信号表</h3>
+
+<table>
+<tr><th>信号</th><th>方向</th><th>含义</th><th>公式</th></tr>
+<tr><td><code>idu2exu_req_o</code></td><td>→ EXU</td><td>指令有效</td><td>= <code>ifu2idu_vd_i</code> (透传)</td></tr>
+<tr><td><code>exu2idu_rdy_o</code></td><td>← EXU</td><td>EXU 可以接收</td><td>= <code>exu_rdy &amp; ~exu_queue_barrier</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: 逐字段译码</legend>
+  <p>给定指令 <code>0x002081b3</code> (<code>add x3, x1, x2</code>),手工推导出完整的 18 字段 <code>type_scr1_exu_cmd_s</code> 值。列出每个字段的值及其来源 bit 域。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: 立即数拼接验证</legend>
+  <p>给定 B-type 指令 <code>0x00208463</code> (<code>beq x1, x2, 8</code>),手工拼接 B-type 立即数,验证结果是 8。再用 J-type 指令 <code>0x008000ef</code> (<code>jal ra, 8</code>) 验证 J-type 拼接。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: C.MV 的译码</legend>
+  <p>C.MV 指令编码为 <code>0x8526</code>。写出第一级分类结果 (RVI/RVC?),第二级象限判定,最后译出的关键信号。C.MV 和 C.ADD 有什么区别? (C.ADD: <code>0x9526</code>)</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: 非法指令检测</legend>
+  <p>指令 <code>0x00000000</code> (全零) 会被 IDU 译码成什么? 走哪个检测路径? 最终产生什么异常?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: 三条通路并行</legend>
+  <p>对指令 <code>lw x2, 4(x1)</code>,写出三条通路各自的工作内容。哪些通路有实际输出? 哪些闲空? 最终 <code>rd_wb_sel</code> 选哪个?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: 就绪信号分析</legend>
+  <p>在什么条件下 <code>exu_rdy = 0</code> 但 <code>exu2idu_rdy_o = 0</code> 不是因为 <code>exu_queue_barrier</code>? 反之,在什么条件下 <code>exu_rdy = 1</code> 但 <code>exu2idu_rdy_o = 0</code>?</p>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>IDU 为什么不需要时钟? 它是如何实现纯组合逻辑译码的?</li>
+    <li>RISC-V 指令的 <code>instr[1:0]</code> 如何区分 RVI 和 RVC 三个象限?</li>
+    <li><code>type_scr1_exu_cmd_s</code> 的 18 个字段各控制 EXU 的什么行为?</li>
+    <li>B-type 立即数为什么需要 &lt;&lt;1? 拼接公式中 <code>1'b0</code> 的作用?</li>
+    <li>RVC 的 funct3 为什么从 bit[15:13] 提取而不是 bit[14:12]?</li>
+    <li>C.MV 和 C.BEQZ 如何巧妙复用现有的 ALU 通路?</li>
+    <li>三种非法指令检测路径的触发条件和检测顺序是什么?</li>
+    <li>三条算术通路 (IALU/SUM2/LSU) 各自的操作数和控制信号是什么?</li>
+    <li>EXU 就绪信号如何在不同类型指令 (访存/ALU/CSR) 下合成?</li>
+    <li>EXU 队列屏障和普通反压的本质区别是什么?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 10 周进入 IALU 整型 ALU + LSU 访存单元 + MPRF 多端口寄存器堆。IALU: 主 ALU 的 6 个标志位导出 + 地址加法器 + 乘除法多周期状态机。LSU: 对齐检测、符号/零扩展、DMEM 握手协议。MPRF: W 个写端口 + R 个读端口 + MPRF/CSR 混合总线。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | IDU 译码器 + EXU 执行仲裁 | 第 9 周</p>
+</body>
+</html>

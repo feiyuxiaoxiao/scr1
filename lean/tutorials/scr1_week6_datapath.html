@@ -5,23 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>数据通路追踪 -- 一条指令的完整旅程 | SCR1 第 6 周</title>
 <style>
-  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; --green-bg: #d4edda; --warn-bg: #fff3cd; --red-bg: #f8d7da; --purple: #9333ea; --purple-light: #f3e8ff; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.7; }
   h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
   h2 { color: #1a365d; margin-top: 40px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #1a365d; margin-top: 28px; }
   code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #d63384; }
   pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.85em; line-height: 1.5; }
-  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .sig { color: #dcdcaa; }
   table { width: 100%; border-collapse: collapse; margin: 16px 0; }
   th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
   th { background: var(--blue-light); font-weight: 600; }
   tr:hover td { background: #f8f9fa; }
   .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
   .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
-  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
-  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
-  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .warn { background: var(--warn-bg); border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: var(--green-bg); border-color: #28a745; } .tip .box-title { color: #155724; }
+  .danger { background: var(--red-bg); border-color: #dc3545; } .danger .box-title { color: #721c24; }
+  .purp { background: var(--purple-light); border-color: var(--purple); } .purp .box-title { color: var(--purple); }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
   .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
   .nav a:hover { color: #1a365d; }
   .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
@@ -29,8 +32,15 @@
   .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
   .trace-table td:nth-child(1) { font-weight: 700; font-family: monospace; background: var(--code-bg); white-space: nowrap; }
   .trace-table td:nth-child(2) { font-family: monospace; font-size: 0.9em; }
+  .sig-table td:nth-child(1) { font-family: monospace; font-weight: 700; background: var(--code-bg); white-space: nowrap; }
+  .sig-table td:nth-child(2) { font-family: monospace; font-size: 0.85em; }
   fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
   legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .cycle-diagram { font-family: 'Fira Code', monospace; font-size: 0.82em; line-height: 1.6; white-space: pre; background: #f8f9fa; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; overflow-x: auto; margin: 10px 0; }
+  .highlight-alu { background: #cce5ff; }
+  .highlight-mem { background: #fff3cd; }
+  .highlight-wb  { background: #d4edda; }
+  .highlight-flush { background: #f8d7da; }
 </style>
 </head>
 <body>
@@ -40,16 +50,20 @@
 <nav class="nav">
   <div class="nav-title">课程导航</div>
   <a href="#why">本周目标</a>
-  <a href="#add-path">ADD 指令追踪</a>
-  <a href="#load-path">LOAD 指令追踪</a>
-  <a href="#store-path">STORE 指令追踪</a>
-  <a href="#branch-path">BEQ 分支追踪</a>
-  <a href="#jal-path">JAL 跳转追踪</a>
-  <a href="#csr-path">CSR 读写追踪</a>
+  <a href="#pipeline-overview">流水线架构回顾</a>
+  <a href="#add-path">ADD 指令追踪 (含 RTL)</a>
+  <a href="#load-path">LOAD 指令追踪 (含 RTL)</a>
+  <a href="#store-path">STORE 指令追踪 (含 RTL)</a>
+  <a href="#branch-path">BEQ 分支追踪 (含 RTL)</a>
+  <a href="#jal-path">JAL 跳转追踪 (含 RTL)</a>
+  <a href="#csr-path">CSR 读写追踪 (含 RTL)</a>
   <a href="#timing">时序对比表</a>
+  <a href="#hazard-section">数据冒险与转发</a>
+  <a href="#mprf-timing">MPRF 读写时序</a>
   <a href="#backpressure">反压机制详解</a>
   <a href="#flush">流水线清空</a>
-  <a href="#exercise">动手练习</a>
+  <a href="#scoreboard">Scoreboard 分析</a>
+  <a href="#exercise">动手练习（扩展）</a>
   <a href="#summary">总结</a>
 </nav>
 
@@ -57,273 +71,876 @@
 
 <div class="box">
   <div class="box-title">学完本周你应该能</div>
-  闭上眼睛画出 ADD / LOAD / STORE / BEQ / JAL / CSR 六类指令在 SCR1 4 级流水线中的 <strong>逐周期数据通路</strong>，标注每一步经过的模块、关键信号名和数值变化。
+  闭上眼睛画出 ADD / LOAD / STORE / BEQ / JAL / CSR 六类指令在 SCR1 4 级流水线中的 <strong>逐周期数据通路</strong>，写出每条指令的 <strong>RTL 表示</strong>，标注每一步经过的模块、关键信号名和数值变化，并解释数据冒险为何在 SCR1 中不存在。
 </div>
 
 <div class="warn box">
   <div class="box-title">假定配置</div>
-  本周所有时序图基于 <strong>MAX 配置（4 级流水线）</strong>，即 IFU | IDU | EXU（含 LSU+MPRF+CSR），TCM 取指和数据访问均为 1 周期响应。
+  本周所有时序图基于 <strong>MAX 配置（4 级流水线）</strong>，即 IFU | IDU | EXU（含 LSU+MPRF+CSR），TCM 取指和数据访问均为 1 周期响应。MPRF 采用 <strong>分布式逻辑实现</strong>（异步读 + 同步写），即 <code>SCR1_MPRF_RAM</code> 宏未定义。
 </div>
+
+<!-- ============================================================ -->
+<h2 id="pipeline-overview">流水线架构回顾</h2>
+
+<h3>4 级流水线核心信号路径</h3>
+
+<p>SCR1 的 4 级流水线并非 5 级经典流水线的删减版，而是将 EX/MEM/WB 三阶段合并到 EXU 内部，形成独特的 <strong>IFU-IDU-EXU</strong> 三级 + IFU 内部一级的结构。</p>
+
+<div class="cycle-diagram">
+  clk      ____/‾‾‾‾\____/‾‾‾‾\____/‾‾‾‾\____/‾‾‾‾\____/‾‾‾‾\____
+                  T0        T1        T2        T3        T4        T5
+
+  IFU      [IF: PC→IMEM]  [收指令→队列]  [IF: PC+4→IMEM]  [IF: PC+8]   ...
+           ifu2idu_vd=0    ifu2idu_vd=1    ifu2idu_vd=0      ifu2idu_vd=1
+
+  IDU         空闲          空闲         [译码→idu2exu_req]  [下一指令]
+                                        idu2exu_req=1       idu2exu_req=1
+
+  EXU         空闲          空闲          空闲          [EX: 执行+写回]
+                                                        exu_queue_vd=1
+                                                        exu2mprf_w_req=1
+                                                        exu2pipe_instret=1
+</div>
+
+<h3>关键模块信号速查</h3>
+
+<table class="sig-table">
+<tr><th>信号名</th><th>方向</th><th>说明</th></tr>
+<tr><td><code>exu_queue_vd</code></td><td>EXU 内部</td><td>EXU 队列有效，指令在 EXU 中执行</td></tr>
+<tr><td><code>exu_rdy</code></td><td>EXU 内部</td><td>EXU 可以接受新指令（=1 时 IDU 可发下一指令）</td></tr>
+<tr><td><code>exu2idu_rdy_o</code></td><td>EXU→IDU</td><td>EXU 就绪 + 无障碍（队列 barrier 清零时有效）</td></tr>
+<tr><td><code>idu2ifu_rdy_o</code></td><td>IDU→IFU</td><td>直通 <code>exu2idu_rdy_i</code>，IDU 无内部阻塞</td></tr>
+<tr><td><code>exu2mprf_w_req_o</code></td><td>EXU→MPRF</td><td>MPRF 写请求（写回寄存器）</td></tr>
+<tr><td><code>exu2mprf_rd_addr_o</code></td><td>EXU→MPRF</td><td>写回目标寄存器地址</td></tr>
+<tr><td><code>exu2mprf_rd_data_o</code></td><td>EXU→MPRF</td><td>写回数据（经 rd_wb_sel 多路器选择）</td></tr>
+<tr><td><code>exu2mprf_rs1_addr_o</code></td><td>EXU→MPRF</td><td>rs1 读地址</td></tr>
+<tr><td><code>mprf2exu_rs1_data_i</code></td><td>MPRF→EXU</td><td>rs1 读数据（分布式逻辑模式：异步读）</td></tr>
+<tr><td><code>exu2ifu_pc_new_req_o</code></td><td>EXU→IFU</td><td>请求 IFU 跳转到新 PC</td></tr>
+<tr><td><code>exu2ifu_pc_new_o</code></td><td>EXU→IFU</td><td>新 PC 值</td></tr>
+<tr><td><code>exu2pipe_instret_o</code></td><td>EXU→Pipe</td><td>当前指令退休（= exu_queue_vd & exu_rdy）</td></tr>
+<tr><td><code>lsu_fsm_curr</code></td><td>LSU 内部</td><td>LSU 状态机：IDLE / BUSY</td></tr>
+<tr><td><code>lsu_rdy</code></td><td>LSU→EXU</td><td>LSU 收到 DMEM 响应（= dmem_resp_received）</td></tr>
+<tr><td><code>csr_access_init</code></td><td>EXU 内部</td><td>CSR 访问初始化状态（= 1 时允许 CSR 写）</td></tr>
+<tr><td><code>csr2exu_mstatus_mie_up_i</code></td><td>CSR→EXU</td><td>MSTATUS 或 MIE 正在本周期更新</td></tr>
+<tr><td><code>exu_queue.rd_wb_sel</code></td><td>EXU 内部</td><td>写回数据源选择：IALU/SUM2/IMM/INC_PC/LSU/CSR/NONE</td></tr>
+<tr><td><code>jb_taken</code></td><td>EXU 内部</td><td>跳转/分支采用（= jump_req | branch_taken）</td></tr>
+</table>
 
 <!-- ============================================================ -->
 <h2 id="add-path">第二课: ADD x5, x1, x2 -- 算术指令追踪</h2>
 
-<h3>指令编码与译码</h3>
+<h3>RTL 表示</h3>
 
 <pre>
-<span class="cm">// ADD x5, x1, x2</span>
-<span class="cm">// 编码: 0000000_00010_00001_000_00101_0110011</span>
-<span class="cm">// funct7=0000000  rs2=x2  rs1=x1  funct3=000  rd=x5  opcode=OP</span></pre>
+<span class="cm">// ADD x5, x1, x2 的 RTL 表示</span>
+<span class="cm">// 设 x1 = 5, x2 = 3</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rs1_addr=&lt;x1&gt;, rs2_addr=&lt;x2&gt;, rd_addr=&lt;x5&gt;,
+    ialu_op=REG_REG, ialu_cmd=ADD, rd_wb_sel=IALU,
+    jump_req=0, branch_req=0, lsu_cmd=NONE, csr_cmd=NONE
+};
+<span class="kw">if</span> (exu_rdy) begin                              <span class="cm">// T2→T3 posedge</span>
+    exu_queue &lt;= idu2exu_cmd_o;                   <span class="cm">// 指令入 EXU 队列</span>
+    exu_queue_vd &lt;= 1;
+<span class="kw">end</span>
+
+T3 (EXU):  <span class="cm">// exu_queue_vd = 1, 同周期完成读→算→写</span>
+    exu2mprf_rs1_addr_o = &lt;x1&gt;;                  <span class="cm">// 发起 rs1 读取</span>
+    exu2mprf_rs2_addr_o = &lt;x2&gt;;                  <span class="cm">// 发起 rs2 读取</span>
+    rs1_val = mprf2exu_rs1_data_i;                <span class="cm">// 异步读取 = 5</span>
+    rs2_val = mprf2exu_rs2_data_i;                <span class="cm">// 异步读取 = 3</span>
+    ialu_main_op1 = rs1_val;                      <span class="cm">// = 5</span>
+    ialu_main_op2 = rs2_val;                      <span class="cm">// = 3</span>
+    ialu_main_res = 5 + 3;                        <span class="cm">// IALU 组合逻辑 = 8</span>
+    exu2mprf_w_req_o   = 1;                       <span class="cm">// rd_wb_sel=IALU, 非 NONE</span>
+    exu2mprf_rd_addr_o = &lt;x5&gt;;
+    exu2mprf_rd_data_o = ialu_main_res;           <span class="cm">// = 8 (default case)</span>
+    exu2pipe_instret_o = 1;                       <span class="cm">// exu_queue_vd & exu_rdy</span>
+    <span class="cm">// T3→T4 posedge: MPRF[x5] &lt;= 8</span>
+</pre>
+
+<h3>逐周期详细信号追踪</h3>
 
 <table class="trace-table">
-<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU</th><th>MPRF 写回</th></tr>
+<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU</th><th>MPRF</th></tr>
 <tr>
   <td>T0</td>
-  <td>PC=0x200<br>发 IMEM 请求</td>
-  <td>空闲</td>
-  <td>空闲</td>
-  <td>—</td>
+  <td>PC=0x200<br><code>ifu2idu_vd=0</code><br>发 IMEM 请求</td>
+  <td><code>idu2ifu_rdy=1</code><br><code>idu2exu_req=0</code></td>
+  <td><code>exu_queue_vd=0</code><br><code>exu_rdy=1</code></td>
+  <td><code>exu2mprf_w_req=0</code></td>
 </tr>
 <tr>
   <td>T1</td>
-  <td>收指令 0x002082B3<br>存入队列</td>
+  <td>收指令 0x002082B3<br><code>ifu2idu_vd=1</code><br>指令入 IFU 队列</td>
+  <td><code>idu2ifu_rdy=1</code><br><code>idu2exu_req=0</code></td>
+  <td><code>exu_queue_vd=0</code></td>
   <td>空闲</td>
-  <td>空闲</td>
-  <td>—</td>
 </tr>
 <tr>
   <td>T2</td>
-  <td>PC=0x204<br>发下一请求</td>
-  <td>收到指令字<br><strong>译码</strong>：funct7=0, rs2=x2, rs1=x1, funct3=0, rd=x5, opcode=OP</td>
+  <td>PC=0x204<br>发下一请求<br><code>ifu2idu_vd=1</code></td>
+  <td><strong>译码</strong>：
+  <br><code>opcode=OP, funct3=0, funct7=0</code>
+  <br><code>ialu_op=REG_REG, ialu_cmd=ADD</code>
+  <br><code>rs1_addr=1, rs2_addr=2, rd_addr=5</code>
+  <br><code>rd_wb_sel=IALU</code>
+  <br><code>idu2exu_req=1, idu2exu_use_rs1=1, idu2exu_use_rs2=1</code>
+  <br><code>idu2exu_use_rd=1</code></td>
+  <td><code>exu_rdy=1</code> → <code>exu_queue_en=1</code>
+  <br>T2→T3 posedge:
+  <br><code>exu_queue</code> 锁存 IDU 命令
+  <br><code>exu_queue_vd_ff←1</code></td>
   <td>空闲</td>
-  <td>—</td>
 </tr>
 <tr style="background:#e8f0fe;">
   <td>T3</td>
   <td>PC=0x208</td>
   <td>下一指令</td>
-  <td><strong>执行</strong>：读 x1=5, x2=3<br>IALU 5+3=8<br>写 x5</td>
-  <td><strong>x5=8</strong></td>
+  <td><strong>执行+写回（同周期）</strong>：
+  <br><code>exu_queue_vd=1</code>
+  <br><code>mprf_rs1_req=1</code> → <code>exu2mprf_rs1_addr=1</code>
+  <br><code>mprf2exu_rs1_data=5</code>（异步读）
+  <br><code>mprf_rs2_req=1</code> → <code>exu2mprf_rs2_addr=2</code>
+  <br><code>mprf2exu_rs2_data=3</code>（异步读）
+  <br><code>ialu_main_op1=5, ialu_main_op2=3</code>
+  <br><code>ialu_main_res=8</code>
+  <br><code>exu2mprf_w_req=1</code>
+  <br><code>exu2mprf_rd_addr=5</code>
+  <br><code>exu2mprf_rd_data=8</code>
+  <br><code>exu2pipe_instret=1</code>
+  <br><code>pc_curr 更新为 0x204</code></td>
+  <td>T3→T4 posedge:
+  <br><code>mprf_int[5] ← 8</code></td>
 </tr>
 </table>
 
 <div class="box tip">
-  <div class="box-title">ADD 是最快指令</div>
-  ADD 不访存、不跳转，纯寄存器操作。T3 周期同拍完成"读寄存器&rarr; ALU 运算&rarr;写回"——这正是 SCR1 无数据冲突的根本原因：操作数获取（阶段 4）和写回（阶段 8）在同一个 EXU 周期完成。
+  <div class="box-title">ADD 同周期读-算-写的奥秘</div>
+  ADD 在 T3 周期同时完成三个操作：<strong>异步读 MPRF → 组合逻辑 IALU 运算 → 同步写 MPRF</strong>。读是异步组合逻辑，写是 posedge 触发。读操作在 T3 电平期间完成（看到的是 T2 posedge 写入的旧值），ALU 运算也是组合逻辑，写请求在 T3 周期拉高，但实际写入发生在 <strong>T3→T4 的 posedge</strong>。
+
+  对于 <code>x0</code> 寄存器的处理：<code>mprf_rs1_req</code> 信号要求 <code>|exu2mprf_rs1_addr_i</code> 非零才拉高。如果 rs1 是 x0，读地址为 0，<code>rs1_addr_vd=0</code>，MPRF 返回 0。同理，<code>exu2mprf_w_req_o</code> 要求 <code>|exu2mprf_rd_addr_i</code> 非零才写——写入 x0 始终被忽略。
 </div>
-
-<h3>跟踪中断时 MEPC 的优先级生效</h3>
-
-<p>如果 T3 周期同时有一个外部中断到来，<code>csr2exu_irq_o</code> 会拉高，EXU 内部走异常处理路径，此时 ADD 不会被提交，而是进入 trap。</p>
 
 <!-- ============================================================ -->
 <h2 id="load-path">第三课: LW x6, 4(x1) -- LOAD 指令追踪</h2>
 
-<p>假设 x1 = 0x1000，目标：从地址 0x1004 读 32 位数据到 x6。</p>
+<p>假设 x1 = 0x1000，目的：从地址 0x1004 读 32 位数据到 x6，DMEM 返回 0xDEADBEEF。</p>
+
+<h3>RTL 表示</h3>
+
+<pre>
+<span class="cm">// LW x6, 4(x1) 的 RTL 表示</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rs1_addr=&lt;x1&gt;, rd_addr=&lt;x6&gt;,
+    sum2_op=REG_IMM, rd_wb_sel=LSU, lsu_cmd=LW,
+    ialu_cmd=NONE, jump_req=0, branch_req=0
+};
+<span class="kw">if</span> (exu_rdy) begin
+    exu_queue &lt;= idu2exu_cmd_o;
+    exu_queue_vd &lt;= 1;
+<span class="kw">end</span>
+
+T3 (EXU): <span class="cm">// exu_queue_vd = 1</span>
+    <span class="cm">// 地址加法器计算 DMEM 地址</span>
+    ialu_addr_op1 = mprf2exu_rs1_data_i;           <span class="cm">// = 0x1000 (x1)</span>
+    ialu_addr_op2 = exu_queue.imm;                 <span class="cm">// = 4</span>
+    ialu_addr_res = 0x1000 + 4;                    <span class="cm">// = 0x1004</span>
+    <span class="cm">// 发起 LSU 请求</span>
+    lsu_req = (lsu_cmd != NONE) & exu_queue_vd;     <span class="cm">// = 1</span>
+    exu2lsu_req_i = 1;
+    exu2lsu_addr_i = ialu_addr_res;                <span class="cm">// = 0x1004</span>
+    exu2lsu_cmd_i = LW;
+    lsu_fsm_curr → BUSY;                           <span class="cm">// T3→T4 posedge</span>
+    exu_rdy = lsu_rdy | lsu_exc_req;               <span class="cm">// = 0 (LSU 等待)</span>
+    exu2pipe_instret = 0;                          <span class="cm">// exu_rdy=0</span>
+
+T4 (EXU stall): <span class="cm">// exu_queue_vd 保持, exu_rdy = 0</span>
+    lsu_fsm_curr = BUSY;
+    dmem_resp_received = 0;                        <span class="cm">// DMEM 响应未到</span>
+    <span class="cm">// IDU 不发送新指令: idu2exu_req 被阻塞</span>
+
+T5 (EXU): <span class="cm">// exu_queue_vd = 1, DMEM 响应到达</span>
+    lsu_fsm_curr = BUSY;
+    dmem2lsu_resp_i = SCR1_MEM_RESP_RDY_OK;
+    dmem_resp_received = 1;
+    lsu_rdy = 1;
+    lsu_l_data = dmem2lsu_rdata_i;                 <span class="cm">// = 0xDEADBEEF</span>
+    exu_rdy = lsu_rdy | lsu_exc_req;               <span class="cm">// = 1</span>
+    exu2mprf_w_req_o = 1;                          <span class="cm">// rd_wb_sel=LSU</span>
+    exu2mprf_rd_addr_o = &lt;x6&gt;;
+    exu2mprf_rd_data_o = lsu_l_data;               <span class="cm">// = 0xDEADBEEF</span>
+    exu2pipe_instret_o = 1;
+    lsu_fsm_curr → IDLE;                           <span class="cm">// T5→T6 posedge</span>
+</pre>
+
+<h3>逐周期详细信号追踪</h3>
 
 <table class="trace-table">
-<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU(LSU)</th><th>MPRF</th></tr>
+<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU (LSU)</th><th>MPRF</th></tr>
+<tr><td>T0</td><td>取指 0x200</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>T1</td><td>收指令</td><td>—</td><td>—</td><td>—</td></tr>
 <tr>
-  <td>T0</td><td>取指 0x200</td><td>—</td><td>—</td><td>—</td>
-</tr>
-<tr>
-  <td>T1</td><td>收指令</td><td>—</td><td>—</td><td>—</td>
-</tr>
-<tr>
-  <td>T2</td><td>取指 0x204</td><td><strong>译码</strong>：opcode=LOAD, funct3=010(LW), rs1=x1, rd=x6, imm=4</td><td>—</td><td>—</td>
+  <td>T2</td>
+  <td>取指 0x204</td>
+  <td><strong>译码</strong>：
+  <br><code>opcode=LOAD, funct3=010</code>
+  <br><code>rs1=1, rd=6, imm=4</code>
+  <br><code>lsu_cmd=LW, rd_wb_sel=LSU</code>
+  <br><code>sum2_op=REG_IMM</code>
+  <br><code>idu2exu_req=1</code></td>
+  <td><code>exu_rdy=1</code> → 队列锁存
+  <br>T2→T3: <code>exu_queue_vd←1</code></td>
+  <td>—</td>
 </tr>
 <tr style="background:#e8f0fe;">
-  <td>T3</td><td>取指 0x208</td><td>下一指令</td><td><strong>发 DMEM 请求</strong>：<br>addr = x1+4 = 0x1004<br>cmd = LW</td><td>—</td>
+  <td>T3</td>
+  <td>取指 0x208</td>
+  <td>等待（下一指令）
+  <br><code>idu2ifu_rdy=0</code>（EXU 忙）</td>
+  <td><strong>发 DMEM 请求</strong>：
+  <br><code>exu_queue_vd=1</code>
+  <br><code>ialu_addr_res=0x1004</code>
+  <br><code>lsu_req=1</code>
+  <br><code>lsu2dmem_req=1, addr=0x1004</code>
+  <br><code>lsu_fsm: IDLE→BUSY</code>
+  <br><code>exu_rdy=0</code>（lsu_rdy=0）
+  <br><code>exu2pipe_instret=0</code>
+  <br><code>exu2idu_rdy=0</code>
+  <br><strong>反压已传播</strong></td>
+  <td>—</td>
 </tr>
 <tr style="background:#fff3cd;">
-  <td>T4</td><td>—</td><td>—</td><td><strong>等 DMEM 响应</strong><br>LSU FSM = BUSY</td><td>—</td>
+  <td>T4</td>
+  <td>停止取指
+  <br><code>idu2ifu_rdy=0</code></td>
+  <td>阻塞
+  <br><code>idu2exu_req=0</code></td>
+  <td><strong>等 DMEM 响应</strong>
+  <br><code>lsu_fsm=BUSY</code>
+  <br><code>dmem_resp_received=0</code>
+  <br><code>lsu_rdy=0</code>
+  <br><code>exu_rdy=0</code>
+  <br><code>exu_queue_vd 保持 1</code>
+  <br>队列 barrier 未触发</td>
+  <td>—</td>
 </tr>
 <tr style="background:#d4edda;">
-  <td>T5</td><td>—</td><td>—</td><td>收 DMEM 数据<br>写 x6 = 0xDEADBEEF</td><td><strong>x6 = 0xDEADBEEF</strong></td>
+  <td>T5</td>
+  <td>恢复取指
+  <br><code>idu2ifu_rdy=1</code></td>
+  <td>下一指令发往 EXU</td>
+  <td><strong>DMEM 响应到达</strong>
+  <br><code>dmem2lsu_resp=RDY_OK</code>
+  <br><code>dmem2lsu_rdata=0xDEADBEEF</code>
+  <br><code>lsu_rdy=1</code> → <code>exu_rdy=1</code>
+  <br><code>lsu_l_data=0xDEADBEEF</code>
+  <br><code>exu2mprf_w_req=1</code>
+  <br><code>exu2mprf_rd_addr=6</code>
+  <br><code>exu2mprf_rd_data=0xDEADBEEF</code>
+  <br><code>exu2pipe_instret=1</code></td>
+  <td><strong>x6=0xDEADBEEF</strong>
+  <br>T5→T6 posedge 写入</td>
 </tr>
 </table>
 
 <div class="box warn">
-  <div class="box-title">LOAD 的 2 周期 DMEM 延迟</div>
-  LOAD 在 T3 发请求，T4 的 BUSY 状态等待（LSU 的 <code>exu_rdy = lsu_rdy</code>），T5 才拿到数据写回。这 2 个周期的 DMEM 响应时间是 TCM 的标准延迟（<code>dmem_req_vd</code> 到 <code>dmem_resp_received</code>）。
+  <div class="box-title">LOAD 的 EXU 反压传导</div>
+  T3 周期 LSU 忙后，<code>exu_rdy=lsu_rdy=0</code> → <code>exu2idu_rdy=0</code> → <code>idu2ifu_rdy=0</code>。反压在 <strong>同周期（T3）</strong> 即传导到 IFU，T4 周期 IFU 停止取指。T5 当 LSU 收到 DMEM 响应后，<code>lsu_rdy=1</code>，反压解除，流水线恢复。
 </div>
 
-<h3>WEIGHT 吞吐量是 2 而非 1</h3>
+<h3>连续 LOAD 的吞吐量分析</h3>
 
-<p>虽然延迟是 5 周期（4 级流水线 + TCM IFU 延迟 + DMEM 响应），但 <strong>吞吐量是 2</strong>：因为写回和取指并行，且没有结构冲突。连续两条 LOAD 可以在 T3 和 T5 分别发请求。</p>
+<div class="cycle-diagram">
+  指令1: LW x5, 0(x1)   | IF | ID | EX(LSU_req) | EX(BUSY) | EX(rdy+WB) |
+  指令2: LW x6, 4(x1)   |    | IF |   ID(stall)  |    ID    | EX(LSU_req)| EX(BUSY) | EX(rdy+WB)
+  clk:                    T0   T1       T2           T3          T4           T5          T6         T7
+
+  吞吐量 = 2 (两条 LOAD 完成需要 5+2=7 周期, 平均 3.5 周期/条, CPI=2 DMEM 响应周期)
+</div>
 
 <!-- ============================================================ -->
 <h2 id="store-path">第四课: SW x2, 8(x1) -- STORE 指令追踪</h2>
 
 <p>假设 x1 = 0x1000, x2 = 0xABCD，目标：把 0xABCD 写入地址 0x1008。</p>
 
+<h3>RTL 表示</h3>
+
+<pre>
+<span class="cm">// SW x2, 8(x1) 的 RTL 表示</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rs1_addr=&lt;x1&gt;, rs2_addr=&lt;x2&gt;,
+    sum2_op=REG_IMM, lsu_cmd=SW,
+    rd_wb_sel=NONE,    <span class="cm">// STORE 不写回 MPRF!</span>
+    ialu_cmd=NONE
+};
+
+T3 (EXU): <span class="cm">// 与 LOAD 相似但 rd_wb_sel=NONE</span>
+    <span class="cm">// 地址加法器</span>
+    ialu_addr_op1 = mprf2exu_rs1_data_i;           <span class="cm">// = 0x1000 (x1)</span>
+    ialu_addr_op2 = exu_queue.imm;                 <span class="cm">// = 8</span>
+    ialu_addr_res = 0x1000 + 8;                    <span class="cm">// = 0x1008</span>
+    <span class="cm">// DMEM 写数据 = rs2</span>
+    exu2lsu_sdata_i = mprf2exu_rs2_data_i;         <span class="cm">// = 0xABCD (x2)</span>
+    lsu_req = 1;
+    lsu_fsm → BUSY;
+    exu2mprf_w_req_o = 0;                          <span class="cm">// rd_wb_sel=NONE!</span>
+
+T4 (EXU stall): exu_rdy = 0;                       <span class="cm">// 等待 DMEM 写完成</span>
+
+T5 (EXU): <span class="cm">// DMEM 写完成</span>
+    dmem_resp_received = 1;
+    lsu_rdy = 1;
+    exu_rdy = 1;
+    exu2pipe_instret_o = 1;                        <span class="cm">// 指令退休</span>
+    <span class="cm">// 无 MPRF 写回</span>
+</pre>
+
 <table class="trace-table">
-<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU(LSU)</th></tr>
-<tr><td>T0</td><td>取指 0x200</td><td>—</td><td>—</td></tr>
-<tr><td>T1</td><td>收指令</td><td>—</td><td>—</td></tr>
-<tr><td>T2</td><td>取指 0x204</td><td><strong>译码</strong>：opcode=STORE, funct3=010(SW), rs1=x1, rs2=x2, imm=8(S-type)</td><td>—</td></tr>
+<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU (LSU)</th><th>关键差异</th></tr>
+<tr><td>T0</td><td>取指 0x200</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>T1</td><td>收指令</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>T2</td><td>取指 0x204</td><td><strong>译码</strong>：<code>opcode=STORE, funct3=010(SW)</code><br><code>rs1=1, rs2=2, imm=8(S-type, imm[11:5]=0, imm[4:0]=8)</code><br><code>lsu_cmd=SW, rd_wb_sel=NONE</code></td><td>—</td><td><code>rd_wb_sel=NONE</code></td></tr>
 <tr style="background:#e8f0fe;">
-  <td>T3</td><td>取指 0x208</td><td>下一指令</td><td><strong>发 DMEM 写请求</strong>：<br>addr = 0x1008, wdata = 0xABCD, cmd = SW</td></tr>
+  <td>T3</td><td>取指 0x208</td><td>下一指令</td>
+  <td><strong>发 DMEM 写请求</strong>：
+  <br><code>ialu_addr_res=0x1008</code>
+  <br><code>lsu2dmem_cmd=WR, lsu2dmem_wdata=0xABCD</code>
+  <br><code>lsu2dmem_req=1</code>
+  <br><code>lsu_fsm: IDLE→BUSY</code>
+  <br><code>exu_rdy=0</code>
+  <br><code>exu2mprf_w_req=0</code>
+  <br><strong>不写 MPRF</strong></td>
+  <td>只读 rs1(地址) rs2(数据)</td>
+</tr>
 <tr style="background:#fff3cd;">
-  <td>T4</td><td>—</td><td>—</td><td>等 DMEM 响应（BUSY）</td></tr>
+  <td>T4</td><td>停止取指</td><td>阻塞</td>
+  <td>等 DMEM 响应（BUSY）
+  <br><code>exu_queue_vd=1, exu_rdy=0</code></td>
+  <td>—</td>
+</tr>
 <tr style="background:#d4edda;">
-  <td>T5</td><td>—</td><td>—</td><td>DMEM 写完成<br><strong>指令退休</strong></td></tr>
+  <td>T5</td><td>恢复取指</td><td>下一指令</td>
+  <td>DMEM 写完成
+  <br><code>lsu_rdy=1, exu_rdy=1</code>
+  <br><code>exu2pipe_instret=1</code>
+  <br><strong>指令退休</strong></td>
+  <td>无 MPRF 写回</td>
+</tr>
 </table>
 
 <div class="box">
   <div class="box-title">STORE vs LOAD 的关键差异</div>
-  STORE 不需要写回 MPRF（它不修改寄存器）。T5 只确认 DMEM 写完成，然后 <code>exu2pipe_instret_o</code> 拉高标记指令退休。STORE 的 <code>exu2mprf_w_req</code> 始终为 0。
+  STORE 在 IDU 译码时即设 <code>rd_wb_sel = SCR1_RD_WB_NONE</code>，因此 EXU 中 <code>exu2mprf_w_req_o</code> 始终为 0。它只消费两个源操作数（rs1=基址, rs2=写入数据），不产生寄存器写入。指令在 T5 退休仅通过 <code>exu2pipe_instret_o</code> 标记，PC 推进到 T2 的取指 PC（0x200+4=0x204）。
 </div>
-
-<h3>STORE 地址未对齐异常</h3>
-
-<pre>
-<span class="cm">// LSU 中的对齐检查</span>
-<span class="kw">assign</span> lsu_addr_misaligned = (exu2lsu_cmd_i == SCR1_LSU_CMD_SW) &amp; exu2lsu_addr_i[<span class="num">1:0</span>] != <span class="num">2'b00</span>
-                            | (exu2lsu_cmd_i == SCR1_LSU_CMD_SH) &amp; exu2lsu_addr_i[<span class="num">0</span>]   != <span class="num">1'b0</span>;</pre>
-
-<p>STORE 的地址必须在字边界对齐（SW）或半字边界对齐（SH）。SB 无对齐要求。</p>
 
 <!-- ============================================================ -->
 <h2 id="branch-path">第五课: BEQ x1, x2, label -- 分支指令追踪</h2>
 
-<p>假设 x1 = x2 = 5, label 偏移 = -8 (即跳转到 PC-8)。BEQ 是条件分支，只有条件满足时才跳转。</p>
+<p>假设 x1 = x2 = 5, label 偏移 = -8 (即跳转到 PC-8)。条件满足，分支采用。</p>
+
+<h3>RTL 表示</h3>
+
+<pre>
+<span class="cm">// BEQ x1, x2, label 的 RTL 表示</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rs1_addr=&lt;x1&gt;, rs2_addr=&lt;x2&gt;,
+    ialu_op=REG_REG, ialu_cmd=SUB,   <span class="cm">// IALU 做减法比较</span>
+    sum2_op=PC_IMM,                   <span class="cm">// 地址加法器计算目标 PC</span>
+    branch_req=1, jump_req=0,
+    rd_wb_sel=NONE,                   <span class="cm">// BEQ 不写回</span>
+    imm=B-type 符号扩展               <span class="cm">// = -8</span>
+};
+
+T3 (EXU): <span class="cm">// exu_queue_vd = 1</span>
+    <span class="cm">// IALU 比较</span>
+    ialu_main_op1 = mprf2exu_rs1_data_i;           <span class="cm">// = 5 (x1)</span>
+    ialu_main_op2 = mprf2exu_rs2_data_i;           <span class="cm">// = 5 (x2)</span>
+    ialu_cmp = (5 == 5);                           <span class="cm">// = 1 (BEQ 条件满足)</span>
+    branch_taken = exu_queue.branch_req & ialu_cmp; <span class="cm">// = 1</span>
+    jb_taken = jump_req | branch_taken;            <span class="cm">// = 1</span>
+    <span class="cm">// 地址加法器计算目标 PC</span>
+    ialu_addr_op1 = pc_curr_ff;                    <span class="cm">// = 0x200</span>
+    ialu_addr_op2 = exu_queue.imm;                 <span class="cm">// = -8 (= 0xFFFFFFF8)</span>
+    ialu_addr_res = 0x200 + (-8);                  <span class="cm">// = 0x1F8</span>
+    jb_new_pc = ialu_addr_res & 0xFFFFFFFE;        <span class="cm">// 确保 LSB=0</span>
+    <span class="cm">// New PC 请求: default case → ialu_addr_res & JUMP_MASK</span>
+    exu2ifu_pc_new_o = jb_new_pc;                  <span class="cm">// = 0x1F8</span>
+    exu2ifu_pc_new_req_o = exu_queue_vd & jb_taken;<span class="cm">// = 1</span>
+    exu2pipe_instret_o = 1;                        <span class="cm">// 分支指令退休</span>
+
+T4: exu2ifu_pc_new_req_o = 1;
+    IFU: q_flush_req = 1;                          <span class="cm">// 清空 IFU 队列</span>
+    IFU: q_rptr = 0; q_wptr = 0;                  <span class="cm">// 读写指针归零</span>
+    PC 重定向到 0x1F8;
+    exu_queue_barrier = 0;                         <span class="cm">// 重新开始</span>
+</pre>
+
+<h3>逐周期详细信号追踪</h3>
 
 <table class="trace-table">
 <tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU</th></tr>
-<tr><td>T0</td><td>取指 0x200</td><td>—</td><td>—</td></tr>
-<tr><td>T1</td><td>收指令</td><td>—</td><td>—</td></tr>
-<tr><td>T2</td><td>取指 0x204</td><td><strong>译码</strong>：opcode=BRANCH, funct3=000(BEQ), rs1=x1, rs2=x2, imm=B-type</td><td>—</td></tr>
-<tr style="background:#e8f0fe;">
-  <td>T3</td><td><strong>取指 0x208（推测顺序执行）</strong></td><td>下一指令</td>
-  <td><strong>IALU 做减法比较</strong>：<br>x1-x2=0 &rarr; z=1<br><strong>跳转已采用</strong><br>new_pc = 0x200 + (-8) = 0x1F8<br>new_pc_req = 1</td>
+<tr><td>T0</td><td>取指 0x200<br><code>ifu2idu_vd=0</code></td><td>—</td><td>—</td></tr>
+<tr><td>T1</td><td>收指令<br><code>ifu2idu_vd=1</code></td><td>—</td><td>—</td></tr>
+<tr>
+  <td>T2</td>
+  <td>取指 0x204<br><code>ifu2idu_vd=1</code></td>
+  <td><strong>译码</strong>：<code>opcode=BRANCH, funct3=000(BEQ)</code>
+  <br><code>rs1=1, rs2=2, imm=-8</code>
+  <br><code>branch_req=1</code>
+  <br><code>idu2exu_req=1</code></td>
+  <td><code>exu_rdy=1</code> → 队列锁存
+  <br><code>T2→T3: exu_queue_vd←1</code></td>
 </tr>
-<tr style="background:#fff3cd;">
+<tr style="background:#e8f0fe;">
+  <td>T3</td>
+  <td><strong>乐观取指 0x208</strong>（IFU 不知道分支结果）
+  <br><code>ifu2idu_vd=1</code></td>
+  <td>下一指令（0x208）</td>
+  <td><strong>执行分支判断</strong>：
+  <br><code>mprf2exu_rs1_data=5, mprf2exu_rs2_data=5</code>
+  <br><code>ialu_cmp=1</code> → <code>branch_taken=1</code>
+  <br><code>jb_taken=1</code>
+  <br><code>ialu_addr_res=0x1F8</code>
+  <br><code>exu2ifu_pc_new=0x1F8</code>
+  <br><code>exu2ifu_pc_new_req=1</code>
+  <br><code>exu2pipe_instret=1</code></td>
+</tr>
+<tr style="background:#f8d7da;">
   <td>T4</td>
-  <td><strong>清空队列</strong><br>0x208 的指令被丢弃<br>重新取指 0x1F8</td>
-  <td><strong>0x208 被清空</strong></td><td>空闲</td>
+  <td><strong>清空 IFU 队列</strong>
+  <br><code>q_flush_req=1</code>
+  <br><code>q_rptr←0, q_wptr←0</code>
+  <br>0x208 的指令被丢弃
+  <br>重新取指 0x1F8
+  <br><code>imem_resp_discard_cnt</code> 初始化</td>
+  <td><strong>0x208 被清空</strong>
+  <br><code>idu2exu_req=0</code></td>
+  <td>空闲（队列 barrier 未触发）
+  <br><code>exu_queue_vd=0</code></td>
 </tr>
 <tr style="background:#d4edda;">
-  <td>T5</td><td>收 0x1F8 指令</td><td>—</td><td>—</td>
+  <td>T5</td>
+  <td>收 0x1F8 指令<br><code>ifu2idu_vd=1</code></td>
+  <td>译码 0x1F8 指令</td>
+  <td>—</td>
 </tr>
 </table>
 
 <div class="box warn">
-  <div class="box-title">分支的资源浪费</div>
-  T3 时 IFU 已经"乐观"取了 0x208 的指令（因为它不知道分支会不会跳转）。T3 发现 BEQ 条件满足后，T4 必须清空流水线（flush）——0x204 和 0x208 的指令全部废弃。这是顺序处理器无分支预测的固有代价。
+  <div class="box-title">分支惩罚详解</div>
+  T3 时 IFU 已经"乐观"取了 0x204 和 0x208 的指令（因为它不知道分支会不会跳转）。T3 EXU 发现 BEQ 条件满足后，<strong>T4 必须清空流水线（flush）</strong>——0x204 的指令（译码中）和 0x208 的指令（在 IFU 队列中）全部废弃。<code>exu2ifu_pc_new_req_o</code> 在 T3 的 posedge 被 IFU 采样，T4 周期 IFU 执行清空操作。
+
+  分支惩罚 = <strong>2 个周期</strong>（T4 清空 + T5 重新取指第一字节），等效于浪费了 0x204 和 0x208 两条指令的取指/译码工作。
 </div>
-
-<h3>EXU 端的 PC 多路器再次回顾</h3>
-
-<p>BEQ 触发 <code>jb_taken</code> 信号，对应优先级 6（最低），因为新 PC 值走 <code>ialu_addr_res &amp; SCR1_JUMP_MASK</code> 计算。</p>
-
-<pre>
-<span class="cm">// scr1_pipe_exu.sv -- new PC 请求条件</span>
-exu2ifu_pc_new_req_o = ...
-    | (exu_queue_vd &amp; jb_taken)      <span class="cm">// 分支/跳转采用</span></pre>
 
 <!-- ============================================================ -->
 <h2 id="jal-path">第六课: JAL x1, label -- 无条件跳转追踪</h2>
 
 <p>JAL (Jump And Link) 做两件事：把返回地址（PC+4）写入 rd，然后无条件跳转到目标地址。</p>
 
+<h3>RTL 表示</h3>
+
+<pre>
+<span class="cm">// JAL x1, label 的 RTL 表示</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rd_addr=&lt;x1&gt;,
+    sum2_op=PC_IMM,              <span class="cm">// 地址加法器 = PC + imm</span>
+    rd_wb_sel=INC_PC,            <span class="cm">// 写回 PC+4, 不是 IALU 结果!</span>
+    jump_req=1, branch_req=0,
+    imm=J-type 符号扩展           <span class="cm">// 目标偏移</span>
+};
+
+T3 (EXU): <span class="cm">// exu_queue_vd = 1</span>
+    <span class="cm">// 地址加法器: PC + imm → 目标地址</span>
+    ialu_addr_op1 = pc_curr_ff;                   <span class="cm">// = 0x200</span>
+    ialu_addr_op2 = exu_queue.imm;                <span class="cm">// J-type imm</span>
+    ialu_addr_res = 0x200 + imm;                  <span class="cm">// = 目标地址</span>
+    jb_new_pc = ialu_addr_res & SCR1_JUMP_MASK;
+    <span class="cm">// 返回地址计算: inc_pc = 0x200 + 4 = 0x204</span>
+    inc_pc = pc_curr_ff + 4;
+    <span class="cm">// New PC 请求</span>
+    jb_taken = 1;
+    exu2ifu_pc_new_o = jb_new_pc;
+    exu2ifu_pc_new_req_o = 1;
+    <span class="cm">// 写回: rd_wb_sel = INC_PC</span>
+    exu2mprf_w_req_o = 1;
+    exu2mprf_rd_addr_o = &lt;x1&gt;;
+    exu2mprf_rd_data_o = inc_pc;                  <span class="cm">// = 0x204</span>
+    exu2pipe_instret_o = 1;
+</pre>
+
+<h3>逐周期详细信号追踪</h3>
+
 <table class="trace-table">
 <tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU</th><th>MPRF</th></tr>
 <tr><td>T0</td><td>取指 0x200</td><td>—</td><td>—</td><td>—</td></tr>
 <tr><td>T1</td><td>收指令</td><td>—</td><td>—</td><td>—</td></tr>
-<tr><td>T2</td><td>取指 0x204</td><td><strong>译码</strong>：opcode=JAL, rd=x1, imm=J-type<br>jump_req=1, rd_wb_sel=INC_PC<br>sum2_op=PC_IMM</td><td>—</td><td>—</td></tr>
+<tr>
+  <td>T2</td>
+  <td>取指 0x204</td>
+  <td><strong>译码</strong>：<code>opcode=JAL, rd=x1, imm=J-type</code>
+  <br><code>jump_req=1, rd_wb_sel=INC_PC</code>
+  <br><code>sum2_op=PC_IMM</code>
+  <br><code>idu2exu_use_rd=1, idu2exu_use_imm=1</code></td>
+  <td><code>exu_rdy=1</code> → 队列锁存
+  <br>T2→T3: <code>exu_queue_vd←1</code></td>
+  <td>—</td>
+</tr>
 <tr style="background:#e8f0fe;">
-  <td>T3</td><td>取指 0x208</td><td>下一指令</td>
-  <td><strong>地址加法器</strong>：PC+imm = 目标地址<br><strong>INC_PC</strong>：0x200+4 = 0x204<br>new_pc = 目标地址<br>写 x1 = 0x204</td>
-  <td><strong>x1 = 0x204</strong></td>
+  <td>T3</td>
+  <td>取指 0x208（乐观）</td>
+  <td>下一指令（0x208）</td>
+  <td><strong>跳转 + 写回（同周期）</strong>：
+  <br><code>pc_curr_ff=0x200</code>
+  <br><code>ialu_addr_res=目标地址</code>
+  <br><code>jb_taken=1</code>
+  <br><code>exu2ifu_pc_new=目标</code>
+  <br><code>exu2ifu_pc_new_req=1</code>
+  <br><code>inc_pc=0x204</code>
+  <br><code>exu2mprf_w_req=1</code>
+  <br><code>exu2mprf_rd_addr=1</code>
+  <br><code>exu2mprf_rd_data=0x204</code> (INC_PC)
+  <br><code>exu2pipe_instret=1</code></td>
+  <td><strong>x1=0x204</strong>
+  <br>T3→T4 posedge 写入</td>
+</tr>
+<tr style="background:#f8d7da;">
+  <td>T4</td>
+  <td><strong>清空队列</strong>
+  <br>重新取指目标地址</td>
+  <td>0x208 被清空</td>
+  <td>空闲</td>
+  <td>—</td>
 </tr>
 </table>
 
 <div class="box tip">
-  <div class="box-title">rd_wb_sel=INC_PC 的来源</div>
-  JAL 写回的 <strong>不是</strong> ALU 结果，而是 <code>PC + 4</code>。IDU 在译码时就指定 <code>rd_wb_sel = INC_PC</code>，EXU 内部有专门的 <code>inc_pc = curr_pc + 4</code>（RVC 时 +2）通路直接将此值路由到 MPRF 写端口。
+  <div class="box-title">rd_wb_sel 多路器：JAL 的特例</div>
+  <code>rd_wb_sel = SCR1_RD_WB_INC_PC</code> 直接将 <code>inc_pc (pc_curr + 4)</code> 路由到 MPRF 写数据端口，旁路了 IALU。这是 IDU 译码时确定的，因为 JAL 的写回值不是计算结果而是地址。写回源优先级（多路器 case 语句）：
+  <pre>
+<span class="kw">case</span> (exu_queue.rd_wb_sel)
+    SCR1_RD_WB_SUM2   : rd_data = ialu_addr_res;   <span class="cm">// AUIPC</span>
+    SCR1_RD_WB_IMM    : rd_data = exu_queue.imm;    <span class="cm">// LUI</span>
+    SCR1_RD_WB_INC_PC : rd_data = inc_pc;           <span class="cm">// JAL/JALR</span>
+    SCR1_RD_WB_LSU    : rd_data = lsu_l_data;       <span class="cm">// LOAD</span>
+    SCR1_RD_WB_CSR    : rd_data = csr2exu_r_data_i; <span class="cm">// CSR 读</span>
+    <span class="kw">default</span>           : rd_data = ialu_main_res;   <span class="cm">// ADD/SUB/逻辑等</span>
+<span class="kw">endcase</span></pre>
 </div>
 
 <!-- ============================================================ -->
 <h2 id="csr-path">第七课: CSRRW x3, MSTATUS, x4 -- CSR 读写追踪</h2>
 
-<p>CSR 指令需要走 EXU&rarr;CSR&rarr;EXU 的往返路径。</p>
+<p>CSR 指令需走 EXU → CSR → EXU 的往返路径。设旧 MSTATUS = 0x00001800, x4 = 0x00000800。</p>
+
+<h3>RTL 表示</h3>
+
+<pre>
+<span class="cm">// CSRRW x3, MSTATUS, x4 的 RTL 表示</span>
+T2 (IDU):  idu2exu_cmd_o = {
+    rs1_addr=&lt;x4&gt;, rd_addr=&lt;x3&gt;,
+    csr_cmd=WRITE, csr_op=REG,
+    rd_wb_sel=CSR,                   <span class="cm">// 写回源 = CSR 返回的旧值</span>
+    imm[11:0]=0x300                  <span class="cm">// CSR 地址 = MSTATUS</span>
+};
+
+T3 (EXU): <span class="cm">// exu_queue_vd = 1</span>
+    <span class="cm">// CSR 访问（csr_access_init = 1）</span>
+    exu2csr_rw_addr_o = imm[11:0];               <span class="cm">// = 0x300</span>
+    exu2csr_w_cmd_o = WRITE;
+    exu2csr_w_data_o = mprf2exu_rs1_data_i;      <span class="cm">// = x4 的值 = 0x800</span>
+    exu2csr_w_req_o = csr_access_init;            <span class="cm">// = 1</span>
+    exu2csr_r_req_o = |rd_addr;                  <span class="cm">// = 1 (rd=x3, 非 x0)</span>
+    <span class="cm">// CSR 在本周期返回旧值（组合逻辑）</span>
+    csr2exu_r_data_i = 旧 MSTATUS;               <span class="cm">// = 0x00001800</span>
+    <span class="cm">// MPRF 写回</span>
+    exu2mprf_w_req_o = 1;                         <span class="cm">// rd_wb_sel=CSR</span>
+    exu2mprf_rd_addr_o = &lt;x3&gt;;
+    exu2mprf_rd_data_o = csr2exu_r_data_i;        <span class="cm">// = 0x00001800 (旧值)</span>
+    <span class="cm">// MSTATUS 更新检测</span>
+    csr2exu_mstatus_mie_up_i = 1;                 <span class="cm">// CSR 报告更新</span>
+    csr_access_next = SCR1_CSR_RDY;               <span class="cm">// posedge 后变为 RDY</span>
+    exu_rdy = 0;                                  <span class="cm">// MSTATUS 更新 → 暂停</span>
+    exu2pipe_instret_o = 0;                       <span class="cm">// 未退休</span>
+
+T4 (EXU stall): <span class="cm">// exu_queue_vd 保持</span>
+    csr_access_ff = SCR1_CSR_RDY;                 <span class="cm">// T3→T4 posedge</span>
+    csr_access_init = 0;
+    csr2exu_mstatus_mie_up_i = 0;                 <span class="cm">// 更新已完成</span>
+    exu_rdy = 1;                                  <span class="cm">// 暂停解除</span>
+    exu2pipe_instret_o = 1;                       <span class="cm">// 指令退休</span>
+    <span class="cm">// 注意: MPRF 写入已在 T3→T4 posedge 完成</span>
+</pre>
 
 <table class="trace-table">
-<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU&rarr;CSR（同周期）</th><th>MPRF</th></tr>
-<tr><td>T2</td><td>—</td><td><strong>译码</strong>：opcode=SYSTEM, funct3=001(CSRRW), rs1=x4, rd=x3, csr_addr=0x300<br>csr_cmd=WRITE, csr_op=REG</td><td>—</td><td>—</td></tr>
+<tr><th>周期</th><th>IFU</th><th>IDU</th><th>EXU → CSR (同周期)</th><th>MPRF</th></tr>
+<tr>
+  <td>T2</td>
+  <td>—</td>
+  <td><strong>译码</strong>：
+  <br><code>opcode=SYSTEM, funct3=001</code>
+  <br><code>csr_addr=0x300, csr_cmd=WRITE, csr_op=REG</code>
+  <br><code>rs1=4, rd=3, rd_wb_sel=CSR</code></td>
+  <td>—</td>
+  <td>—</td>
+</tr>
 <tr style="background:#e8f0fe;">
-  <td>T3</td><td>—</td><td>—</td>
-  <td><strong>EXU 发 CSR 写请求</strong>：<br>exu2csr_rw_addr = 0x300<br>exu2csr_w_data = x4 的值<br>exu2csr_w_cmd = WRITE<br><br><strong>CSR 返回旧值</strong>：<br>csr2exu_r_data = 旧 MSTATUS<br>写 x3 = 旧 MSTATUS</td>
-  <td><strong>x3 = 旧 MSTATUS</strong></td>
+  <td>T3</td>
+  <td>—</td>
+  <td>—</td>
+  <td><strong>CSR 写 + 读旧值:</strong>
+  <br><code>exu2csr_rw_addr=0x300</code>
+  <br><code>exu2csr_w_data=x4 的值</code>
+  <br><code>exu2csr_w_cmd=WRITE, exu2csr_w_req=1</code>
+  <br><code>csr_access_init=1</code>
+  <br><code>csr2exu_r_data=旧 MSTATUS</code>
+  <br><code>exu2mprf_w_req=1, rd_addr=3</code>
+  <br><code>exu2mprf_rd_data=旧 MSTATUS</code>
+  <br><code>csr2exu_mstatus_mie_up=1</code>
+  <br><code>exu_rdy=0</code> — <strong>暂停!</strong></td>
+  <td><strong>x3=旧 MSTATUS</strong>
+  <br>T3→T4 posedge 写入</td>
+</tr>
+<tr style="background:#fff3cd;">
+  <td>T4</td>
+  <td>停止取指</td>
+  <td>阻塞</td>
+  <td><strong>额外等待周期</strong>：
+  <br><code>csr_access_init=0</code> (已变 RDY)
+  <br><code>csr2exu_mstatus_mie_up=0</code> → <code>exu_rdy=1</code>
+  <br><code>exu2pipe_instret=1</code> — <strong>退休</strong></td>
+  <td>—</td>
 </tr>
 </table>
 
-<pre>
-<span class="cm">// CSRRW 的时序要点</span>
-<span class="cm">// T3 同周期完成：EXU &rarr; CSR(写) &rarr; EXU(读旧值) &rarr; MPRF(写回)</span>
-<span class="cm">// 写 MSTATUS 后的额外延迟：</span>
-csr2exu_mstatus_mie_up_o = <span class="num">1'b1</span>;  <span class="cm">// 标记 mstatus 已更新</span>
-exu_rdy = <span class="num">1'b0</span>;                <span class="cm">// EXU 停止提交一周期</span></pre>
-
 <div class="box warn">
   <div class="box-title">CSR 写 MSTATUS/MIE 需额外一周期</div>
-  当写入的 CSR 是 MSTATUS 或 MIE 时，EXU 会额外暂停一个周期（<code>csr2exu_mstatus_mie_up_o</code> 拉高），确保新的 MIE 值在下一周期才生效。这个周期 <code>exu_rdy = 0</code>，不允许任何指令提交。
+  当写入的 CSR 是 MSTATUS 或 MIE 时，EXU 会额外暂停一个周期（<code>csr2exu_mstatus_mie_up_o</code> 拉高），确保新的 MIE 值在下一周期才生效。这个周期 <code>exu_rdy = 1'b0</code>（MSTATUS 更新 case），不允许任何指令提交。对于非 MSTATUS/MIE 的 CSR 写，<code>csr2exu_mstatus_mie_up_i</code> 为 0，<code>csr_access_ff</code> 持续为 INIT，无额外停顿。
 </div>
 
 <!-- ============================================================ -->
 <h2 id="timing">第八课: 六类指令执行时间全景对比</h2>
 
 <table>
-<tr><th>指令类型</th><th>延迟 (TCM)</th><th>吞吐量</th><th>写回源</th><th>是否访存</th><th>是否跳转</th></tr>
-<tr><td>ADD/SUB/逻辑</td><td>4</td><td>1</td><td>IALU 结果</td><td>否</td><td>否</td></tr>
-<tr><td>LOAD</td><td>5+DMEM</td><td>2+DMEM</td><td>DMEM 读数据</td><td>是（读）</td><td>否</td></tr>
-<tr><td>STORE</td><td>5+DMEM</td><td>2+DMEM</td><td>无</td><td>是（写）</td><td>否</td></tr>
-<tr><td>BEQ（不跳）</td><td>4</td><td>1</td><td>无</td><td>否</td><td>否</td></tr>
-<tr><td>BEQ（跳转）</td><td>4+1(flush)</td><td>2+1(flush)</td><td>无</td><td>否</td><td>是</td></tr>
-<tr><td>JAL</td><td>4+1(flush)</td><td>2+1(flush)</td><td>INC_PC</td><td>否</td><td>是</td></tr>
-<tr><td>MUL(快速)</td><td>4</td><td>1</td><td>IALU 结果</td><td>否</td><td>否</td></tr>
-<tr><td>MUL(迭代)</td><td>35</td><td>32</td><td>MDU 结果</td><td>否</td><td>否</td></tr>
-<tr><td>CSRRW(MSTATUS)</td><td>5</td><td>2</td><td>旧 CSR 值</td><td>否</td><td>否</td></tr>
-<tr><td>MRET</td><td>5</td><td>2</td><td>无</td><td>否</td><td>是（PC改）</td></tr>
+<tr><th>指令类型</th><th>延迟 (TCM)</th><th>吞吐量</th><th>写回源</th><th>rd_wb_sel</th><th>是否访存</th><th>是否跳转</th></tr>
+<tr><td>ADD/SUB/逻辑</td><td>4</td><td>1</td><td>IALU 结果</td><td>default→IALU</td><td>否</td><td>否</td></tr>
+<tr><td>LOAD</td><td>5+DMEM</td><td>2+DMEM</td><td>DMEM 读数据</td><td>LSU</td><td>是（读）</td><td>否</td></tr>
+<tr><td>STORE</td><td>5+DMEM</td><td>2+DMEM</td><td>无</td><td>NONE</td><td>是（写）</td><td>否</td></tr>
+<tr><td>BEQ（不跳）</td><td>4</td><td>1</td><td>无</td><td>NONE</td><td>否</td><td>否</td></tr>
+<tr><td>BEQ（跳转）</td><td>4+1(flush)</td><td>2+1(flush)</td><td>无</td><td>NONE</td><td>否</td><td>是</td></tr>
+<tr><td>JAL</td><td>4+1(flush)</td><td>2+1(flush)</td><td>INC_PC</td><td>INC_PC</td><td>否</td><td>是</td></tr>
+<tr><td>LUI</td><td>4</td><td>1</td><td>IMM</td><td>IMM</td><td>否</td><td>否</td></tr>
+<tr><td>AUIPC</td><td>4</td><td>1</td><td>SUM2</td><td>SUM2</td><td>否</td><td>否</td></tr>
+<tr><td>MUL(快速)</td><td>4</td><td>1</td><td>IALU 结果</td><td>default→IALU</td><td>否</td><td>否</td></tr>
+<tr><td>MUL(迭代)</td><td>35</td><td>32</td><td>MDU 结果</td><td>default→IALU</td><td>否</td><td>否</td></tr>
+<tr><td>CSRRW(普通 CSR)</td><td>4</td><td>1</td><td>旧 CSR 值</td><td>CSR</td><td>否</td><td>否</td></tr>
+<tr><td>CSRRW(MSTATUS)</td><td>5</td><td>2</td><td>旧 CSR 值</td><td>CSR</td><td>否</td><td>否</td></tr>
+<tr><td>MRET</td><td>5</td><td>2</td><td>无</td><td>NONE</td><td>否</td><td>是（PC改）</td></tr>
 </table>
 
+<!-- ============================================================ -->
+<h2 id="hazard-section">第九课: 数据冒险与 SCR1 的"零成本"转发</h2>
+
+<h3>数据冒险类型</h3>
+
+<p>经典 RISC 流水线中的三种数据冒险：</p>
+<ul>
+  <li><strong>RAW (Read After Write)</strong>: 后续指令读取前一指令尚未写入的寄存器</li>
+  <li><strong>WAW (Write After Write)</strong>: 两条指令写入同一寄存器，乱序导致写序颠倒</li>
+  <li><strong>WAR (Write After Read)</strong>: 后续指令覆盖前一指令尚未读取的寄存器</li>
+</ul>
+
+<p>SCR1 是 <strong>严格顺序发射、顺序执行、顺序写回</strong> 的流水线，WAW 和 WAR 不可能发生。唯一需要考虑的是 RAW 冒险。</p>
+
+<h3>SCR1 为何对单周期指令无 RAW 冒险</h3>
+
+<p>理解这一点需要精确的时钟边沿时序分析。</p>
+
 <div class="box">
-  <div class="box-title">延迟计算公式</div>
-  延迟 = 流水线级数 + (TCM 取指额外延迟) + (DMEM 响应延迟) + (flush 惩罚)。其中流水线级数包含 IFU 到 IDU 到 EXU 的寄存器路径，flush 惩罚为跳转后流水线清空一拍的代价。
+  <div class="box-title">关键时序边沿分析 — 分布式逻辑 MPRF</div>
+
+  <p>在分布式 MPRF 模式中，读操作是 <strong>纯组合逻辑（异步）</strong>：</p>
+  <pre>assign mprf2exu_rs1_data_o = (rs1_addr_vd) ? mprf_int[exu2mprf_rs1_addr_i] : '0;</pre>
+  <p>写操作是 <strong>时序逻辑（同步）</strong>，在时钟上升沿触发：</p>
+  <pre>always_ff @(posedge clk) begin
+    if (wr_req_vd) mprf_int[exu2mprf_rd_addr_i] <= exu2mprf_rd_data_i;
+end</pre>
+
+  <p>考虑背靠背的两条 ADD 指令：</p>
+</div>
+
+<div class="cycle-diagram">
+  指令                          T2            T3           T4
+  ───────────────────────────────────────────────────────────────
+  ADD x5, x1, x2             [IDU: 译码]   [EXU: 执行]
+
+  在 T3 周期（时钟高电平期间）：
+    1. exu_queue_vd=1, rs1_addr=x1  → MPRF 异步输出 x1=5
+    2. IALU 组合逻辑: 5+3 = 8
+    3. exu2mprf_w_req_o=1, rd_addr=5, rd_data=8
+    4. posedge T3→T4: mprf_int[5] ← 8  (写入生效)
+
+  ADD x6, x5, x4             [IFU: 取指]   [IDU: 译码]   [EXU: 执行]
+
+  在 T4 周期（时钟高电平期间）：
+    1. exu_queue_vd=1, rs1_addr=x5  → MPRF 异步输出 x5=8  ← 新值已生效!
+    2. IALU 组合逻辑: 8 + x4 = ...
+</div>
+
+<div class="box tip">
+  <div class="box-title">无冒险的根本原因</div>
+  第一条 ADD 在 T3 的 posedge 写入 x5。第二条 ADD 在 <strong>T4</strong> 才进入 EXU 阶段（因 IDU 在 T3 译码，T3→T4 posedge 锁存入 exu_queue）。T4 的 posedge <strong>之后</strong>，MPRF 中的 x5 已经更新，第二条 ADD 异步读取 MPRF 时看到的是正确的值。
+
+  这就是 SCR1 的"零成本转发"——它并非真正的转发/bypass 逻辑，而是利用 <strong>流水线寄存器天然隔离了一个周期</strong> 的写入延迟。写入在 posedge T3→T4 生效，而读取发生在 T4 电平期间，两者之间有一个 posedge 的时间差距，写入刚好在读取之前完成。
+</div>
+
+<h3>LOAD 后的 RAW 冒险</h3>
+
+<p>LOAD 指令在多周期执行期间，RAW 冒险通过 <strong>流水线停顿</strong> 自动解决：</p>
+
+<div class="cycle-diagram">
+  LW x5, 0(x1)           IF | ID | EX(LSU) | EX(BUSY)| EX(rdy+WB) |
+  ADD x6, x5, x4         |  IF |   ID     | stall   | stall | EX | ...
+                                          ↑ exu_rdy=0 → 反压
+  clk:                     T0   T1    T2      T3        T4     T5
+
+  在 T4 期间: ADD 的 IDU 已译码完成但无法发往 EXU (exu_rdy=0)
+  在 T5 期间: LOAD 写回 x5, exu_rdy=1, ADD 进入 EXU, 读取 x5 新值 ✓
+</div>
+
+<h3>MPRF RAM 模式下的内部转发</h3>
+
+<p>当使用 <code>SCR1_MPRF_RAM</code> 配置时，MPRF 采用同步读 RAM 块，需要 1 个周期的读取延迟。此时 RAW 冒险可能发生在同一指令的不同操作数之间，MPRF 内置了转发逻辑：</p>
+
+<pre>
+<span class="cm">// scr1_pipe_mprf.sv — RAM 模式的转发逻辑</span>
+<span class="kw">assign</span> rs1_new_data_req = wr_req_vd & (exu2mprf_rs1_addr_i == exu2mprf_rd_addr_i);
+<span class="kw">assign</span> rs2_new_data_req = wr_req_vd & (exu2mprf_rs2_addr_i == exu2mprf_rd_addr_i);
+
+<span class="cm">// 如果前一周期写入了本周期要读的寄存器, 直接转发写数据</span>
+<span class="kw">assign</span> mprf2exu_rs1_data_o = (rs1_new_data_req_ff) ? rd_data_ff
+                             : ((rs1_addr_vd_ff)   ? rs1_data_ff
+                                                    : '0);
+</pre>
+
+<p>当 <code>wr_req_vd & (rs1_addr == rd_addr)</code> 时，下一周期的 <code>_ff</code> 版本为 1，直接将寄存的写数据 <code>rd_data_ff</code> 转发到读端口，绕过了 1 周期同步读延迟。</p>
+
+<!-- ============================================================ -->
+<h2 id="mprf-timing">第十课: MPRF 读写时序详解</h2>
+
+<h3>分布式逻辑 MPRF 时序 (默认模式)</h3>
+
+<div class="cycle-diagram">
+  add T3:  ──── posedge ─────────────── posedge ────
+            │              │                  │
+            │              电平期间:           │
+            │  exu2mprf_rs1_addr=5 ────────→ │
+            │  mprf_int[5] (旧值) ──组合逻辑─→ mprf2exu_rs1_data = 旧值
+            │  IALU 计算得 新值=8            │
+            │  exu2mprf_w_req=1 ────────────→ │
+            │  exu2mprf_rd_addr=5 ──────────→ │
+            │  exu2mprf_rd_data=8 ──────────→ │
+            │                          ┌──────┘ 写入!
+            │                          │ mprf_int[5] ← 8
+
+  add T4:                           ──── posedge ───────────
+                                          │
+                                          │ exu2mprf_rs1_addr=5
+                                          │ mprf_int[5] = 8 (新值) ──→ mprf2exu_rs1_data = 8 ✓
+</div>
+
+<div class="box tip">
+  <div class="box-title">读-写时序总结</div>
+  <table>
+  <tr><th>操作</th><th>分布式逻辑</th><th>RAM 模式</th></tr>
+  <tr><td>读延迟</td><td>0 周期（组合逻辑, 同周期可见）</td><td>1 周期（同步读, 下一周期可见）</td></tr>
+  <tr><td>写延迟</td><td>0→1 周期（posedge 生效）</td><td>0→1 周期（posedge 生效）</td></tr>
+  <tr><td>RAW 转发</td><td>不需要（流水线寄存器隔离）</td><td>MPRF 内部转发逻辑（rs1/rs2_new_data_req）</td></tr>
+  <tr><td>x0 处理</td><td>读地址=0 → 输出=0; 写地址=0 → 不写入</td><td>同左</td></tr>
+  <tr><td>多端口</td><td>2 读 + 1 写, 全组合读无冲突</td><td>2 块 RAM + 1 转发寄存器</td></tr>
+  </table>
+</div>
+
+<h3>EXU 队列锁存时序</h3>
+
+<div class="cycle-diagram">
+  IDU→EXU 传输时序 (idu2exu_req & exu_rdy → exu_queue 更新):
+
+  T2 posedge 之前:  idu2exu_cmd_i 已稳定 (IDU 译码输出)
+  T2 电平期间:      exu_rdy=1 → exu_queue_en=1
+  T2→T3 posedge:    if (exu_queue_en)
+                      exu_queue <= idu2exu_cmd_i;  // 锁存 IDU 输出
+                      exu_queue_vd_ff <= ~barrier & idu2exu_req_i & ~new_pc_req;
+  T3 电平期间:      exu_queue_vd=1, 执行阶段开始
 </div>
 
 <!-- ============================================================ -->
-<h2 id="backpressure">第九课: 反压机制详解</h2>
+<h2 id="backpressure">第十一课: 反压机制详解</h2>
 
-<p>SCR1 使用 <strong>就绪/有效握手协议</strong> 实现模块间反压：上游发 <code>req</code>，下游回 <code>rdy</code>，仅当两者同时有效时才传输数据。</p>
-
-<h3>关键反压链路</h3>
-
-<table>
-<tr><th>链路段</th><th>请求信号</th><th>就绪信号</th><th>反压原因</th></tr>
-<tr><td>IDU &rarr; IFU</td><td><code>ifu2idu_vd</code></td><td><code>idu2ifu_rdy</code></td><td>IDU 正在处理前一条指令或 EXU 忙</td></tr>
-<tr><td>EXU &rarr; IDU</td><td><code>idu2exu_req</code></td><td><code>exu2idu_rdy</code></td><td>EXU 在执行多周期指令、LSU 忙、或 mstatus 更新中</td></tr>
-</table>
+<h3>EXU 就绪信号的 4 路 case</h3>
 
 <pre>
-<span class="cm">// scr1_pipe_exu.sv -- EXU 就绪条件</span>
+<span class="cm">// scr1_pipe_exu.sv:798-807 — exu_rdy 组合逻辑</span>
 <span class="kw">always_comb begin</span>
     <span class="kw">case</span> (<span class="num">1'b1</span>)
         lsu_req                  : exu_rdy = lsu_rdy | lsu_exc_req;
-        ialu_vd                  : exu_rdy = ialu_rdy;           <span class="cm">// MDU 多周期</span>
-        csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>;               <span class="cm">// mstatus 更新</span>
+        tal_vd                  : exu_rdy = ialu_rdy;           <span class="cm">// MDU 多周期</span>
+        csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>;               <span class="cm">// mstatus 更新中</span>
         <span class="kw">default</span>                  : exu_rdy = <span class="num">1'b1</span>;               <span class="cm">// 默认就绪</span>
     <span class="kw">endcase</span>
 <span class="kw">end</span></pre>
 
-<div class="box tip">
-  <div class="box-title">反压的级联传播</div>
- 当 EXU 因为 LSU 忙而 <code>exu_rdy=0</code> 时，<code>exu2idu_rdy=0</code> &rarr; IDU 停发新命令 &rarr; <code>idu2ifu_rdy=0</code> &rarr; IFU 停止取指。整个流水线从后往前逐级传递反压信号。
+<table>
+<tr><th>Case</th><th>触发条件</th><th>exu_rdy 值</th><th>停顿周期</th></tr>
+<tr><td>1: LSU 忙</td><td><code>lsu_req=1</code> 且 LSU 在 BUSY 状态</td><td>= lsu_rdy (DMEM 响应到达前=0)</td><td>1~N (取决于 DMEM 延迟)</td></tr>
+<tr><td>2: MDU 忙</td><td><code>ialu_vd=1</code> 且迭代乘除法未完成</td><td>= ialu_rdy (迭代完成前=0)</td><td>1~32 (取决于乘法器配置)</td></tr>
+<tr><td>3: MSTATUS 更新</td><td><code>csr2exu_mstatus_mie_up_i=1</code></td><td>= 0</td><td>1 (CSRRW MSTATUS/MIE)</td></tr>
+<tr><td>4: 默认</td><td>以上均不成立</td><td>= 1</td><td>0</td></tr>
+</table>
+
+<h3>反压的级联传播时序</h3>
+
+<div class="cycle-diagram">
+  场景: LOAD 在 T3 进入 LSU, DMEM 响应 T5 才到达
+
+  T3:
+    exu_rdy = lsu_rdy = 0               (EXU 忙)
+    exu2idu_rdy_o = exu_rdy & ~barrier = 0  (→ IDU 停止)
+    idu2ifu_rdy_o = exu2idu_rdy_i = 0   (→ IFU 停止)
+    反压传播路径: LSU 忙 → exu_rdy=0 → exu2idu_rdy=0 → idu2ifu_rdy=0
+
+  T4:
+    exu_rdy = 0, exu_queue_vd 保持 1
+    IDU 不发送新指令 (idu2exu_req=0)
+    IFU 不取指 (idu2ifu_rdy=0)
+
+  T5:
+    DMEM 响应到达 → lsu_rdy=1 → exu_rdy=1
+    exu2idu_rdy_o=1 → idu2ifu_rdy=1
+    流水线恢复
 </div>
 
+<div class="box">
+  <div class="box-title">反压信号传播延迟</div>
+  <code>exu_rdy</code> 是组合逻辑信号（不经过寄存器），因此反压在同周期内即传导到 IFU。EXU 在 T3 周期发现 LSU 忙 → IFU 在 T3 周期就收到 <code>idu2ifu_rdy=0</code> → T4 周期开始取指停止。反压延迟 = <strong>0 周期（纯组合逻辑）</strong>。
+</div>
+
+<h3>IFU 队列的阻塞机制</h3>
+
+<pre>
+<span class="cm">// IDU 直通反压</span>
+assign idu2ifu_rdy_o = exu2idu_rdy_i;    <span class="cm">// IDU 无内部缓冲, 直接转发</span>
+
+<span class="cm">// IFU 队列在反压时的行为</span>
+<span class="cm">// IFU 队列是一个简单的 FIFO, 当 idu2ifu_rdy=0 时:</span>
+<span class="cm">//   - 不再从队列读出指令发给 IDU</span>
+<span class="cm">//   - 队列可能被填满 → 停止发新的 IMEM 请求</span>
+<span class="cm">//   - 已发出的 IMEM 请求仍会接收响应, 写入队列</span>
+</pre>
+
 <!-- ============================================================ -->
-<h2 id="flush">第十课: 流水线清空机制</h2>
+<h2 id="flush">第十二课: 流水线清空机制</h2>
 
 <h3>触发清空的条件矩阵</h3>
 
@@ -360,17 +977,60 @@ imem_resp_discard_cnt_next = exu2ifu_pc_new_req_i
     ? imem_pnd_txns_cnt_next - imem_handshake_done   <span class="cm">// 所有在途响应都要丢弃</span>
     : ...</pre>
 
+<h3>清空对 EXU 的影响</h3>
+
+<p>EXU 通过 <code>exu_queue_vd_next</code> 感知清空：</p>
+
+<pre>
+assign exu_queue_vd_next = ~exu_queue_barrier & idu2exu_req_i & ~exu2ifu_pc_new_req_o;
+</pre>
+
+<p>当 <code>exu2ifu_pc_new_req_o=1</code> 时（分支跳转/陷阱），<code>exu_queue_vd_next=0</code>，新指令不会被锁存入 EXU 队列。</p>
+
 <!-- ============================================================ -->
-<h2 id="exercise">第十一课: 动手练习</h2>
+<h2 id="scoreboard">第十三课: Scoreboard 分析 — SCR1 为何不需要</h2>
+
+<div class="box purp">
+  <div class="box-title">Scoreboard 的定义与用途</div>
+  Scoreboard 是一种硬件结构，用于跟踪每个寄存器是否被等待中的指令写入。在乱序执行或有多周期功能单元的处理器中，Scoreboard 用来检测 RAW/WAR/WAW 冒险并暂停相关指令。
+</div>
+
+<h3>SCR1 不需要 Scoreboard 的原因</h3>
+
+<table>
+<tr><th>处理器特征</th><th>SCR1</th><th>需要 Scoreboard 的处理器</th></tr>
+<tr><td>发射方式</td><td>顺序发射（In-order Issue）</td><td>乱序发射（Out-of-order Issue）</td></tr>
+<tr><td>执行方式</td><td>顺序执行（In-order Execute）</td><td>乱序执行（Out-of-order Execute）</td></tr>
+<tr><td>写回方式</td><td>顺序写回（In-order Write-back）</td><td>乱序写回（Out-of-order Write-back）</td></tr>
+<tr><td>功能单元</td><td>单功能单元（IALU+MDU+LSU 共享 EXU）</td><td>多功能单元（独立的 ALU, FPU, LSU）</td></tr>
+<tr><td>冒险处理</td><td>流水线自然隔离 + 停顿</td><td>Scoreboard + 转发 + 停顿</td></tr>
+</table>
+
+<h3>SCR1 的"替代方案"</h3>
+
+<ol>
+  <li><strong>单周期指令 RAW</strong>: 流水线寄存器天然隔离（EXU 队列锁存延迟了 1 个周期，刚好覆盖 MPRF 写入延迟）</li>
+  <li><strong>多周期指令 RAW</strong>: <code>exu_rdy=0</code> 停顿整个流水线，直到多周期指令完成</li>
+  <li><strong>WAW/WAR</strong>: 顺序发射和执行保证了写序与程序序一致，WAR 自然满足</li>
+  <li><strong>结构冒险</strong>: 单功能单元共享 EXU，无多发射结构冲突</li>
+</ol>
+
+<div class="box tip">
+  <div class="box-title">SCR1 的设计哲学</div>
+  SCR1 是典型的 <strong>极简顺序处理器</strong>。它选择用流水线停顿（stall）替代 Scoreboard 的复杂寄存器跟踪逻辑，用流水线寄存器的天然延迟替代转发逻辑。这种设计牺牲了多周期指令期间的吞吐量，换取了极低的面积和功耗——这正是 SCR1 作为 MCU 级 RISC-V 核的核心价值。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="exercise">第十四课: 动手练习（扩展）</h2>
 
 <fieldset>
   <legend>练习 1: 画出 ADD 的逐周期时序图</legend>
-  <p>在纸上画出 ADD x5, x1, x2 在 4 级流水线（IFU&rarr;IDU&rarr;EXU）中的执行过程，标注 T0 到 T3 每个周期的 IFU/IDU/EXU/MPRF 状态。</p>
+  <p>在纸上画出 ADD x5, x1, x2 在 4 级流水线（IFU → IDU → EXU）中的执行过程，标注 T0 到 T3 每个周期的 IFU/IDU/EXU/MPRF 状态和关键信号值。</p>
 </fieldset>
 
 <fieldset>
   <legend>练习 2: 追踪背靠背 LOAD</legend>
-  <p>连续两条 LOAD 指令（<code>lw x5, 0(x1)</code>，<code>lw x6, 4(x1)</code>），画出完整时序图。注意：第二条 LOAD 何时进入 EXU？</p>
+  <p>连续两条 LOAD 指令（<code>lw x5, 0(x1)</code>，<code>lw x6, 4(x1)</code>），画出完整时序图。注意：第二条 LOAD 何时进入 EXU？<code>exu_rdy</code> 在哪些周期为 0？</p>
 </fieldset>
 
 <fieldset>
@@ -389,12 +1049,56 @@ imem_resp_discard_cnt_next = exu2ifu_pc_new_req_i
 </fieldset>
 
 <fieldset>
-  <legend>练习 5: 阅读源码</legend>
+  <legend>练习 5: 追踪 RAW 冒险</legend>
+  <p>考虑以下指令序列：<code>lw x5, 0(x1)</code>; <code>add x6, x5, x2</code>; <code>sub x7, x6, x3</code>。<br>
+  (a) 画出完整时序图，标注 x5 和 x6 何时可读。<br>
+  (b) ADD 和 SUB 分别在哪些周期进入 EXU？<br>
+  (c) LW 和 ADD 之间是否存在 RAW 冒险？如果是，SCR1 如何解决？<br>
+  (d) ADD 和 SUB 之间是否存在 RAW 冒险？SCR1 如何处理？</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: 反压传导延迟分析</legend>
+  <p>当 MUL（迭代模式，32 周期）在 EXU 中执行时：<br>
+  (a) <code>exu_rdy</code> 在哪些周期为 0？<br>
+  (b) 哪些模块被阻塞？<br>
+  (c) IFU 队列在这段时间内是否可能被填满？如果填满会发生什么？<br>
+  (d) 假设 IFU 队列深度为 2，IMEM 响应延迟为 2 周期，IFU 是否会丢失指令？</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 7: 阅读源码</legend>
   <p>打开 <code>src/core/pipeline/scr1_pipe_exu.sv</code>，找到：<br>
-  1. <code>exu_rdy</code> 的组合逻辑块（always_comb）<br>
-  2. <code>exu2ifu_pc_new_o</code> 的 6 路 case 选择<br>
-  3. <code>exu2ifu_pc_new_req_o</code> 的 OR 逻辑<br>
+  1. <code>exu_rdy</code> 的组合逻辑块（always_comb，行 798-807）<br>
+  2. <code>exu2ifu_pc_new_o</code> 的 6 路 case 选择（行 708-720）<br>
+  3. <code>exu2ifu_pc_new_req_o</code> 的 OR 逻辑（行 722-735）<br>
+  4. <code>exu2mprf_rd_data_o</code> 的 5 路多路器（行 881-890）<br>
+  5. <code>exu_queue_vd_next</code> 的计算（行 333）<br>
   向自己解释每一行在做什么。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: 数值追踪 — 完整指令序列</legend>
+  <p>假设寄存器初始值：x1=10, x2=20, x3=30, x4=40。执行以下序列：</p>
+  <pre>0x200: add  x5, x1, x2
+0x204: sub  x6, x5, x3
+0x208: lw   x7, 0(x4)
+0x20c: add  x8, x6, x7  (DMEM[40] = 100)
+0x210: sw   x8, 4(x3)</pre>
+  <p>(a) 画出完整的逐周期时序图（IFU/IDU/EXU/MPRF/DMEM）。<br>
+  (b) 标注每个周期的 <code>exu_rdy</code> 值。<br>
+  (c) 标注每个周期的 MPRF 读/写地址和数据。<br>
+  (d) 最终 x5, x6, x7, x8 的值各是多少？<br>
+  (e) 这条序列在第几个周期完成全部 5 条指令的退休？<br>
+  (f) 假设 DMEM 响应需要 3 个周期而不是 1 个周期，重新计算 (e) 的答案。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: CSR 访问时序</legend>
+  <p>考虑以下序列：<code>csrrw x3, MSTATUS, x4</code>; <code>add x5, x1, x2</code>。<br>
+  (a) 画出完整时序图。<br>
+  (b) ADD 何时进入 EXU？何时退休？<br>
+  (c) 如果第二句是 <code>csrrw x5, MIE, x6</code> 而不是 ADD，时序有何不同？</p>
 </fieldset>
 
 <!-- ============================================================ -->
@@ -411,6 +1115,10 @@ imem_resp_discard_cnt_next = exu2ifu_pc_new_req_i
     <li>EXU 就绪信号的 4 路 case 分别对应什么场景？反压如何级联传播？</li>
     <li>IMEM 响应丢弃计数器的作用是什么？什么情况下会用到它？</li>
     <li>CSR 写 MSTATUS/MIE 时为什么需要额外一个周期的停顿？</li>
+    <li>SCR1 为什么没有数据冒险（RAW hazard）？分布式 MPRF 的读/写时序如何消除单周期指令的 RAW？</li>
+    <li>SCR1 如何处理 LOAD 后的 RAW？停顿持续几个周期？</li>
+    <li>MPRF RAM 模式的内置转发逻辑如何工作？什么场景下会触发？</li>
+    <li>SCR1 为什么不需要 Scoreboard？它与需要 Scoreboard 的处理器有哪些关键区别？</li>
   </ol>
 </div>
 

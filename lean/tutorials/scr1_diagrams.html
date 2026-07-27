@@ -3,26 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SCR1 RISC-V 处理器 -- 模块连接关系可视化</title>
+<title>SCR1 RISC-V 处理器 -- 模块连接关系可视化 (增强版)</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f8f9fa; color: #212529; }
   h1 { text-align: center; color: #1a365d; border-bottom: 3px solid #3182ce; padding-bottom: 10px; }
   h2 { color: #2d3748; margin-top: 40px; border-left: 4px solid #3182ce; padding-left: 12px; }
+  h3 { color: #4a5568; margin-top: 24px; }
   .mermaid { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 16px 0; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; margin: 16px 0; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
   th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }
   th { background: #ebf4ff; color: #2c5282; font-weight: 600; }
   tr:hover td { background: #f7fafc; }
   code { background: #edf2f7; padding: 2px 6px; border-radius: 3px; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.9em; }
-  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 200px; z-index: 100; }
-  .nav a { display: block; padding: 4px 0; color: #3182ce; text-decoration: none; font-size: 0.9em; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; max-height: 80vh; overflow-y: auto; z-index: 100; }
+  .nav a { display: block; padding: 4px 0; color: #3182ce; text-decoration: none; font-size: 0.85em; }
   .nav a:hover { color: #2c5282; }
   .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; }
+  .explain { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 10px 16px; margin: 10px 0; border-radius: 0 6px 6px 0; font-size: 0.95em; color: #2c5282; }
+  .ascii-art { background: #1a1a2e; color: #e0e0e0; padding: 16px; margin: 12px 0; border-radius: 6px; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.82em; line-height: 1.35; overflow-x: auto; white-space: pre; }
+  .section-divider { border: none; border-top: 2px dashed #cbd5e0; margin: 40px 0 20px; }
 </style>
 </head>
 <body>
-<h1>SCR1 RISC-V 处理器 -- 模块连接关系可视化</h1>
+<h1>SCR1 RISC-V 处理器 -- 模块连接关系可视化 (增强版)</h1>
 
 <nav class="nav">
   <div class="nav-title">导航</div>
@@ -32,58 +36,82 @@
   <a href="#s4">图四: 调试子系统</a>
   <a href="#s5">图五: 存储器系统</a>
   <a href="#s6">图六: 中断系统</a>
-  <a href="#s7">信号命名规范</a>
-  <a href="#s8">模块功能速查</a>
+  <a href="#s7">图七: 流水线阶段寄存器</a>
+  <a href="#s8">图八: 存储器映射图</a>
+  <a href="#s9">图九: 中断处理流程</a>
+  <a href="#s10">图十: 调试处理流程</a>
+  <a href="#s11">图十一: 时钟与复位分配</a>
+  <a href="#s12">排错 ASCII 图</a>
+  <a href="#s13">信号命名规范</a>
+  <a href="#s14">模块功能速查</a>
 </nav>
 
-<h2 id="s1">图一: 系统顶层架构</h2>
+<!-- ============================================================ -->
+<h2 id="s1">图一: 系统顶层架构 (增强版)</h2>
 <div class="mermaid">
 graph TD
-  subgraph SOC["SOC / FPGA"]
+  subgraph SOC["SOC / FPGA 层"]
     JTAG["JTAG 调试器<br/>TCK, TMS, TDI, TDO"]
-    IRQ_SRC["外部中断源<br/>16 条 IRQ 线"]
-    TIMER_VAL["定时器时钟源<br/>RTC / 系统时钟"]
+    IRQ_SRC["外部中断源<br/>soc2csr_irq_ext[15:0]"]
+    TIMER_CLK["定时器时钟源<br/>RTC / 系统时钟"]
     EXT_MEM["外部存储器<br/>AHB-Lite / AXI4"]
+    CLK_RST["时钟与复位<br/>sys_clk / sys_rst_n"]
   end
 
   subgraph SCR1_TOP["scr1_top_ahb / scr1_top_axi"]
     subgraph CORE["scr1_core_top"]
-      SCU["scr1_scu<br/>系统控制单元<br/>复位生成 / 系统控制"]
+      SCU["scr1_scu<br/>系统控制单元<br/>上电/调试/系统复位生成"]
       TAPC["scr1_tapc<br/>JTAG TAP 控制器<br/>16 状态 FSM"]
-      TAPCSYNC["scr1_tapc_synchronizer<br/>跨时钟域同步"]
-      DMI["scr1_dmi<br/>调试模块接口<br/>JTAG <-> DM 桥接"]
+      TAPCSYNC["scr1_tapc_synchronizer<br/>TCK -&gt; 系统时钟域"]
+      DMI["scr1_dmi<br/>调试模块接口<br/>op + addr + data"]
       DM["scr1_dm<br/>调试模块<br/>HART 控制 / 抽象命令"]
-      PIPE["scr1_pipe_top<br/>流水线顶层"]
+      PIPE["scr1_pipe_top<br/>流水线顶层<br/>IFU+IDU+EXU+IALU+LSU+MPRF+CSR"]
     end
-    TIMER["scr1_timer<br/>内存映射定时器<br/>mtime / mtimecmp"]
-    IMEM_RTR["scr1_imem_router<br/>指令存储器路由器"]
-    DMEM_RTR["scr1_dmem_router<br/>数据存储器路由器"]
-    TCM["scr1_tcm<br/>紧耦合存储器<br/>双端口 SRAM"]
-    IMEM_AHB["scr1_imem_ahb<br/>指令 AHB 桥"]
-    DMEM_AHB["scr1_dmem_ahb<br/>数据 AHB 桥"]
+    TIMER["scr1_timer<br/>mtime[63:0] / mtimecmp"]
+    IMEM_RTR["scr1_imem_router<br/>指令地址译码"]
+    DMEM_RTR["scr1_dmem_router<br/>数据地址译码"]
+    TCM["scr1_tcm<br/>64KB 双端口 SRAM"]
+    IMEM_AHB["scr1_imem_ahb<br/>指令 AHB 桥 + FIFO"]
+    DMEM_AHB["scr1_dmem_ahb<br/>数据 AHB 桥 + FIFO"]
   end
 
-  JTAG --> TAPC
-  TAPC --> TAPCSYNC --> DMI --> DM
-  DM --> PIPE
-  SCU --> PIPE
-  SCU --> DM
-  IRQ_SRC --> CORE
-  TIMER_VAL --> CORE
-  PIPE --> IMEM_RTR
-  PIPE --> DMEM_RTR
-  IMEM_RTR --> TCM
-  IMEM_RTR --> IMEM_AHB --> EXT_MEM
-  DMEM_RTR --> TCM
-  DMEM_RTR --> TIMER
-  DMEM_RTR --> DMEM_AHB --> EXT_MEM
+  CLK_RST -->|"sys_clk / sys_rst_n"| SCU
+  SCU -->|"core_rst_n / core_clk"| PIPE
+  SCU -->|"dm_rst_n"| DM
+  JTAG -->|"TCK/TMS/TDI"| TAPC
+  TAPC -->|"TDO"| JTAG
+  TAPC -->|"tapc2sync_update/select/capture"| TAPCSYNC
+  TAPCSYNC -->|"sync2dmi_dtm_req"| DMI
+  DMI -->|"dmi2dm_req/rdata"| DM
+  DM -->|"dm2dmi_rdata"| DMI
+  DM -->|"dm2hdu_halt/resume/sstep"| PIPE
+  DM -->|"ndm_rst_n / hart_rst_n"| SCU
+  IRQ_SRC -->|"soc2csr_irq_ext[15:0]"| PIPE
+  TIMER_CLK -->|"timer_clk"| TIMER
+  TIMER -->|"timer_irq"| PIPE
+  PIPE -->|"core2imem_req + addr"| IMEM_RTR
+  PIPE -->|"core2dmem_req + addr + wdata"| DMEM_RTR
+  IMEM_RTR -->|"tcm_req"| TCM
+  IMEM_RTR -->|"ahb_req"| IMEM_AHB
+  DMEM_RTR -->|"tcm_req"| TCM
+  DMEM_RTR -->|"timer_req"| TIMER
+  DMEM_RTR -->|"ahb_req"| DMEM_AHB
+  TCM -->|"rdata"| CORE
+  IMEM_AHB -->|"HTRANS/HADDR"| EXT_MEM
+  EXT_MEM -->|"HRDATA/HREADY"| IMEM_AHB
+  DMEM_AHB -->|"HTRANS/HADDR/HWDATA"| EXT_MEM
+  EXT_MEM -->|"HRDATA/HREADY/HRESP"| DMEM_AHB
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>复位信号从 SCU 发出，经多个复位域到达核心各模块。JTAG 链从 TAPC 经跨时钟域同步到 DMI 再到 DM，最终控制流水线的调试状态。指令和数据走独立路由器，共享 TCM 双端口，分别经 AHB 桥访问外部总线。定时器时钟独立于核心时钟，中断线从外部直连 CSR/IPIC。
 </div>
 
-<h2 id="s2">图二: 流水线内部 -- 数据通路</h2>
+<!-- ============================================================ -->
+<h2 id="s2">图二: 流水线内部 -- 数据通路 (增强版)</h2>
 <div class="mermaid">
 graph LR
   subgraph IFU_BLK["IFU 取指单元"]
-    IFU["scr1_pipe_ifu<br/>FSM: IDLE <-> FETCH<br/>4x16 位指令队列"]
+    IFU["scr1_pipe_ifu<br/>FSM: IDLE &lt;-&gt; FETCH<br/>指令队列: 4x16bit"]
   end
 
   subgraph IDU_BLK["IDU 译码单元"]
@@ -91,131 +119,714 @@ graph LR
   end
 
   subgraph EXU_BLK["EXU 执行单元"]
-    EXU["scr1_pipe_exu<br/>操作数准备 + 提交判断<br/>异常仲裁 + 指令流控制"]
-    IALU["scr1_pipe_ialu<br/>整数 ALU + 乘除法器<br/>地址加法器 sum2"]
-    LSU["scr1_pipe_lsu<br/>加载存储单元<br/>FSM: IDLE -> WAIT_MEM"]
-    EXU --> IALU
-    EXU --> LSU
+    EXU["scr1_pipe_exu<br/>操作数准备 / 异常仲裁<br/>指令流控制 / 提交判断"]
+    IALU["scr1_pipe_ialu<br/>整数 ALU + MUL/DIV<br/>地址加法器 sum2"]
+    LSU["scr1_pipe_lsu<br/>FSM: IDLE -&gt; WAIT_MEM<br/>对齐检查 / 符号扩展"]
+    EXU -->|"exu2ialu_cmd: opcode + op1 + op2"| IALU
+    IALU -->|"ialu2exu_res: 运算结果 + 标志位"| EXU
+    EXU -->|"exu2lsu_cmd: lsu_cmd + addr + wdata"| LSU
+    LSU -->|"lsu2exu_rdata: 读数据 + 异常标志"| EXU
   end
 
-  MPRF["scr1_pipe_mprf<br/>多端口寄存器文件<br/>2 读 + 1 写<br/>x0 硬连线零"]
-  CSR["scr1_pipe_csr<br/>控制状态寄存器<br/>MSTATUS, MIE, MIP, MEPC..."]
-  IPIC["scr1_ipic<br/>集成可编程中断控制器<br/>16 路 IRQ 配置"]
+  MPRF["scr1_pipe_mprf<br/>2R+1W 寄存器文件<br/>31 个通用寄存器 + x0"]
+  CSR["scr1_pipe_csr<br/>MSTATUS / MIE / MIP / MEPC<br/>MCAUSE / MTVAL / MTVEC"]
+  IPIC["scr1_ipic<br/>16 路 IRQ 配置<br/>IER/IMR/IINVR/ISVR/IPR"]
 
   IMEM["指令存储器<br/>IMEM"]
   DMEM["数据存储器<br/>DMEM"]
 
-  IMEM -->|"指令字 [31:0]"| IFU
-  IFU -->|"ifu2idu_instr + valid + err"| IDU
-  IDU -->|"idu2exu_cmd: 操作码+操作数+立即数"| EXU
-  EXU -->|"rs1_addr, rs2_addr"| MPRF
-  MPRF -->|"rs1_data, rs2_data"| EXU
-  EXU -->|"rd_addr + rd_data 写请求"| MPRF
-  EXU -->|"CSR 读写 + 异常/中断事件"| CSR
-  CSR -->|"CSR 数据 + IRQ 信号 + 新 PC"| EXU
-  EXU -->|"new_pc_req + new_pc"| IFU
-  CSR -->|"中断配置读写"| IPIC
-  IPIC -->|"中断向量"| CSR
-  LSU -->|"访存请求 + 地址 + 数据"| DMEM
-  DMEM -->|"读取数据 + 响应"| LSU
+  IMEM -->|"imem2ifu_rdata[31:0]"| IFU
+  IFU -->|"ifu2idu_instr[31:0] + valid + err"| IDU
+  IDU -->|"idu2exu_cmd: op_type + rs1/rs2 + rd + imm + funct3/funct7"| EXU
+  EXU -->|"exu2mprf_rs1_addr[4:0] / rs2_addr[4:0]"| MPRF
+  MPRF -->|"mprf2exu_rs1_data[31:0] / rs2_data[31:0]"| EXU
+  EXU -->|"exu2mprf_wr: rd_addr[4:0] + rd_data[31:0] + we"| MPRF
+  EXU -->|"exu2csr_rw: addr[11:0] + wdata + we + op"| CSR
+  CSR -->|"csr2exu_rdata[31:0] + irq + ip_ie + new_pc"| EXU
+  EXU -->|"exu2ifu_pc_new: req + pc_val[31:0]"| IFU
+  CSR -->|"csr2ipic_cfg: IER / IMR / IINVR 写"| IPIC
+  IPIC -->|"ipic2csr_irq_vec + cisv"| CSR
+  LSU -->|"lsu2dmem_req: addr[31:0] + wdata[31:0] + size[1:0] + we"| DMEM
+  DMEM -->|"dmem2lsu_rdata[31:0] + resp + err"| LSU
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>IFU 从指令存储器读取指令字送入指令队列，IDU 纯组合逻辑译码后产生 exu_cmd。EXU 根据 cmd 中的寄存器地址读取 MPRF，将操作数和 cmd 送入 IALU/LSU。运算结果经 EXU 仲裁后写回 MPRF 或 CSR。CSR 中介了 IPIC 的中断向量配置，EXU 根据 CSR 返回的中断信号决定是否跳转中断向量。
 </div>
 
-<h2 id="s3">图三: 流水线控制流 -- 暂停 / 清空 / 跳转 / 异常</h2>
+<!-- ============================================================ -->
+<h2 id="s3">图三: 流水线控制流 -- 暂停 / 清空 / 跳转 / 异常 (增强版)</h2>
 <div class="mermaid">
 graph TD
-  EXU["EXU 执行单元<br/>异常仲裁 + 指令流控制<br/>异常优先级: ECALL > EBREAK > 访存异常 > 非法指令 > 中断"]
-
-  IFU["IFU: PC 更新 + 取指"]
+  EXU["EXU 执行单元<br/>异常仲裁器<br/>优先级: ECALL &gt; EBREAK &gt; 访存异常 &gt; 非法指令 &gt; 中断"]
+  IFU["IFU: PC 管理 + 取指"]
   IDU["IDU: 译码"]
   MPRF["MPRF: 寄存器文件"]
 
-  EXU -->|"new_pc_req / new_pc<br/>跳转/分支/异常/MRET 目标地址"| IFU
-  EXU -->|"flush 清空流水线"| IFU
-  EXU -->|"stall 暂停取指"| IFU
-  EXU -->|"flush 清空"| IDU
-  EXU -->|"stall 暂停"| IDU
-  EXU -->|"rd_addr + rd_data 写回"| MPRF
-  CSR["CSR"] -->|"csr2exu_new_pc<br/>异常/中断向量地址"| EXU
-  LSU["LSU"] -->|"访存异常"| EXU
-  IPIC["IPIC"] -->|"IRQ 中断请求"| CSR
-  CSR -->|"ip_ie 中断待处理且已使能"| EXU
+  EXU -->|"exu2ifu_pc_new_req + pc_new[31:0]: 跳转/分支/异常/MRET"| IFU
+  EXU -->|"exu2ifu_flush_req: 流水线清空"| IFU
+  EXU -->|"exu2ifu_stall_req: 暂停取指"| IFU
+  EXU -->|"exu2idu_flush_req"| IDU
+  EXU -->|"exu2idu_stall_req"| IDU
+  EXU -->|"exu2mprf_wr: rd_addr + rd_data + we"| MPRF
+
+  CSR["CSR 模块"] -->|"csr2exu_new_pc: MTVEC 中断向量 / 异常入口"| EXU
+  LSU["LSU 模块"] -->|"lsu2exu_exc: 访存地址不对齐 / 访问异常"| EXU
+  IALU["IALU 模块"] -->|"ialu2exu_br: 分支条件计算结果"| EXU
+  IPIC["IPIC 模块"] -->|"ipic2csr_irq: 16 路中断线"| CSR
+  CSR -->|"csr2exu_irq + csr2exu_ip_ie: 中断待处理且使能"| EXU
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>EXU 是所有控制流的仲裁中心。分支跳转由 IALU 计算条件结果上报 EXU，EXU 产生 new_pc_req 更新 IFU 的 PC。同步异常 (非法指令/ECALL/EBREAK) 在 EXU 内检测，异步异常来自 LSU 访存结果。中断由 IPIC 汇聚经 CSR 到达 EXU。暂停请求由 LSU 访存等待时产生，清空请求由分支预测失败或异常触发。
 </div>
 
-<h2 id="s4">图四: 调试子系统</h2>
+<!-- ============================================================ -->
+<h2 id="s4">图四: 调试子系统 (增强版)</h2>
 <div class="mermaid">
 graph TD
-  subgraph JTAG_CHAIN["JTAG 扫描链"]
-    TAPC["scr1_tapc<br/>TAP 控制器<br/>16 状态 FSM<br/>IR / DR 寄存器"]
-    TAPCSYNC["scr1_tapc_synchronizer<br/>TCK <-> 系统时钟 同步"]
+  subgraph JTAG_DOMAIN["JTAG 时钟域 TCK"]
+    TAPC["scr1_tapc<br/>TAP 控制器<br/>16 状态 FSM<br/>IR[4:0] / DR[31:0]"]
+    TAPCSYNC["scr1_tapc_synchronizer<br/>TCK -&gt; 系统时钟域同步<br/>两级触发器 + 边沿检测"]
   end
 
-  DMI["scr1_dmi<br/>调试模块接口<br/>地址+数据+操作 三字段协议"]
-  DM["scr1_dm<br/>调试模块<br/>DMCONTROL / DMSTATUS / ABSTRACTCS<br/>程序缓冲区 PROGBUF0-5<br/>抽象数据寄存器 DATA0-1"]
-  HDU["scr1_pipe_hdu<br/>HART 调试单元<br/>HALT / RESUME / SSTEP<br/>程序缓冲区执行<br/>抽象寄存器访问"]
-  TDU["scr1_pipe_tdu<br/>触发调试单元<br/>指令断点 ibrkpt<br/>数据断点 dbrkpt<br/>指令计数断点 icount"]
+  subgraph SYS_DOMAIN["系统时钟域"]
+    DMI["scr1_dmi<br/>调试模块接口<br/>协议: {op[1:0], addr[6:0], data[31:0]}<br/>DM 寄存器: 0x00-0x7F"]
+    DM["scr1_dm<br/>调试模块<br/>dmcontrol / dmstatus<br/>abstractcs / command / abstractauto<br/>progbuf0-5 / data0-1 / haltsum0"]
+    HDU["scr1_pipe_hdu<br/>HART 调试单元<br/>状态: RUNNING / HALTED<br/>程序缓冲区执行<br/>抽象寄存器 R/W"]
+    TDU["scr1_pipe_tdu<br/>触发调试单元<br/>triggers: ibrkpt / dbrkpt / icount<br/>tdata1/tdata2/tdata3/tinfo"]
+  end
 
+  SCU["SCU 系统控制单元"]
   EXU["EXU 执行单元"]
   IFU["IFU 取指单元"]
-  CSR["CSR 控制状态寄存器"]
-  LSU["LSU 加载存储单元"]
+  CSR_BLOCK["CSR 控制状态寄存器"]
+  LSU_BLOCK["LSU 加载存储单元"]
 
-  TAPC --> TAPCSYNC --> DMI --> DM --> HDU
-  HDU -->|"程序缓冲区指令"| IFU
-  HDU -->|"调试控制: halt/run/sstep<br/>no_commit/irq_dsbl 等"| EXU
-  HDU -->|"硬件断点禁用"| TDU
-  TDU -->|"进入调试模式请求"| HDU
-  CSR -->|"CSR 读写 tdata/tselect/tinfo"| TDU
-  CSR -->|"CSR 读写 dcsr/dpc/dscratch"| HDU
-  EXU -->|"指令监视器 imon"| TDU
-  LSU -->|"数据监视器 dmon"| TDU
-  TDU -->|"指令断点匹配/异常"| EXU
-  TDU -->|"数据断点匹配/异常"| LSU
-  EXU -->|"硬件断点触发"| HDU
-  DM -->|"ndm_rst_n / hart_rst_n"| SCU["SCU 系统控制单元"]
+  TAPC -->|"tapc2sync: tck_update/tck_select/tck_capture"| TAPCSYNC
+  TAPCSYNC -->|"sync2dmi: dtm_req_valid + dtm_req_op + dtm_req_addr + dtm_req_data"| DMI
+  DMI -->|"dmi2dm_req: valid + op + addr + data"| DM
+  DM -->|"dm2dmi_rdata: valid + data"| DMI
+  DM -->|"dm2hdu: halt_req + resume_req + sstep_req + progbuf_exec"| HDU
+  HDU -->|"hdu2dm: halted + resume_ack + progbuf_result"| DM
+  DM -->|"dm2scu: ndm_rst_n + hart_rst_n"| SCU
+
+  HDU -->|"hdu2ifu: 程序缓冲区指令注入"| IFU
+  HDU -->|"hdu2exu: dbg_halted + no_commit + irq_dsbl + sstep"| EXU
+  HDU -->|"hdu2tdu: 硬件断点禁用控制"| TDU
+  TDU -->|"tdu2hdu: 进入调试模式请求"| HDU
+
+  CSR_BLOCK -->|"csr2tdu: tdata / tselect / tinfo CSR 读写"| TDU
+  CSR_BLOCK -->|"csr2hdu: dcsr / dpc / dscratch CSR 读写"| HDU
+  EXU -->|"exu2tdu: imon 指令监视器"| TDU
+  LSU_BLOCK -->|"lsu2tdu: dmon 数据监视器"| TDU
+  TDU -->|"tdu2exu: ibrkpt_match / ibrkpt_exception"| EXU
+  TDU -->|"tdu2lsu: dbrkpt_match / dbrkpt_exception"| LSU_BLOCK
+  EXU -->|"exu2hdu: 硬件断点触发通知"| HDU
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>调试命令从 JTAG TAP 控制器经过跨时钟域同步到达 DMI，DMI 将 JTAG 操作转换为 DM 寄存器访问。DM 通过 halt_req / resume_req 控制 HART 状态，程序缓冲区指令由 HDU 注入 IFU 执行。TDU 持续监视 EXU 的指令流 (imon) 和 LSU 的数据访问 (dmon)，匹配后产生断点信号。CSR 通过 tdata/tselect 等寄存器配置 TDU 的触发条件。
 </div>
 
-<h2 id="s5">图五: 存储器系统 -- TCM + AHB 桥 + 定时器</h2>
+<!-- ============================================================ -->
+<h2 id="s5">图五: 存储器系统 -- TCM + AHB 桥 + 定时器 (增强版)</h2>
 <div class="mermaid">
 graph TD
   CORE["处理器核心<br/>scr1_core_top"]
-  IMEM_RTR["scr1_imem_router<br/>地址译码<br/>TCM 范围 vs 外部总线"]
-  DMEM_RTR["scr1_dmem_router<br/>地址译码<br/>TCM / 定时器 / 外部总线"]
-  TCM["scr1_tcm<br/>紧耦合存储器<br/>64KB 双端口 SRAM<br/>1 周期访问延迟"]
-  TIMER["scr1_timer<br/>内存映射定时器<br/>mtime(64位) / mtimecmp<br/>时钟源: RTC 或 系统时钟"]
-  IMEM_AHB["scr1_imem_ahb<br/>AHB 指令桥<br/>FIFO 缓冲<br/>请求/响应分离"]
-  DMEM_AHB["scr1_dmem_ahb<br/>AHB 数据桥<br/>FIFO 缓冲<br/>请求/响应分离"]
-  AHB_BUS["AHB-Lite 总线<br/>HTRANS, HADDR, HWDATA<br/>HRDATA, HREADY, HRESP"]
-  EXT_SRAM["外部 SRAM / Flash"]
+  IMEM_RTR["scr1_imem_router<br/>地址范围检测<br/>TCM: 0x00000000<br/>外部: 剩余空间"]
+  DMEM_RTR["scr1_dmem_router<br/>地址范围检测<br/>TCM: 0x00400000<br/>TIMER: 0x00490000<br/>外部: 剩余空间"]
+  TCM["scr1_tcm<br/>64KB 双端口 SRAM<br/>端口A: 指令<br/>端口B: 数据<br/>1 周期延迟"]
+  TIMER["scr1_timer<br/>内存映射定时器<br/>mtime: 0x00490000 (64bit)<br/>mtimecmp: 0x00490008<br/>时钟源独立"]
+  IMEM_AHB["scr1_imem_ahb<br/>AHB-Lite 指令桥<br/>FIFO 缓冲<br/>burst 拆分"]
+  DMEM_AHB["scr1_dmem_ahb<br/>AHB-Lite 数据桥<br/>FIFO 缓冲<br/>response 缓存"]
+  AHB_BUS["AHB-Lite 总线<br/>HTRANS[1:0] / HADDR[31:0]<br/>HWDATA[31:0] / HSIZE[2:0]<br/>HRDATA[31:0] / HREADY / HRESP"]
+  EXT_MEM["外部 SRAM / Flash"]
 
-  CORE -->|"指令取指"| IMEM_RTR
-  CORE -->|"数据访存"| DMEM_RTR
-  IMEM_RTR -->|"TCM 命中"| TCM
+  CORE -->|"core2imem_req: addr[31:0]"| IMEM_RTR
+  CORE -->|"core2dmem_req: addr[31:0] + wdata[31:0] + we + size[1:0]"| DMEM_RTR
+  IMEM_RTR -->|"TCM 命中: 0x00000xxx"| TCM
   IMEM_RTR -->|"外部总线"| IMEM_AHB
-  DMEM_RTR -->|"TCM 命中"| TCM
-  DMEM_RTR -->|"定时器空间"| TIMER
+  DMEM_RTR -->|"TCM 命中: 0x00400xxx"| TCM
+  DMEM_RTR -->|"定时器空间: 0x00490xxx"| TIMER
   DMEM_RTR -->|"外部总线"| DMEM_AHB
-  IMEM_AHB --> AHB_BUS --> EXT_SRAM
-  DMEM_AHB --> AHB_BUS --> EXT_SRAM
+  TCM -->|"端口A 读数据"| CORE
+  TCM -->|"端口B 读数据"| CORE
+  IMEM_AHB --> AHB_BUS --> EXT_MEM
+  EXT_MEM --> AHB_BUS --> IMEM_AHB
+  DMEM_AHB --> AHB_BUS --> EXT_MEM
+  EXT_MEM --> AHB_BUS --> DMEM_AHB
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>指令和数据通过独立的路由器访问统一的 TCM。IMEM_RTR 只读指令空间，DMEM_RTR 处理数据、定时器和外部总线。TCM 双端口设计使指令取指和数据访存可同时进行 (只要不是同一 SRAM 行)。定时器在内存映射空间中独立存在，使用独立的时钟源。AHB 桥内置 FIFO 解耦核心与总线延迟。
 </div>
 
-<h2 id="s6">图六: 中断系统</h2>
+<!-- ============================================================ -->
+<h2 id="s6">图六: 中断系统 (增强版)</h2>
+<div class="mermaid">
+graph TD
+  subgraph IRQ_SOURCES["中断源"]
+    EXT_IRQ["外部中断<br/>soc2csr_irq_ext[15:0]"]
+    SOFT_IRQ["软件中断<br/>soc2csr_irq_soft"]
+    TIMER_IRQ["定时器中断<br/>soc2csr_irq_mtimer"]
+  end
+
+  subgraph IPIC_BLK["IPIC 可编程中断控制器"]
+    IPIC_CFG["配置寄存器组<br/>IER: 中断使能<br/>IMR: 触发模式 (电平/边沿)<br/>IINVR: 极性反转<br/>ISVR: 向量地址<br/>IPR: 挂起状态<br/>SOI: 开始中断<br/>EOI: 结束中断"]
+  end
+
+  CSR["scr1_pipe_csr<br/>MIE: 中断使能<br/>MIP: 中断挂起<br/>MTVEC[31:0]: 向量基址 + 模式<br/>MCAUSE[31:0]: 异常原因<br/>MEPC[31:0]: 异常返回地址<br/>MSTATUS: 全局中断使能 MIE"]
+
+  EXU["EXU 执行单元<br/>响应流程:<br/>1. 保存当前 PC -&gt; MEPC<br/>2. 保存原因 -&gt; MCAUSE<br/>3. 软件保存 MSTATUS.MIE<br/>4. 跳转 MTVEC 向量地址"]
+
+  EXT_IRQ -->|"直接路径"| CSR
+  SOFT_IRQ -->|"直接路径"| CSR
+  TIMER_IRQ -->|"直接路径"| CSR
+  EXT_IRQ -->|"向量化路径"| IPIC_CFG
+  CSR -->|"csr2ipic: 配置读写 IER/IMR/IINVR/ISVR"| IPIC_CFG
+  IPIC_CFG -->|"ipic2csr_irq: 16 路中断向量"| CSR
+  IPIC_CFG -->|"ipic2csr_cisv: 当前中断服务向量"| CSR
+  CSR -->|"csr2exu_irq + csr2exu_ip_ie: 中断待处理且全局使能"| EXU
+  EXU -->|"exu2csr_take_irq: 接收中断响应"| CSR
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>中断源分两条路径进入核心：简单路径 (irq_ext/irq_soft/irq_mtimer) 直连 CSR 的 MIP 寄存器；向量化路径经过 IPIC 的可编程配置层 (模式/极性/向量地址)。CSR 综合 MIE、MIP、MSTATUS.MIE 判定是否向 EXU 发出 irq 信号。EXU 接收后执行硬件保存 (MEPC/MCAUSE) 并跳转 MTVEC。IPIC 的 SOI/EOI 协议用于向量化中断的嵌套管理和优先级仲裁。
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 流水线阶段寄存器图 -->
+<h2 id="s7">图七: 流水线阶段寄存器 -- 三级流水线寄存器分布</h2>
 <div class="mermaid">
 graph LR
-  SOC_IRQ["外部中断源<br/>soc2csr_irq_ext<br/>soc2csr_irq_soft<br/>soc2csr_irq_mtimer"]
+  subgraph STAGE1["阶段1: 取指 IF"]
+    PC_REG["PC 寄存器<br/>pc_r[31:0]"]
+    INSTR_Q["指令队列<br/>instr_queue[3:0][15:0]<br/>4 x 16bit"]
+  end
 
-  CSR["scr1_pipe_csr<br/>CSR 寄存器文件<br/>MIE / MIP / MTVEC / MCAUSE<br/>MEPC / MSTATUS / MTVAL"]
-  IPIC["scr1_ipic<br/>可编程中断控制器<br/>16 路 IRQ<br/>IER 使能 / IMR 模式 / IINVR 极性<br/>ISVR 向量 / IPR 挂起<br/>SOI 开始 / EOI 结束"]
-  EXU["EXU 执行单元<br/>中断响应: 保存 PC->MEPC<br/>保存原因->MCAUSE<br/>跳转 MTVEC 向量"]
+  subgraph IF_ID["IF/ID 流水线寄存器"]
+    IFID_PIPE["ifid_val[31:0]<br/>指令字完整拼接<br/>ifid_vd: 指令有效<br/>ifid_err: 取指异常"]
+  end
 
-  SOC_IRQ --> CSR
-  SOC_IRQ --> IPIC
-  CSR -->|"csr2ipic 配置读写"| IPIC
-  IPIC -->|"ipic2csr 中断向量 / CISV"| CSR
-  CSR -->|"irq / ip_ie 中断信号"| EXU
-  EXU -->|"take_irq 接收中断<br/>MTVEC 模式: direct / vectored"| CSR
+  subgraph STAGE2["阶段2: 译码 ID"]
+    IDEC["纯组合译码<br/>op_type / funct3 / funct7<br/>rs1 / rs2 / rd<br/>imm 立即数<br/>Ctrl 控制信号"]
+  end
+
+  subgraph ID_EX["ID/EX 流水线寄存器"]
+    IDEX_PIPE["idex_cmd 指令命令包<br/>idex_rs1_addr[4:0]<br/>idex_rs2_addr[4:0]<br/>idex_rd_addr[4:0]<br/>idex_imm[31:0]<br/>idex_ctrl 控制字"]
+  end
+
+  subgraph STAGE3["阶段3: 执行 / 访存 / 写回 EX+LS+WB"]
+    EXEC["EXU 读寄存器 / 执行<br/>IALU 运算 / LSU 访存"]
+    EX_WB["执行结果寄存器<br/>ex_result[31:0]<br/>ex_rd_addr[4:0]<br/>ex_we: 写使能"]
+  end
+
+  STAGE1 --> IF_ID --> STAGE2 --> ID_EX --> STAGE3 --> EX_WB
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>SCR1 采用三级流水线，流水线寄存器位于阶段之间。IF/ID 寄存器保存从指令队列拼接出的完整 32 位指令字及有效标志。ID/EX 寄存器保存译码后的完整指令命令包 (idex_cmd)，包含操作类型、寄存器地址、立即数和控制信号。EX 阶段内部包含了访存等待和写回逻辑。三级流水在分支/异常时会被清空 (flush) 和暂停 (stall)。这是典型的 RISC-V RV32IMC 精简流水线结构。
 </div>
 
-<h2 id="s7">模块间信号命名规范</h2>
+<!-- ============================================================ -->
+<!-- ASCII: 流水线级 -->
+<div class="ascii-art">
+                         SCR1 三级流水线示意
+   ┌────────────┐    ┌────────────┐    ┌─────────────────────┐
+   │    IF      │    │    ID      │    │    EX/LS/WB          │
+   │ 取指单元    │───&gt;│ 译码单元    │───&gt;│ 执行/访存/写回        │
+   │            │    │            │    │                     │
+   │ PC 更新     │    │ RVC-&gt;RVI  │    │ RF 读 -&gt; IALU算      │
+   │ 指令队列    │    │ 立即数生成  │    │ LSU 访存 -&gt; RF 写   │
+   │ RVC 拼接    │    │ 控制信号    │    │ CSR 读写 -&gt; 异常仲裁 │
+   └─────┬──────┘    └─────┬──────┘    └──────────┬──────────┘
+         │                 │                       │
+    ┌────▼────┐       ┌────▼────┐             ┌────▼────┐
+    │IF/ID Reg│       │ID/EX Reg│             │EX/WB Reg│
+    │指令字    │       │译码包    │             │结果值    │
+    └─────────┘       └─────────┘             └─────────┘
+         │                 │                       │
+         ▼                 ▼                       ▼
+    指令存储器          组合逻辑             寄存器文件/CSR
+        IMEM              (无状态)             DMEM/结果写回
+
+    流水线控制信号贯穿所有阶段:
+      stall_req  ──&gt;  暂停取指/译码
+      flush_req  ──&gt;  清空流水线寄存器
+      new_pc_req ──&gt;  更新 PC 寄存器
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 存储器映射图 -->
+<h2 id="s8">图八: 存储器映射图</h2>
+<div class="mermaid">
+graph TD
+  CPU["CPU 核心<br/>32-bit 地址空间<br/>0x00000000 - 0xFFFFFFFF"]
+  IMEM_DEC["指令地址译码<br/>scr1_imem_router<br/>地址 0x00000000 起始"]
+  DMEM_DEC["数据地址译码<br/>scr1_dmem_router<br/>地址空间分配"]
+
+  subgraph TCM_SPACE["TCM 紧耦合存储器"]
+    TCM_IMEM["IMEM TCM 空间<br/>0x00000000 - 0x0000FFFF<br/>64KB 指令存储<br/>端口A 只读"]
+    TCM_DMEM["DMEM TCM 空间<br/>0x00400000 - 0x0040FFFF<br/>64KB 数据存储<br/>端口B 读写"]
+  end
+
+  subgraph TIMER_SPACE["定时器空间"]
+    TIMER_MMAP["定时器映射<br/>0x00490000 - 0x0049000F<br/>mtime + mtimecmp<br/>64bit + 64bit"]
+  end
+
+  subgraph EXT_SPACE["外部总线空间"]
+    EXT_IMEM["外部指令空间<br/>0x00010000+ (指令未命中)<br/>经 AHB 桥访问"]
+    EXT_DMEM["外部数据空间<br/>0x00410000+ (数据未命中)<br/>经 AHB 桥访问"]
+    EXT_OTHER["其他外部设备<br/>0xA0000000 - 0xFFFFFFFF<br/>GPIO / UART / SPI..."]
+  end
+
+  CPU -->|"指令取指"| IMEM_DEC
+  CPU -->|"数据访存"| DMEM_DEC
+  IMEM_DEC -->|"0x0000xxxx"| TCM_IMEM
+  IMEM_DEC -->|"地址未命中"| EXT_IMEM
+  DMEM_DEC -->|"0x0040xxxx"| TCM_DMEM
+  DMEM_DEC -->|"0x00490xxx"| TIMER_MMAP
+  DMEM_DEC -->|"地址未命中"| EXT_DMEM
+  DMEM_DEC -->|"外部设备"| EXT_OTHER
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>SCR1 的指令和数据使用统一寻址但双端口设计。IMEM_RTR 将取指地址与 TCM 基地址比较，命中则从 TCM 端口A 返回数据，未命中则路由到 IMEM_AHB 桥访问外部总线。DMEM_RTR 类似，但需额外检查定时器地址范围 (0x00490000) 和外部设备空间。地址译码在路由器中纯组合逻辑完成，零延迟。
+</div>
+
+<!-- ============================================================ -->
+<!-- ASCII: 内存映射 -->
+<div class="ascii-art">
+                      SCR1 地址空间映射 (32-bit Address Map)
+  0xFFFFFFFF ┌──────────────────────────┐
+             │    外部设备空间           │  GPIO, UART, SPI, 外设
+  0xA0000000 ├──────────────────────────┤
+             │    外部数据/指令总线      │  AHB-Lite 外部 SRAM/Flash
+  0x00410000 ├──────────────────────────┤
+             │    DMEM TCM (64KB)       │  数据紧耦合存储器
+  0x00400000 ├──────────────────────────┤
+             │    保留空间              │
+  0x00010000 ├──────────────────────────┤
+             │    IMEM TCM (64KB)       │  指令紧耦合存储器
+  0x00000000 └──────────────────────────┘
+
+  定时器映射 (在数据空间内):
+    0x00490000 ─  mtime[31:0]   低 32 位
+    0x00490004 ─  mtime[63:32]  高 32 位
+    0x00490008 ─  mtimecmp[31:0]  低 32 位
+    0x0049000C ─  mtimecmp[63:32] 高 32 位
+
+  TCM 双端口无冲突条件:
+    PortA (指令) 和 PortB (数据) 访问不同 SRAM 行 -&gt; 并行
+    PortA 和 PortB 访问同一 SRAM 行 -&gt; PortB 等待 1 周期
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 中断处理流程图 -->
+<h2 id="s9">图九: RISC-V 中断处理流程</h2>
+<div class="mermaid">
+graph TD
+  START["指令正常执行<br/>PC = pc_current"]
+  IRQ_CHECK{"MSTATUS.MIE == 1<br/>&amp;&amp; MIE.bit == 1<br/>&amp;&amp; MIP.bit == 1 ?"}
+  VECTORED{"MTVEC[1:0] == 01<br/>向量化模式?"}
+
+  SAVE_CTX["硬件自动保存:<br/>MEPC &lt;- 当前 PC<br/>MCAUSE &lt;- 中断原因码<br/>MSTATUS.MPIE &lt;- MSTATUS.MIE<br/>MSTATUS.MIE &lt;- 0"]
+  DIRECT_JUMP["跳转 MTVEC.BASE<br/>PC = MTVEC[31:2]&lt;&lt;2"]
+  VECTOR_JUMP["跳转 MTVEC.BASE + 4*cause<br/>PC = MTVEC.BASE + 4*MCAUSE.code"]
+
+  ISR["执行 ISR 中断服务程序<br/>保存/恢复上下文<br/>处理中断源"]
+  MRET["执行 MRET 指令:<br/>PC &lt;- MEPC<br/>MSTATUS.MIE &lt;- MSTATUS.MPIE"]
+
+  START --> IRQ_CHECK
+  IRQ_CHECK -->|"否"| START
+  IRQ_CHECK -->|"是"| SAVE_CTX
+  SAVE_CTX --> VECTORED
+  VECTORED -->|"否: direct"| DIRECT_JUMP
+  VECTORED -->|"是: vectored"| VECTOR_JUMP
+  DIRECT_JUMP --> ISR
+  VECTOR_JUMP --> ISR
+  ISR --> MRET
+  MRET --> START
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>中断响应需要三个条件同时满足：MSTATUS.MIE (全局中断使能)、对应 MIE 位 (特定中断使能)、对应 MIP 位 (中断挂起)。硬件自动保存当前 PC 到 MEPC、中断原因到 MCAUSE，并禁用全局中断使能。MTVEC 的低两位决定跳转模式：direct 模式跳转到 MTVEC.BASE；vectored 模式按 MCAUSE 乘以 4 偏移分配独立入口。ISR 执行完毕后通过 MRET 指令恢复 MEPC 和 MIE。
+</div>
+
+<!-- ============================================================ -->
+<!-- ASCII: 中断流程 -->
+<div class="ascii-art">
+                   SCR1 中断响应硬件流程 (逐周期展开)
+
+  周期0  正常执行指令 @ PC=n
+
+  周期1  ┌─ 检测到 irq=1 &amp;&amp; ip_ie=1  ─────────────────────────┐
+         │ EXU 仲裁: 中断优先级低于同步异常,                  │
+         │   若当前指令正常提交则进入中断响应                 │
+         └────────────────────────────────────────────────────┘
+
+  周期2  硬件写 CSR (原子):
+         ┌─────────────────────────────────────────────────┐
+         │ MEPC[31:0]  &lt;── 当前指令 PC                     │
+         │ MCAUSE[31]  &lt;── 1 (中断, 非异常)                │
+         │ MCAUSE[30:0]&lt;── 中断原因码                       │
+         │ MSTATUS.MPIE&lt;── MSTATUS.MIE                    │
+         │ MSTATUS.MIE &lt;── 0                              │
+         └─────────────────────────────────────────────────┘
+
+  周期3  流水线清空 + PC 更新:
+         ┌─────────────────────────────────────────────────┐
+         │ flush IFU (清空指令队列)                         │
+         │ flush IDU (清空译码级)                           │
+         │ if (MTVEC[1:0]==01) 向量模式:                   │
+         │   new_pc = MTVEC.BASE + (MCAUSE.code &lt;&lt; 2)     │
+         │ else 直接模式:                                   │
+         │   new_pc = MTVEC.BASE                           │
+         └─────────────────────────────────────────────────┘
+
+  周期4  从 new_pc 开始取指 (进入 ISR)
+
+  信号交互:
+    IPIC ──ipic2csr_irq──&gt; CSR ──csr2exu_irq/ip_ie──&gt; EXU
+    EXU  ──exu2csr_take_irq──&gt; CSR (确认中断接收)
+    EXU  ──exu2ifu_flush_req + exu2ifu_pc_new──&gt; IFU
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 调试处理流程图 -->
+<h2 id="s10">图十: 调试处理流程</h2>
+<div class="mermaid">
+graph TD
+  RUNNING["状态: RUNNING<br/>正常执行指令"]
+  HALT_CHECK{"进入 HALT 条件?"}
+
+  subgraph HALT_REASONS["进入调试模式原因"]
+    EBREAK["EBREAK 指令执行"]
+    BRKPT["硬件断点匹配<br/>ibrkpt / dbrkpt / icount"]
+    EXT_HALT["外部 halt_req<br/>DM 通过 JTAG 发送"]
+    STEP["单步完成 sstep"]
+  end
+
+  HALTED["状态: HALTED"]
+  HALT_ACTION["HDU 执行调试操作:<br/>1. 程序缓冲区指令注入 IFU<br/>2. 抽象寄存器读写 MPRF/CSR<br/>3. 抽象命令执行"]
+  RESUME_CHECK{"RESUME 条件?"}
+  RESUMING["HDU 发送 resume:<br/>1. 清除 halted 标志<br/>2. 重新使能提交<br/>3. 恢复指令流"]
+
+  RUNNING --> HALT_CHECK
+  HALT_CHECK -->|"EBREAK 执行"| HALTED
+  HALT_CHECK -->|"断点匹配"| HALTED
+  HALT_CHECK -->|"外部 halt_req"| HALTED
+  HALT_CHECK -->|"单步完成"| HALTED
+  HALT_CHECK -->|"否"| RUNNING
+  HALTED --> HALT_ACTION
+  HALT_ACTION --> RESUME_CHECK
+  RESUME_CHECK -->|"resume_req 或 单步"| RESUMING
+  RESUME_CHECK -->|"否"| HALT_ACTION
+  RESUMING --> RUNNING
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>调试状态机在 RUNNING 和 HALTED 之间切换。进入 HALTED 的原因包括：EBREAK 指令执行 (软件断点)、TDU 硬件断点匹配 (地址/数据/指令计数)、外部 JTAG 发送 halt_req、单步完成。HALTED 状态下，HDU 将 DM 的命令转换为对流水线的操作：程序缓冲区指令通过 hdu2ifu 注入 IFU 替代正常取指；抽象寄存器访问通过 hdu2exu 控制流水线读写 MPRF 和 CSR。resume 后恢复提交和指令流。
+</div>
+
+<!-- ============================================================ -->
+<!-- ASCII: 调试流程 -->
+<div class="ascii-art">
+                  SCR1 调试子系统 JTAG 命令流
+
+  PC 端 (调试器)                    SoC 端 (SCR1)
+  ───────────                    ──────────────
+  打开 JTAG 连接
+      │
+      ▼
+  IR 扫描: IDCODE (0x01)  ──&gt;  TAPC 返回设备 ID
+      │
+      ▼
+  IR 扫描: DTMCS (0x10)   ──&gt;  选择 DTM 控制状态寄存器
+      │
+      ▼
+  DR 扫描: 写 dmistat     ──&gt;  清除 sticky error bits
+      │
+      ▼
+  读取 dmstatus          &lt;──  dmstatus: allhalted=0
+      │                        (HART 正常运行中)
+      ▼
+  写 dmcontrol.haltreq=1 ──&gt;  发送 halt 请求
+      │
+      ▼
+  等待...                &lt;──  轮询 dmstatus.allhalted==1
+      │                        (HART 已暂停)
+      ▼
+  写 abstractcs          ──&gt;  设置 autoexecprogbuf
+      │
+      ▼
+  写 progbuf0..N         ──&gt;  注入寄存器读写指令
+      │                        (如: sw a0,0(dscratch))
+      │
+      ▼
+  读 data0               &lt;──  获取寄存器值
+      │
+      ▼
+  写 dmcontrol.resumereq ──&gt;  恢复运行
+
+  JTAG 到 DM 的信号路径:
+    TAPC ──tck_update──&gt; TAPC_SYNC ──dtm_req──&gt; DMI ──dm_req──&gt; DM
+    DM   ──dm_rdata──&gt; DMI ──dtm_rdata──&gt; TAPC_SYNC ──tdo──&gt; TAPC
+
+  DM 到流水线的信号:
+    DM ──halt_req / resume_req / progbuf_exec──&gt; HDU
+    HDU ──hdu2exu_dbg_halted / no_commit / sstep──&gt; EXU
+    HDU ──hdu2ifu_progbuf_instr──&gt; IFU
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 时钟与复位分配图 -->
+<h2 id="s11">图十一: 时钟与复位分配</h2>
+<div class="mermaid">
+graph TD
+  subgraph CLK_SOURCES["时钟源"]
+    SYS_CLK["系统时钟<br/>sys_clk"]
+    TCK["JTAG 时钟<br/>TCK"]
+    RTC_CLK["定时器时钟<br/>可选: RTC / sys_clk"]
+  end
+
+  subgraph SCU_MOD["SCU 系统控制单元"]
+    SCU_LOGIC["复位生成逻辑<br/>┌─────────────────────┐<br/>│ sys_rst_n 上电复位   │<br/>│ ndm_rst_n DM 复位    │<br/>│ 粘滞复位状态机       │<br/>│ 复位持续时间计数器   │<br/>└─────────────────────┘"]
+  end
+
+  subgraph CORE_CLK_DOMAIN["核心时钟域 sys_clk"]
+    CORE_MOD["核心模块<br/>IFU / IDU / EXU<br/>IALU / LSU / MPRF<br/>CSR / IPIC"]
+    HDU_MOD["HDU 调试单元"]
+    TDU_MOD["TDU 触发单元"]
+    TCM_MOD["TCM 存储器"]
+    IMEM_AHB_MOD["IMEM AHB 桥"]
+    DMEM_AHB_MOD["DMEM AHB 桥"]
+    DMI_MOD["DMI 接口"]
+    DM_MOD["DM 调试模块"]
+  end
+
+  subgraph JTAG_CLK_DOMAIN["JTAG 时钟域 TCK"]
+    TAPC_MOD["TAPC 控制器"]
+  end
+
+  subgraph TIMER_CLK_DOMAIN["定时器时钟域"]
+    TIMER_MOD["定时器模块<br/>mtime 自增"]
+  end
+
+  SYS_CLK -->|"直接驱动"| CORE_MOD
+  SYS_CLK -->|"直接驱动"| HDU_MOD
+  SYS_CLK -->|"直接驱动"| TDU_MOD
+  SYS_CLK -->|"直接驱动"| TCM_MOD
+  SYS_CLK -->|"直接驱动"| IMEM_AHB_MOD
+  SYS_CLK -->|"直接驱动"| DMEM_AHB_MOD
+  SYS_CLK -->|"直接驱动"| DMI_MOD
+  SYS_CLK -->|"直接驱动"| DM_MOD
+  TCK -->|"直接驱动"| TAPC_MOD
+  RTC_CLK -->|"直接驱动"| TIMER_MOD
+
+  SCU_LOGIC -->|"core_rst_n"| CORE_MOD
+  SCU_LOGIC -->|"core_rst_n"| HDU_MOD
+  SCU_LOGIC -->|"core_rst_n"| TDU_MOD
+  SCU_LOGIC -->|"core_rst_n"| TCM_MOD
+  SCU_LOGIC -->|"core_rst_n"| IMEM_AHB_MOD
+  SCU_LOGIC -->|"core_rst_n"| DMEM_AHB_MOD
+  SCU_LOGIC -->|"dm_rst_n"| DMI_MOD
+  SCU_LOGIC -->|"dm_rst_n"| DM_MOD
+</div>
+<div class="explain">
+  <strong>信号流说明：</strong>系统有三个独立的时钟域：sys_clk 驱动绝大多数核心模块和 AHBDM/DMI；TCK 驱动 JTAG TAPC；定时器时钟可选 RTC 或系统时钟。复位由 SCU 统一生成并分配到各模块。SCU 内部有状态机跟踪复位持续时间，确保各模块在复位释放前处于稳定状态。JTAG 域 (TCK) 与核心域 (sys_clk) 的跨时钟域同步由 TAPC_Synchronizer 中的两级触发器完成。
+</div>
+
+<!-- ============================================================ -->
+<!-- ASCII: 时钟与复位 -->
+<div class="ascii-art">
+                 SCR1 时钟域与复位域分布
+
+  时钟域:
+  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+  │  sys_clk 域   │   │   TCK 域     │   │  timer_clk 域│
+  │              │   │              │   │              │
+  │ IFU/IDU/EXU  │   │ TAPC         │   │ mtime 计数器  │
+  │ IALU/LSU     │   │ (JTAG FSM)   │   │              │
+  │ MPRF/CSR/IPIC│   │              │   │              │
+  │ HDU/TDU/TCM  │   │              │   │              │
+  │ DMI/DM       │   │              │   │              │
+  │ IMEM/DMEM AHB│   │              │   │              │
+  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+         │                  │                  │
+  跨时钟域同步:          │                  │
+  TAPC ──&gt; TAPCSync ──&gt; DMI  (TCK -&gt; sys_clk)
+  mtime 读 经 数据路由器 回到 sys_clk 域
+
+  复位域:
+  SCU 输出两条独立的复位线:
+    core_rst_n  ──&gt;  核心模块 (IFU,IDU,EXU,IALU,LSU,MPRF,CSR,IPIC,HDU,TDU,
+                      TCM, IMEM_AHB, DMEM_AHB)
+    dm_rst_n    ──&gt;  调试模块 (DMI, DM)
+
+  DM 对 SCU 的反馈复位控制:
+    dm2scu_ndm_rst_n    非调试模块复位 (DM 可独立复位核心)
+    dm2scu_hart_rst_n   HART 复位 (DM 可复位 HART)
+
+  上电复位时序:
+    sys_rst_n ──&gt; SCU 内部计数器 ──&gt; 延迟 N 周期 ──&gt; core_rst_n/dm_rst_n 释放
+    目的: 等待 PLL/时钟稳定, SRAM 初始化完成
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: 排错用 ASCII 图 -->
+<h2 id="s12">排错参考 -- 信号跟踪 ASCII 图</h2>
+
+<h3>图十二-A: 指令取指到执行的完整信号链</h3>
+<div class="ascii-art">
+ 指令取指-译码-执行 全链路信号跟踪
+ ═══════════════════════════════════════════════════════
+
+ IMEM ──imem2ifu_rdata[31:0]──&gt; [IFU]
+   IFU FSM: IDLE -&gt; FETCH
+   IFU 指令队列: 4x16bit, RVC 指令拼接为 32bit
+ [IFU] ──ifu2idu_instr_vd + ifu2idu_instr[31:0]──&gt; [IDU]
+   IDU 纯组合译码: opcode / funct3 / funct7 / rs1 / rs2 / rd / imm
+ [IDU] ──idu2exu_cmd(op_type+rs1+rs2+rd+imm+ctrl)──&gt; [EXU]
+   EXU 内部:
+     1. exu2mprf_rs1_addr + exu2mprf_rs2_addr ──&gt; [MPRF]
+     2. [MPRF] ──mprf2exu_rs1_data + mprf2exu_rs2_data──&gt; [EXU]
+     3. 算术类: exu2ialu_cmd ──&gt; [IALU] ──ialu2exu_res──&gt; [EXU]
+     4. 访存类: exu2lsu_cmd ──&gt; [LSU] ──lsu2dmem_req──&gt; [DMEM]
+     5. [DMEM] ──dmem2lsu_rdata──&gt; [LSU] ──lsu2exu_rdata──&gt; [EXU]
+     6. 写回: exu2mprf_wr ──&gt; [MPRF]
+
+ 关键诊断信号 (在波形中查看):
+   ifu2idu_instr_vd     ─ 指令队列是否有有效指令
+   idex_cmd_valid       ─ 译码结果是否有效
+   exu_flush_req        ─ 是否发生清空 (分支/异常)
+   exu_stall_req        ─ 是否发生暂停 (访存等待)
+   mprf2exu_rs1_data    ─ 寄存器读取值 (验证 RF 内容)
+   csr2exu_irq           ─ 中断信号 (调试中断响应)
+</div>
+
+<h3>图十二-B: CSR 寄存器读写信号流</h3>
+<div class="ascii-art">
+ CSR 读写操作信号流
+ ═══════════════════════════════════════════
+
+ 读操作:
+ [EXU] ──exu2csr_rw: addr[11:0] + wdata + we=0 + op──&gt; [CSR]
+ [CSR] 内部查找对应寄存器 ──csr2exu_rdata[31:0]──&gt; [EXU]
+ [EXU] ──exu2mprf_wr: rd_data=csr_rdata──&gt; [MPRF]
+
+ 写操作:
+ [EXU] 从 MPRF 读取数据 ─&gt; 作为 wdata
+ [EXU] ──exu2csr_rw: addr[11:0] + wdata + we=1 + op──&gt; [CSR]
+ [CSR] 写入对应寄存器 (部分位硬连线为只读)
+
+ CSR 硬连线位 (只读, 写忽略):
+   MIP: 中断挂起位由外部中断源设置
+   MTVAL: 由异常/中断硬件自动设置
+
+ CSR 自动更新 (由硬件触发, 非指令写入):
+   MEPC: 异常/中断时保存 PC
+   MCAUSE: 异常/中断时保存原因
+   MSTATUS.MPIE/MIE: 中断进入/退出时自动切换
+
+ 调试 CSR 访问 (通过 DM-&gt;HDU 抽象命令):
+ [DM] ──&gt; [HDU] ──&gt; [EXU] (注入抽象命令到流水线)
+ [EXU] ──exu2csr_rw──&gt; [CSR] (直接读写 tdata/dcsr/dpc 等)
+</div>
+
+<h3>图十二-C: 数据访存操作 (Load/Store) 信号流</h3>
+<div class="ascii-art">
+ Load / Store 访存操作信号流
+ ═══════════════════════════════════════════════════
+
+ LOAD 读操作 (时序: 至少 2 周期):
+   周期1: [EXU] ──exu2lsu_cmd--&gt;[LSU], LSU FSM: IDLE-&gt;WAIT_MEM
+          [LSU] ──lsu2dmem_req: addr+we=0+size──&gt; [DMEM_RTR] ──&gt; [TCM/AHB]
+   周期2: (等待存储器响应, 可产生 stall_req)
+          [DMEM_RTR] ──rdata──&gt; [LSU]
+          [LSU] 符号扩展/拼接 ──lsu2exu_rdata──&gt; [EXU]
+          [EXU] ──exu2mprf_wr──&gt; [MPRF] (写回目标寄存器)
+          LSU FSM: WAIT_MEM -&gt; IDLE
+
+ STORE 写操作 (时序: 至少 2 周期):
+   周期1: [EXU] ──exu2lsu_cmd: addr+st_data+we=1+size──&gt; [LSU]
+          [LSU] ──lsu2dmem_req: addr+wdata+we=1+size──&gt; [DMEM_RTR] ──&gt; [TCM/AHB]
+   周期2: (等待存储器确认写入)
+          [DMEM_RTR] ──resp──&gt; [LSU]
+          LSU FSM: WAIT_MEM -&gt; IDLE
+
+ LSUSM 状态机:
+   IDLE ──(访存请求)──&gt; WAIT_MEM ──(rvalid/resp)──&gt; IDLE
+   在 WAIT_MEM 期间, EXU 发出 stall_req 暂停流水线
+
+ 对齐检查:
+   LW (32bit): addr[1:0] 必须为 00, 否则加载地址不对齐异常
+   LH (16bit): addr[0] 必须为 0, 否则加载地址不对齐异常
+   LB (8bit): 任意地址均可
+   SW/SH: 同上规则
+
+ 数据断点 (TDU 监视):
+   [LSU] ──lsu2tdu_dmon: addr+wdata+we+size──&gt; [TDU]
+   [TDU] 比较 dbrkpt 配置 ──tdu2lsu_dbrkpt_match──&gt; [LSU]
+</div>
+
+<h3>图十二-D: 分支跳转指令信号流</h3>
+<div class="ascii-art">
+ 分支 / 跳转指令信号流
+ ═══════════════════════════════════════════════════
+
+ 条件分支 (BEQ/BNE/BLT/BGE/BLTU/BGEU):
+   周期1: IFU 取指 ─&gt; IDU 译码 ─&gt; EXU 分发到 IALU
+   周期2: IALU 计算 rs1 op rs2 ──ialu2exu_br: taken + target──&gt; EXU
+          若预测错误 (默认不预测, 总是顺序执行):
+            EXU ──exu2ifu_flush_req──&gt; IFU (清空误取的指令)
+            EXU ──exu2ifu_pc_new──&gt; IFU (更新为目标地址)
+   周期3: IFU 从目标地址重新取指
+
+ 无条件跳转 (JAL):
+   周期1: IFU 取指 ─&gt; IDU 译码 ─&gt; EXU
+   周期2: EXU 计算: new_pc = pc + imm (IALU 中的地址加法器)
+          EXU ──exu2mprf_wr: rd=ra, rd_data=pc+4──&gt; MPRF (保存返回地址)
+          EXU ──exu2ifu_pc_new_req──&gt; IFU
+   周期3: IFU 从跳转目标地址取指
+
+ 间接跳转 (JALR):
+   周期1: IFU 取指 ─&gt; IDU 译码 ─&gt; EXU
+   周期2: EXU 读取 rs1_data 从 MPRF
+          new_pc = (rs1_data + imm) &amp; ~1  (最低位清零)
+          EXU ──exu2mprf_wr: rd=rd, rd_data=pc+4──&gt; MPRF
+          EXU ──exu2ifu_pc_new_req──&gt; IFU
+
+ 分支预测策略:
+   SCR1 采用最简单的"总是顺序取指"策略
+   分支发生时付出 1 周期清空代价 (flush IFU + IDU)
+   通过 flush_req 清除误取的指令
+</div>
+
+<h3>图十二-E: 乘法/除法操作信号流</h3>
+<div class="ascii-art">
+ 乘法 / 除法操作信号流 (M 扩展)
+ ═══════════════════════════════════════════════════
+
+ MUL/MULH/MULHU/MULHSU (乘法 32x32-&gt;64, 取 32bit):
+   周期1: IFU 取指 ─&gt; IDU 译码 ─&gt; EXU
+          EXU ──exu2ialu_cmd: op1=rs1, op2=rs2, op=MUL──&gt; IALU
+   周期2: IALU 乘法运算 (单周期完成)
+          IALU ──ialu2exu_res: 乘积累──&gt; EXU
+          EXU ──exu2mprf_wr──&gt; MPRF (写回结果)
+
+ DIV/REM (除法 32/32, 需要多周期):
+   周期1: IFU 取指 ─&gt; IDU 译码 ─&gt; EXU
+          EXU ──exu2ialu_cmd: op1=rs1, op2=rs2, op=DIV──&gt; IALU
+   周期2-N: IALU 内部迭代除法 (串行移位减)
+          EXU 发出 stall_req 暂停流水线
+   周期N: IALU ──ialu2exu_res: 商/余数──&gt; EXU
+          EXU 释放 stall ─&gt; 流水线继续
+          EXU ──exu2mprf_wr──&gt; MPRF
+
+ 除零处理:
+   除数为 0 时: 商 = 0xFFFFFFFF, 余数 = 被除数 (不产生异常)
+
+ 诊断要点:
+   乘法 stall_req = 0 (单周期, 不暂停流水线)
+   除法 stall_req = 1 (多周期迭代, 暂停取指和译码)
+   除法周期数取决于操作数的大小
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s13">模块间信号命名规范</h2>
 <p>所有模块间信号遵循统一格式:</p>
 <pre><code>&lt;源模块&gt;2&lt;目标模块&gt;_&lt;信号名&gt;_&lt;方向后缀&gt;</code></pre>
 
@@ -237,31 +848,48 @@ graph LR
   <tr><td><code>csr2exu_irq_o</code></td><td>CSR 向 EXU 发送的中断请求，在 CSR 是输出</td></tr>
   <tr><td><code>hdu2exu_dbg_halted_o</code></td><td>HDU 向 EXU 发送的调试暂停状态，在 HDU 是输出</td></tr>
   <tr><td><code>dmem2lsu_rdata_i</code></td><td>DMEM 向 LSU 返回的读数据，在 LSU 是输入</td></tr>
+  <tr><td><code>ipic2csr_irq_vec_o</code></td><td>IPIC 向 CSR 发送的中断向量，在 IPIC 是输出</td></tr>
+  <tr><td><code>tdu2hdu_dbg_req_o</code></td><td>TDU 向 HDU 发送的调试请求，在 TDU 是输出</td></tr>
 </table>
 
-<h2 id="s8">核心模块功能速查</h2>
+<h3>新增顶层信号速查</h3>
 <table>
-  <tr><th>模块</th><th>文件</th><th>核心功能</th><th>复杂度</th></tr>
-  <tr><td>IFU</td><td><code>scr1_pipe_ifu.sv</code></td><td>取指 FSM、指令队列、RVC 拼接、PC 管理</td><td>中</td></tr>
-  <tr><td>IDU</td><td><code>scr1_pipe_idu.sv</code></td><td>RVI + RVC 译码、立即数生成、纯组合逻辑</td><td>中</td></tr>
-  <tr><td>EXU</td><td><code>scr1_pipe_exu.sv</code></td><td>操作数准备、异常仲裁、指令流控制、提交逻辑</td><td>高</td></tr>
-  <tr><td>IALU</td><td><code>scr1_pipe_ialu.sv</code></td><td>整数运算、乘除法、地址加法器、标志位</td><td>中</td></tr>
-  <tr><td>LSU</td><td><code>scr1_pipe_lsu.sv</code></td><td>访存 FSM、对齐检查、符号扩展、数据断点</td><td>低</td></tr>
-  <tr><td>MPRF</td><td><code>scr1_pipe_mprf.sv</code></td><td>2 读 1 写寄存器堆、x0 零寄存器、FPGA RAM 优化</td><td>低</td></tr>
-  <tr><td>CSR</td><td><code>scr1_pipe_csr.sv</code></td><td>全部 M-mode CSR、计数器、中断接口</td><td>高</td></tr>
-  <tr><td>IPIC</td><td><code>scr1_ipic.sv</code></td><td>16 路 IRQ 配置、向量化响应、SOI/EOI 协议</td><td>中</td></tr>
-  <tr><td>HDU</td><td><code>scr1_pipe_hdu.sv</code></td><td>HART 调试控制、程序缓冲区执行、抽象寄存器访问</td><td>高</td></tr>
-  <tr><td>TDU</td><td><code>scr1_pipe_tdu.sv</code></td><td>硬件断点、指令/数据/计数触发、tdata 寄存器</td><td>中</td></tr>
-  <tr><td>SCU</td><td><code>scr1_scu.sv</code></td><td>系统复位生成、复位域交叉同步、粘滞状态</td><td>低</td></tr>
-  <tr><td>TAPC</td><td><code>scr1_tapc.sv</code></td><td>JTAG TAP 16 状态 FSM、IR/DR 扫描链</td><td>高</td></tr>
-  <tr><td>DMI</td><td><code>scr1_dmi.sv</code></td><td>JTAG <-> DM 桥接、三字段协议</td><td>低</td></tr>
-  <tr><td>DM</td><td><code>scr1_dm.sv</code></td><td>调试模块、抽象命令、程序缓冲区、HART 控制</td><td>高</td></tr>
-  <tr><td>TIMER</td><td><code>scr1_timer.sv</code></td><td>64 位定时器、mtime/mtimecmp、时钟源选择</td><td>低</td></tr>
-  <tr><td>TCM</td><td><code>scr1_tcm.sv</code></td><td>紧耦合存储器、双端口 SRAM、零等待访问</td><td>低</td></tr>
+  <tr><th>信号名</th><th>方向</th><th>宽度</th><th>功能</th></tr>
+  <tr><td><code>soc2csr_irq_ext</code></td><td>输入</td><td>16</td><td>16 路外部中断线</td></tr>
+  <tr><td><code>soc2csr_irq_soft</code></td><td>输入</td><td>1</td><td>软件中断</td></tr>
+  <tr><td><code>soc2csr_irq_mtimer</code></td><td>输入</td><td>1</td><td>机器定时器中断</td></tr>
+  <tr><td><code>core2imem_req_addr</code></td><td>输出</td><td>32</td><td>指令取指地址</td></tr>
+  <tr><td><code>core2dmem_req_addr</code></td><td>输出</td><td>32</td><td>数据访存地址</td></tr>
+  <tr><td><code>core2dmem_req_wdata</code></td><td>输出</td><td>32</td><td>数据写数据</td></tr>
+  <tr><td><code>core2dmem_req_we</code></td><td>输出</td><td>1</td><td>写使能</td></tr>
+  <tr><td><code>dm2scu_ndm_rst_n</code></td><td>输出</td><td>1</td><td>DM 非调试模块复位</td></tr>
+  <tr><td><code>dm2scu_hart_rst_n</code></td><td>输出</td><td>1</td><td>DM 控制 HART 复位</td></tr>
 </table>
 
-<hr>
-<p style="text-align:center;color:#718096;font-size:0.9em;">生成时间: 2026-07-19 | 涵盖范围: SCR1 全部可综合模块及调试子系统</p>
+<!-- ============================================================ -->
+<h2 id="s14">核心模块功能速查</h2>
+<table>
+  <tr><th>模块</th><th>文件</th><th>核心功能</th><th>关键接口信号</th><th>复杂度</th></tr>
+  <tr><td>IFU</td><td><code>scr1_pipe_ifu.sv</code></td><td>取指 FSM、指令队列、RVC 拼接、PC 管理</td><td>ifu2idu_instr / exu2ifu_pc / exu2ifu_flush</td><td>中</td></tr>
+  <tr><td>IDU</td><td><code>scr1_pipe_idu.sv</code></td><td>RVI + RVC 译码、立即数生成、纯组合逻辑</td><td>idu2exu_cmd / ifu2idu_instr</td><td>中</td></tr>
+  <tr><td>EXU</td><td><code>scr1_pipe_exu.sv</code></td><td>操作数准备、异常仲裁、指令流控制、提交逻辑</td><td>idu2exu_cmd / csr2exu_irq / hdu2exu_dbg</td><td>高</td></tr>
+  <tr><td>IALU</td><td><code>scr1_pipe_ialu.sv</code></td><td>整数运算、乘除法、地址加法器、标志位</td><td>exu2ialu_cmd / ialu2exu_res</td><td>中</td></tr>
+  <tr><td>LSU</td><td><code>scr1_pipe_lsu.sv</code></td><td>访存 FSM、对齐检查、符号扩展、数据断点</td><td>exu2lsu_cmd / lsu2dmem_req / dmem2lsu_rdata</td><td>低</td></tr>
+  <tr><td>MPRF</td><td><code>scr1_pipe_mprf.sv</code></td><td>2 读 1 写寄存器堆、x0 零寄存器、FPGA RAM 优化</td><td>exu2mprf_rs*_addr / mprf2exu_rs*_data</td><td>低</td></tr>
+  <tr><td>CSR</td><td><code>scr1_pipe_csr.sv</code></td><td>全部 M-mode CSR、计数器、中断接口</td><td>exu2csr_rw / csr2exu_data / csr2ipic_cfg</td><td>高</td></tr>
+  <tr><td>IPIC</td><td><code>scr1_ipic.sv</code></td><td>16 路 IRQ 配置、向量化响应、SOI/EOI 协议</td><td>csr2ipic_cfg / ipic2csr_irq / soc2csr_irq_ext</td><td>中</td></tr>
+  <tr><td>HDU</td><td><code>scr1_pipe_hdu.sv</code></td><td>HART 调试控制、程序缓冲区执行、抽象寄存器访问</td><td>dm2hdu_req / hdu2exu_dbg / hdu2ifu_progbuf</td><td>高</td></tr>
+  <tr><td>TDU</td><td><code>scr1_pipe_tdu.sv</code></td><td>硬件断点、指令/数据/计数触发、tdata 寄存器</td><td>exu2tdu_imon / lsu2tdu_dmon / csr2tdu_cfg</td><td>中</td></tr>
+  <tr><td>SCU</td><td><code>scr1_scu.sv</code></td><td>系统复位生成、复位域交叉同步、粘滞状态</td><td>dm2scu_ndm_rst / core_rst_n / dm_rst_n</td><td>低</td></tr>
+  <tr><td>TAPC</td><td><code>scr1_tapc.sv</code></td><td>JTAG TAP 16 状态 FSM、IR/DR 扫描链</td><td>TCK/TMS/TDI/TDO / tck_update 等</td><td>高</td></tr>
+  <tr><td>DMI</td><td><code>scr1_dmi.sv</code></td><td>JTAG 到 DM 桥接、三字段协议</td><td>sync2dmi_dtm_req / dmi2dm_req</td><td>低</td></tr>
+  <tr><td>DM</td><td><code>scr1_dm.sv</code></td><td>调试模块、抽象命令、程序缓冲区、HART 控制</td><td>dm2hdu_req / dm2dmi_rdata / dm2scu_reset</td><td>高</td></tr>
+  <tr><td>TIMER</td><td><code>scr1_timer.sv</code></td><td>64 位定时器、mtime/mtimecmp、时钟源选择</td><td>dmem_rtr2timer_req / timer2dmem_rtr_rdata</td><td>低</td></tr>
+  <tr><td>TCM</td><td><code>scr1_tcm.sv</code></td><td>紧耦合存储器、双端口 SRAM、零等待访问</td><td>tcm_porta_req / tcm_portb_req</td><td>低</td></tr>
+</table>
+
+<hr class="section-divider">
+<p style="text-align:center;color:#718096;font-size:0.9em;">生成时间: 2026-07-19 | 增强版生成时间: 2026-07-27 | 涵盖范围: SCR1 全部可综合模块、调试子系统、中断系统、时钟与复位</p>
 
 <script>
   mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose' });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IALU 运算单元 + LSU 访存单元 + MPRF 寄存器堆 | SCR1 第 10 周</title>
+<title>IALU + LSU + MPRF | SCR1 第 10 周</title>
 <style>
   :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
   * { box-sizing: border-box; }
@@ -37,23 +37,30 @@
 <h1>IALU 运算单元 + LSU 访存单元 + MPRF 寄存器堆 | SCR1 第 10 周</h1>
 
 <nav class="nav">
-  <div class="nav-title">课程导航</div>
-  <a href="#overview">本周概述</a>
+  <div class="nav-title">导航</div>
+  <a href="#overview">概述</a>
   <a href="#ialu-adder">主加法器 + 标志位</a>
-  <a href="#ialu-slt">有符号比较: s ^ o</a>
+  <a href="#ialu-adder-33bit">33 位加法器设计</a>
+  <a href="#ialu-flags">4 标志位生成</a>
+  <a href="#ialu-slt">s ^ o 有符号比较</a>
   <a href="#ialu-addr">地址加法器独立性</a>
   <a href="#ialu-shift">移位器</a>
-  <a href="#ialu-mul">乘法器 (Fast vs Radix-2)</a>
-  <a href="#ialu-div">非恢复式除法器</a>
+  <a href="#ialu-mul">乘法器</a>
+  <a href="#ialu-fast-mul">FAST_MUL 单周期路径</a>
+  <a href="#ialu-radix2-fsm">Radix-2 状态机 + 实例</a>
+  <a href="#ialu-div">非恢复式除法</a>
+  <a href="#ialu-div-example">除法逐拍实例</a>
   <a href="#lsu-fsm">LSU 2 状态 FSM</a>
+  <a href="#lsu-cmd-latch">命令锁存器</a>
   <a href="#lsu-misalign">地址未对齐检测</a>
-  <a href="#lsu-extend">加载数据符号/零扩展</a>
-  <a href="#lsu-exc-prio">LSU 异常优先级</a>
-  <a href="#mprf-x0">MPRF: x0 硬连线为零</a>
+  <a href="#lsu-extend">符号/零扩展</a>
+  <a href="#lsu-exc-prio">异常优先级</a>
+  <a href="#mprf-x0">x0 硬连线为零</a>
   <a href="#mprf-ram">RAM 实现 + 旁路</a>
+  <a href="#mprf-bypass">写优先旁路时序</a>
   <a href="#mprf-dist">分布逻辑实现</a>
   <a href="#mprf-cmp">两种 MPRF 对比</a>
-  <a href="#exercise">动手练习</a>
+  <a href="#exercise">练习</a>
   <a href="#summary">总结</a>
 </nav>
 
@@ -63,14 +70,13 @@
   <div class="box-title">本周覆盖 3 个模块</div>
   <strong>IALU</strong> (<code>scr1_pipe_ialu.sv</code>) — 主加法器 + 标志位 + 地址加法器 + 移位器 + 乘除法器<br>
   <strong>LSU</strong> (<code>scr1_pipe_lsu.sv</code>) — DMEM 接口 + 对齐检测 + 符号/零扩展 + TDU 断点<br>
-  <strong>MPRF</strong> (<code>scr1_pipe_mprf.sv</code>) — 2R1W 寄存器堆,支持 RAM 块和分布逻辑两种实现
+  <strong>MPRF</strong> (<code>scr1_pipe_mprf.sv</code>) — 2R1W 寄存器堆, 支持 RAM 块和分布逻辑两种实现
 </div>
 
-<!-- ============ IALU ============ -->
 <h2 id="ialu-adder">第二课: IALU 主加法器 — 33 位加减器 + 4 个标志位</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_ialu.sv:73-78</span>
+<span class="cm">// scr1_pipe_ialu.sv:204-207</span>
 <span class="kw">always_comb begin</span>
     main_sum_res = (exu2ialu_cmd_i != SCR1_IALU_CMD_ADD)
                  ? (<span class="num">{1'b0, exu2ialu_main_op1_i}</span> - <span class="num">{1'b0, exu2ialu_main_op2_i}</span>)
@@ -82,20 +88,66 @@
   只有 ADD 是加法, SUB/SLT/分支比较等全部走减法。操作数扩展为 33 位 (高位补 0), 正确捕获进位/借位。
 </div>
 
-<h3>4 个标志位从 33 位结果中提取</h3>
+<h3 id="ialu-adder-33bit">33 位加法器设计详解</h3>
+
+<p>为什么是 33 位而非 32 位? 32 位操作数做减法时, 最宽结果是 32 位 — 但我们需要第 33 位 (位 [32]) 来判断进位/借位。</p>
+
+<div class="fig">
+  31 位操作数 + 1 位扩展 = 33 位结果
+  ┌───────────────────────┐
+  │  0   op1[31:0]        │   33-bit operand 1
+  │  0   op2[31:0]        │   33-bit operand 2
+  │  ─────────────────    │
+  │  C  res[31:0]         │   33-bit result (C = carry/borrow)
+  └───────────────────────┘
+</div>
 
 <table>
-<tr><th>标志</th><th>表达式</th><th>含义</th></tr>
-<tr><td><code>c</code> (进位/借位)</td><td><code>main_sum_res[32]</code></td><td>c=0 → 借位 (op1 &lt; op2 无符号), c=1 → 无借位 (op1 &gt;= op2)</td></tr>
-<tr><td><code>z</code> (零)</td><td><code>~|main_sum_res[31:0]</code></td><td>结果全零 → op1 == op2</td></tr>
-<tr><td><code>s</code> (符号)</td><td><code>main_sum_res[31]</code></td><td>结果的符号位</td></tr>
-<tr><td><code>o</code> (溢出)</td><td><code>pos_ovflw | neg_ovflw</code></td><td>有符号溢出</td></tr>
+  <tr><th>场景</th><th>main_sum_res[32]</th><th>含义</th></tr>
+  <tr><td>ADD: op1 + op2</td><td>1 → 进位产生</td><td>超 32 位范围</td></tr>
+  <tr><td>SUB: op1 &gt;= op2 (无符号)</td><td>1 → 无借位</td><td>结果为正或零</td></tr>
+  <tr><td>SUB: op1 &lt; op2 (无符号)</td><td>0 → 有借位</td><td>结果为负 (模运算)</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">SystemVerilog 表达式宽度规则</div>
+  <code>{1'b0, exu2ialu_main_op1_i}</code> 先做零扩展为 33 位, 再做减法。结果的位宽取两操作数中较宽的那个 — 即 33 位。因此 <code>main_sum_res[32]</code> 直接就是进位/借位输出。
+</div>
+
+<h3 id="ialu-flags">4 个标志位生成 — 组合逻辑一网打尽</h3>
+
+<pre>
+<span class="kw">always_comb begin</span>
+    <span class="cm">// 加法器结果</span>
+    main_sum_res = (exu2ialu_cmd_i != SCR1_IALU_CMD_ADD)
+                 ? ({1'b0, op1} - {1'b0, op2})
+                 : ({1'b0, op1} + {1'b0, op2});
+
+    <span class="cm">// 正溢出: 正+正=负  (op1 正, op2 负→减法是 op1-(-op2) 即正溢出)</span>
+    main_sum_pos_ovflw = ~op1[<span class="num">31</span>] &  op2[<span class="num">31</span>] &  main_sum_res[<span class="num">31</span>];
+
+    <span class="cm">// 负溢出: 负+负=正  (op1 负, op2 正→减法是 op1-(+op2) 即负溢出)</span>
+    main_sum_neg_ovflw =  op1[<span class="num">31</span>] & ~op2[<span class="num">31</span>] & ~main_sum_res[<span class="num">31</span>];
+
+    <span class="cm">// 4 标志位打包</span>
+    main_sum_flags.c = main_sum_res[<span class="num">32</span>];              <span class="cm">// 进位/借位</span>
+    main_sum_flags.z = ~|main_sum_res[<span class="num">31</span>:<span class="num">0</span>];          <span class="cm">// 零标志: 低 32 位全 0 归约或非</span>
+    main_sum_flags.s = main_sum_res[<span class="num">31</span>];                <span class="cm">// 符号标志: 结果 bit 31</span>
+    main_sum_flags.o = main_sum_pos_ovflw | main_sum_neg_ovflw;  <span class="cm">// 溢出标志</span>
+<span class="kw">end</span></pre>
+
+<table>
+  <tr><th>标志</th><th>表达式</th><th>含义</th><th>用法</th></tr>
+  <tr><td><code>c</code></td><td><code>main_sum_res[32]</code></td><td>进位/借位: c=0→借位 (op1&lt;op2), c=1→无借位 (op1>=op2)</td><td>SLTU, BLTU, BGEU</td></tr>
+  <tr><td><code>z</code></td><td><code>~|main_sum_res[31:0]</code></td><td>零: 所有位归约或非, 结果为 0 → z=1</td><td>BEQ, BNE</td></tr>
+  <tr><td><code>s</code></td><td><code>main_sum_res[31]</code></td><td>符号: 减法结果的最高位, 无溢出时 s=1 → op1&lt;op2</td><td>参与 s ^ o</td></tr>
+  <tr><td><code>o</code></td><td><code>pos_ovflw | neg_ovflw</code></td><td>溢出: 有符号减法结果超 [-2^31, 2^31-1] 范围</td><td>参与 s ^ o</td></tr>
 </table>
 
 <h3>比较命令从标志位派生</h3>
 
 <table>
-<tr><th>命令</th><th>指令</th><th>判定</th><th>解释</th></tr>
+<tr><th>命令</th><th>指令</th><th>判定</th><th>翻译</th></tr>
 <tr><td><code>CMD_SUB_EQ</code></td><td>BEQ</td><td><code>z == 1</code></td><td>结果为零 → 相等</td></tr>
 <tr><td><code>CMD_SUB_NE</code></td><td>BNE</td><td><code>z == 0</code></td><td>结果非零 → 不等</td></tr>
 <tr><td><code>CMD_SUB_LT</code></td><td>SLT, BLT</td><td><code>s ^ o == 1</code></td><td>有符号小于</td></tr>
@@ -104,41 +156,66 @@
 <tr><td><code>CMD_SUB_GEU</code></td><td>BGEU</td><td><code>c == 1</code></td><td>无借位 → 无符号大于等于</td></tr>
 </table>
 
+<pre>
+<span class="cm">// scr1_pipe_ialu.sv:579-581 — LT 命令使用 s ^ o</span>
+SCR1_IALU_CMD_SUB_LT : <span class="kw">begin</span>
+    ialu2exu_main_res_o = `SCR1_XLEN'(main_sum_flags.s ^ main_sum_flags.o);
+    ialu2exu_cmp_res_o  = main_sum_flags.s ^ main_sum_flags.o;
+<span class="kw">end</span>
+<span class="cm">// scr1_pipe_ialu.sv:583-585 — LTU 命令使用 c</span>
+SCR1_IALU_CMD_SUB_LTU : <span class="kw">begin</span>
+    ialu2exu_main_res_o = `SCR1_XLEN'(main_sum_flags.c);
+    ialu2exu_cmp_res_o  = main_sum_flags.c;
+<span class="kw">end</span></pre>
+
 <!-- ============ SLT ============ -->
 <h2 id="ialu-slt">第三课: 有符号比较 s ^ o — 为什么不是简单的 s?</h2>
 
 <h3>无溢出 (o=0): 结果符号位直接反映大小关系</h3>
 
 <pre>
-op1 &lt; op2  →  op1 - op2 &lt; 0  →  s = 1  ✓
-op1 &gt; op2  →  op1 - op2 &gt; 0  →  s = 0  ✓</pre>
+op1 &lt; op2  →  op1 - op2 &lt; 0  →  s = 1  (正确)
+op1 &gt; op2  →  op1 - op2 &gt; 0  →  s = 0  (正确)</pre>
 
 <h3>有溢出 (o=1): 结果符号和实际大小相反</h3>
 
 <pre>
-<span class="cm">// 例: op1 = 0x7FFFFFFF (+max), op2 = 0x80000000 (-max)</span>
+<span class="cm">// 例: op1 = 0x7FFFFFFF (+2^31-1), op2 = 0x80000000 (-2^31)</span>
 <span class="cm">// 0x7FFFFFFF - 0x80000000 = 0xFFFFFFFF → 结果最高位 = 1, 但 op1 &gt; op2</span>
-<span class="cm">// 溢出因为: 正数 - 负数 = 正数 + |负数|, 可能超过 +2^31-1</span></pre>
+<span class="cm">// 溢出原因: 正数 - 负数 = 正数 + |负数|, 超过 +2^31-1</span></pre>
+
+<h3>溢出检测: 看操作数符号</h3>
+
+<pre>
+<span class="cm">// 正溢出: (正数) - (负数) = 正数 + |负数|, 结果可能"变负"</span>
+<span class="cm">//   op1 正 (bit31=0), op2 负 (bit31=1), 结果负 (bit31=1) → 溢出!</span>
+main_sum_pos_ovflw = ~op1[<span class="num">31</span>] &amp;  op2[<span class="num">31</span>] &amp;  main_sum_res[<span class="num">31</span>];
+
+<span class="cm">// 负溢出: (负数) - (正数) = 负数 - 正数, 结果可能"变正"</span>
+<span class="cm">//   op1 负 (bit31=1), op2 正 (bit31=0), 结果正 (bit31=0) → 溢出!</span>
+main_sum_neg_ovflw =  op1[<span class="num">31</span>] &amp; ~op2[<span class="num">31</span>] &amp; ~main_sum_res[<span class="num">31</span>];</pre>
+
+<table>
+<tr><th>场景</th><th>op1[31]</th><th>op2[31]</th><th>结果[31]</th><th>o</th><th>实际比较</th><th>s</th><th>s ^ o</th><th>正确?</th></tr>
+<tr><td>5 - 3 = 2</td><td>0</td><td>0</td><td>0</td><td>0</td><td>5 &gt; 3</td><td>0</td><td>0 ^ 0 = 0</td><td>正确 (不小于)</td></tr>
+<tr><td>3 - 5 = -2</td><td>0</td><td>0</td><td>1</td><td>0</td><td>3 &lt; 5</td><td>1</td><td>1 ^ 0 = 1</td><td>正确 (小于)</td></tr>
+<tr><td>-5 - 3 = -8</td><td>1</td><td>0</td><td>1</td><td>0</td><td>-5 &lt; 3</td><td>1</td><td>1 ^ 0 = 1</td><td>正确 (小于)</td></tr>
+<tr><td>+max - (-max)</td><td>0</td><td>1</td><td>1</td><td>1</td><td>+max &gt; -max</td><td>1</td><td>1 ^ 1 = 0</td><td>正确 (不小于)</td></tr>
+<tr><td>-max - (+max)</td><td>1</td><td>0</td><td>0</td><td>1</td><td>-max &lt; +max</td><td>0</td><td>0 ^ 1 = 1</td><td>正确 (小于)</td></tr>
+</table>
 
 <div class="box tip">
   <div class="box-title">s ^ o 的直觉</div>
   o=0 → 符号位直接有效 → s^0 = s<br>
-  o=1 → 符号位反转 → s^1 = ~s (正好修正)<br>
-  所以 <code>s ^ o</code> 在有符号减法中给出了正确的"小于"判定。
+  o=1 → 符号位翻转 → s^1 = ~s (正好修正溢出带来的符号翻转)<br>
+  <code>s ^ o</code> 在有符号减法中给出正确的"小于"判定。
 </div>
-
-<pre>
-<span class="cm">// 正溢出: 两个非负数相加后结果为负</span>
-main_sum_pos_ovflw = ~op1[<span class="num">31</span>] &amp;  op2[<span class="num">31</span>] &amp;  main_sum_res[<span class="num">31</span>];
-
-<span class="cm">// 负溢出: 两个负数相加后结果为正</span>
-main_sum_neg_ovflw =  op1[<span class="num">31</span>] &amp; ~op2[<span class="num">31</span>] &amp; ~main_sum_res[<span class="num">31</span>];</pre>
 
 <!-- ============ 地址加法器 ============ -->
 <h2 id="ialu-addr">第四课: 地址加法器 — 完全独立于主 ALU</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_ialu.sv:135</span>
+<span class="cm">// scr1_pipe_ialu.sv:235</span>
 ialu2exu_addr_res_o = exu2ialu_addr_op1_i + exu2ialu_addr_op2_i;
 </pre>
 
@@ -160,7 +237,7 @@ ialu2exu_addr_res_o = exu2ialu_addr_op1_i + exu2ialu_addr_op2_i;
 <h2 id="ialu-shift">第五课: 移位器 — 三合一的 2 位编码</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_ialu.sv:167-173 -- 移位命令编码</span>
+<span class="cm">// scr1_pipe_ialu.sv:247-253 — 移位命令编码</span>
 ialu_cmd_shft = (cmd == SLL) | (cmd == SRL) | (cmd == SRA);
 shft_cmd = ialu_cmd_shft
          ? {(cmd != SLL), (cmd == SRA)}
@@ -168,19 +245,19 @@ shft_cmd = ialu_cmd_shft
 </pre>
 
 <table>
-<tr><th><code>shft_cmd[1:0]</code></th><th>移位类型</th><th>SystemVerilog 操作</th></tr>
-<tr><td><code>00</code></td><td>逻辑左移 (SLL/SLLI)</td><td><code>op1 &lt;&lt; op2[4:0]</code></td></tr>
-<tr><td><code>10</code></td><td>逻辑右移 (SRL/SRLI)</td><td><code>op1 &gt;&gt; op2[4:0]</code></td></tr>
-<tr><td><code>11</code></td><td>算术右移 (SRA/SRAI)</td><td><code>op1 &gt;&gt;&gt; op2[4:0]</code></td></tr>
+<tr><th><code>shft_cmd[1:0]</code></th><th>移位类型</th><th>SystemVerilog</th><th>示例 (op1=0x80000000, shamt=4)</th></tr>
+<tr><td><code>00</code></td><td>逻辑左移 (SLL/SLLI)</td><td><code>op1 &lt;&lt; op2[4:0]</code></td><td>0x00000000</td></tr>
+<tr><td><code>10</code></td><td>逻辑右移 (SRL/SRLI)</td><td><code>op1 &gt;&gt; op2[4:0]</code></td><td>0x08000000</td></tr>
+<tr><td><code>11</code></td><td>算术右移 (SRA/SRAI)</td><td><code>op1 &gt;&gt;&gt; op2[4:0]</code></td><td>0xF8000000</td></tr>
 </table>
 
 <div class="box warn">
   <div class="box-title">shft_op1 声明为 signed</div>
-  <code>logic signed [31:0] shft_op1</code>。算术右移 <code>&gt;&gt;&gt;</code> 需要被移数的符号信息来做符号扩展——如果声明为 unsigned, <code>&gt;&gt;&gt;</code> 退化成都市逻辑右移。
+  <code>logic signed [31:0] shft_op1</code>。算术右移 <code>&gt;&gt;&gt;</code> 需要被移数的符号信息来做符号扩展 — 如果声明为 unsigned, <code>&gt;&gt;&gt;</code> 退化为逻辑右移。
 </div>
 
 <!-- ============ 乘法器 ============ -->
-<h2 id="ialu-mul">第六课: 乘法器 — 两种实现的对比</h2>
+<h2 id="ialu-mul">第六课: 乘法器 — 两种实现对比</h2>
 
 <h3>乘法子命令编码</h3>
 
@@ -192,52 +269,181 @@ shft_cmd = ialu_cmd_shft
 <tr><td><code>11</code></td><td>MULHU</td><td>无符号</td><td>无符号</td><td>高 32 位</td></tr>
 </table>
 
-<h3>快速乘法器 (SCR1_FAST_MUL): 1 周期</h3>
+<pre>
+<span class="cm">// scr1_pipe_ialu.sv:397-402 — mul_cmd 编码推导</span>
+mul_cmd  = {((cmd == MULHU) | (cmd == MULHSU)),     <span class="cm">// bit[1]: 纯无符号? 取高位</span>
+            ((cmd == MULHU) | (cmd == MULH))};       <span class="cm">// bit[0]: op2 无符号? MULHSU/MULHU</span>
+mul_cmd_hi     = |mul_cmd;                           <span class="cm">// 任意位置1 → 取高 32 位</span>
+mul_op1_is_sgn = ~&mul_cmd;                          <span class="cm">// MULHU 时 = 0 → op1 无符号</span>
+mul_op2_is_sgn = ~mul_cmd[1];                        <span class="cm">// MULHU/MULHSU 时 = 0 → op2 无符号</span></pre>
+
+<h3 id="ialu-fast-mul">FAST_MUL 单周期快速乘法器详解</h3>
 
 <pre>
-<span class="cm">// 33 位符号扩展后, 33×33 得 64 位, 直接 * 完成</span>
-mul_op1 = $<span class="kw">signed</span>({mul_op1_sgn, op1});   <span class="cm">// {符号标志, 原值}</span>
-mul_op2 = $<span class="kw">signed</span>({mul_op2_sgn, op2});
-mul_res = mul_op1 * mul_op2;           <span class="cm">// 64 位单周期</span>
+<span class="cm">// scr1_pipe_ialu.sv:407-409 — 33 位符号扩展, 33×33 → 64 位</span>
+mul_op1 = mdu_cmd_mul ? $<span class="kw">signed</span>({mul_op1_sgn, op1}) : <span class="num">'0</span>;
+mul_op2 = mdu_cmd_mul ? $<span class="kw">signed</span>({mul_op2_sgn, op2}) : <span class="num">'0</span>;
+mul_res = mdu_cmd_mul ? mul_op1 * mul_op2           : $<span class="kw">signed</span>(<span class="num">'0</span>);
 ialu2exu_main_res_o = mul_cmd_hi ? mul_res[<span class="num">63</span>:<span class="num">32</span>] : mul_res[<span class="num">31</span>:<span class="num">0</span>];</pre>
 
-<h3>Radix-2 迭代乘法器: 32 周期</h3>
-
-<pre>
-<span class="cm">// 每周期处理 1 位乘数, 共 32 次迭代</span>
-<span class="cm">// 初始化: {mul_res_hi, mul_res_lo} = {0, op2}</span>
-<span class="kw">for</span> i = <span class="num">0</span> to <span class="num">31</span>:
-    部分积 = mul_op1[i] ? op1 : <span class="num">0</span>                        <span class="cm">// 乘数 LSB 决定</span>
-    {mul_res_hi, mul_res_lo} = {mul_res_hi + 部分积, mul_res_lo >> <span class="num">1</span>}
-    <span class="cm">// MDU 加法器复用: sum_op1 = mul_res_hi, sum_op2 = 部分积</span></pre>
+<div class="box">
+  <div class="box-title">FAST_MUL 的关键设计</div>
+  <strong>33 位符号扩展</strong>: <code>{mul_op1_sgn, op1}</code> 把 32 位操作数扩展为 33 位, 最高位是符号标志。<br>
+  <strong>33×33 → 64 位</strong>: SystemVerilog <code>*</code> 运算符自动产生宽结果, 组合乘法器在一个周期完成。<br>
+  <strong>符号处理</strong>: 无符号乘法时 <code>mul_op1_sgn = 0</code>, 带符号扩展位 {0, op1} 即为零扩展。有符号时 {sign, op1} 即为符号扩展。<br>
+  <strong>取高/低 32 位</strong>: <code>mul_cmd_hi</code> 标志控制 MUX 选 mul_res[63:32] 或 mul_res[31:0]。
+</div>
 
 <table>
-<tr><th>特性</th><th>FAST_MUL</th><th>Radix-2 (默认)</th></tr>
-<tr><td>完成延迟</td><td>1 周期</td><td>32 周期</td></tr>
-<tr><td>硬件实现</td><td><code>*</code> 运算符, 组合乘法器</td><td>MDU FSM + 迭代 + MDU 加法器</td></tr>
-<tr><td>面积</td><td>大 (组合乘法器)</td><td>小 (迭代复用)</td></tr>
-<tr><td>FSM 参与</td><td>仅除法</td><td>乘法 + 除法</td></tr>
+<tr><th>指令</th><th>op1 扩展</th><th>op2 扩展</th><th>结果宽度</th><th>输出</th></tr>
+<tr><td>MUL</td><td>{0, op1} 无符号</td><td>{0, op2} 无符号</td><td>33×33→64</td><td>低 32 位</td></tr>
+<tr><td>MULH</td><td>{sgn, op1} 有符号</td><td>{sgn, op2} 有符号</td><td>33×33→64</td><td>高 32 位</td></tr>
+<tr><td>MULHSU</td><td>{sgn, op1} 有符号</td><td>{0, op2} 无符号</td><td>33×33→64</td><td>高 32 位</td></tr>
+<tr><td>MULHU</td><td>{0, op1} 无符号</td><td>{0, op2} 无符号</td><td>33×33→64</td><td>高 32 位</td></tr>
 </table>
+
+<div class="box warn">
+  <div class="box-title">FAST_MUL 的面积代价</div>
+  FAST_MUL 用 <code>*</code> 运算符综合为组合乘法器, 面积远大于迭代方案。FPGA 上的 DSP48/DSP 块可以吸收, 但 ASIC 可能面积过大。SCR1 默认不启用 FAST_MUL, 走 Radix-2 迭代路径。
+</div>
+
+<h3 id="ialu-radix2-fsm">Radix-2 迭代乘法器 — 状态机详解 + 实例</h3>
+
+<h3>MDU 三状态 FSM</h3>
+
+<div class="fig">
+                    rvm_cmd_vd & mdu_iter_req
+         ┌─────────  (非零操作数且FSM空闲)
+         │
+    ┌────▼────┐          ~mdu_iter_rdy        ┌──────────┐
+    │  IDLE   │──────────────────────────────▶│   ITER   │
+    └─────────┘                               └──────────┘
+         ▲                                      │    │
+         │             mdu_iter_rdy              │    │
+         │  ┌───────────────────────────────────┘    │
+         │  │  ~mdu_corr_req                         │ mdu_corr_req
+         │  │                                        │
+         │  │           ┌────────────────────────────┘
+         │  │           ▼
+         │  │      ┌──────────┐
+         │  └──────│  CORR    │────── 下一拍自动回 IDLE
+         │         └──────────┘
+         │
+         └── rvm_cmd_vd=0 或操作数为零 → 保持 IDLE
+</div>
+
+<h3>Radix-2 核心: 每拍处理 1 位乘数</h3>
+
+<pre>
+<span class="cm">// Radix-2 算法的硬件结构</span>
+<span class="cm">// 3 个关键部件: 部分积生成器, MDU 加法器, 中间结果寄存器 {mul_res_hi, mul_res_lo}</span>
+
+<span class="cm">// 初始化 (mdu_fsm_idle + mdu_cmd_mul):</span>
+<span class="cm">//   mul_res_lo = exu2ialu_main_op2_i (乘数)</span>
+<span class="cm">//   mul_res_hi = 0 (累加器)</span>
+
+<span class="cm">// 每拍迭代:</span>
+<span class="cm">//   1. 取 mul_res_lo 的 LSB → 决定部分积 = op1 or 0</span>
+<span class="cm">//   2. MDU 加法器: mul_res_hi + 部分积 → 存回 mul_res_hi</span>
+<span class="cm">//   3. 右移: {mul_res_hi, mul_res_lo} >> 1</span>
+<span class="cm">//   4. 迭代计数器右移 1 位, 直到 cnt[0]=1 → 完成</span></pre>
+
+<h3>逐拍实例: 5 × 3 (32 位, 8 位简化展示)</h3>
+
+<table>
+<tr><th>周期</th><th>状态</th><th>mul_res_hi</th><th>mul_res_lo (乘数)</th><th>LSB</th><th>部分积</th><th>加法 (hi+部分积)</th><th>右移后 {hi, lo}</th></tr>
+<tr><td>T0</td><td>IDLE→ITER</td><td>0</td><td>0000_0011</td><td>1</td><td>0000_0101</td><td>0+5=5</td><td>{5,3}>>1 = {2, 1000_0001}</td></tr>
+<tr><td>T1</td><td>ITER</td><td>2</td><td>1000_0001</td><td>1</td><td>0000_0101</td><td>2+5=7</td><td>{7, 0x81}>>1 = {3, 1100_0000}</td></tr>
+<tr><td>T2</td><td>ITER</td><td>3</td><td>1100_0000</td><td>0</td><td>0</td><td>3+0=3</td><td>{3, 0xC0}>>1 = {1, 1110_0000}</td></tr>
+<tr><td>T3</td><td>ITER</td><td>1</td><td>1110_0000</td><td>0</td><td>0</td><td>1+0=1</td><td>{1, 0xE0}>>1 = {0, 1111_0000}</td></tr>
+<tr><td>...</td><td>ITER</td><td colspan="6">重复 28 次 (高位都是 0, 部分积始终为 0, 仅右移)</td></tr>
+<tr><td>T31</td><td>ITER→IDLE</td><td>0</td><td>0000_1111</td><td>—</td><td>—</td><td>—</td><td>结果 = 15 = 5×3</td></tr>
+</table>
+
+<pre>
+<span class="cm">// scr1_pipe_ialu.sv:411-420 — Radix-2 硬件实现</span>
+<span class="cm">// 部分积 = op1 * mul_res_lo[LSB], 由 MDU 加法器加 mul_part_prod 到 mul_res_hi</span>
+mul_part_prod = mul_op1 * mul_op2;    <span class="cm">// 部分积: 33 位 × 1 位 = 33+n 位</span>
+{mul_res_hi, mul_res_lo} = mdu_fsm_idle
+    ? ({mdu_sum_res, op2[<span class="num">31</span>:1]})                     <span class="cm">// 初始: 部分积+{0,乘数[31:1]} (隐含右移)</span>
+    : ({mdu_sum_res, mul_res_lo_ff[<span class="num">31</span>:1]});            <span class="cm">// 迭代: 部分积+结果右移</span></pre>
+
+<div class="box tip">
+  <div class="box-title">迭代计数器</div>
+  <code>mdu_iter_cnt</code> 初始值为 <code>32'b1 &lt;&lt; 30</code> (bit[30]=1)。每拍右移 1 位。当 <code>mdu_iter_cnt[0] = 1</code> 时, <code>mdu_iter_rdy = 1</code> → 32 次迭代完成。<br>
+  对于 FAST_MUL 模式, <code>mdu_iter_req</code> 仅对除法有效 (<code>mdu_cmd_is_iter = mdu_cmd_div</code>), 乘法不受 FSM 控制。
+</div>
 
 <!-- ============ 除法器 ============ -->
 <h2 id="ialu-div">第七课: 非恢复式除法器 — 32 周期产生商 + 余数</h2>
 
 <div class="box">
   <div class="box-title">非恢复式 (Non-Restoring) 除法的核心思想</div>
-  传统恢复式除法: 每拍尝试减法, 若不够减则恢复余数。非恢复式每拍只做加或减, 从不恢复——用上一次的商位决定下一次加减方向。省掉恢复余数的步骤。
+  恢复式: 每拍试减, 若不够减则恢复余数再移位。非恢复式: 每拍只做加或减, 从不恢复 — 用上一次商位决定下一次加减方向。省掉恢复步骤, 33 拍完成 (32 迭代 + 1 CORR)。
 </div>
 
 <h3>算法伪代码</h3>
 
 <pre>
-<span class="cm">初始化: 余数 = 被除数, 商 = 0</span>
+<span class="cm">初始化: 余数 = 被除数, 商 = 0, dividend_lo = 被除数 &lt;&lt; 1</span>
 <span class="kw">for</span> i = <span class="num">0</span> to <span class="num">31</span>:
-    余数左移 <span class="num">1</span> 位
+    余数左移 <span class="num">1</span> 位 (串联 dividend_lo 的最高位)
+    dividend_lo 左移 <span class="num">1</span> 位
     <span class="kw">if</span> (上一次商位 == <span class="num">1</span>)  余数 = 余数 - 除数
     <span class="kw">else</span>                   余数 = 余数 + 除数
-    商位 = ~(余数的符号)
-    商 = (商 << <span class="num">1</span>) | 商位
-<span class="cm">// CORR 阶段 (有符号): 修正商符号, 修正余数</span></pre>
+    商位 = ~(余数的符号位 ^ 被除数符号)     <span class="cm">// 无符号: ~余数符号</span>
+    商 = (商 &lt;&lt; <span class="num">1</span>) | 商位
+
+<span class="cm">// CORR 阶段 (有符号除法)</span>
+<span class="kw">if</span> (被除数与除数异号) 商取反
+<span class="kw">if</span> (余数需要修正)    余数 = 除数 - 余数</pre>
+
+<h3>硬件结构: 3 个寄存器 + 1 个加法器</h3>
+
+<pre>
+<span class="cm">// 3 个寄存器 (共享 MUL/DIV 中间结果寄存器):</span>
+<span class="cm">//   mdu_res_hi_ff   — 余数寄存器 (33 位, 含符号位)</span>
+<span class="cm">//   mdu_res_lo_ff   — 商寄存器</span>
+<span class="cm">//   div_dvdnd_lo_ff — 被除数低位 (用于除零边界情况检测)</span>
+
+<span class="cm">// MDU 加法器复用:</span>
+<span class="cm">//   除法模式: 余数 +(-) 除数 (取决于商位 + 符号)</span>
+<span class="cm">//   乘法模式: mul_res_hi + 部分积</span></pre>
+
+<div class="box warn">
+  <div class="box-title">CORR 阶段: 有符号修正</div>
+  非恢复式除法的迭代产生无符号商。有符号除法 (DIV/REM) 最后需要一个 CORR 周期: 若被除数与除数异号, 商取反; 若余数符号与预期不符, 余数修正为 <code>除数 - 余数</code>。
+</div>
+
+<h3 id="ialu-div-example">逐拍实例: DIV 的完整轨迹 (-7 ÷ 2)</h3>
+
+<p>被除数 = -7 (0xFFFFFFF9), 除数 = +2 (0x00000002), 期望商 = -3, 余数 = -1</p>
+
+<table>
+<tr><th>拍</th><th>FSM</th><th>余数 reg</th><th>dvdnd_lo</th><th>mdu_lo (商)</th><th>加/减</th><th>商位</th><th>操作说明</th></tr>
+<tr><td>T0</td><td>IDLE→ITER</td><td>0xFFFFFFF9</td><td>0xFFFFFFF2</td><td>0</td><td>+2 (首拍加)</td><td>1</td><td>被除数→余数, +除数→0xFFFFFFFB</td></tr>
+<tr><td>T1</td><td>ITER</td><td>0xFFFFFFF7</td><td>0xFFFFFFE4</td><td>0x00000002</td><td>-2 (商=1→减)</td><td>0</td><td>余数左移+2=0xFFFFFFF7, -2→0xFFFFFFF5</td></tr>
+<tr><td>T2</td><td>ITER</td><td>0xFFFFFFEB</td><td>0xFFFFFFC8</td><td>0x00000004</td><td>+2 (商=0→加)</td><td>1</td><td>余数左移=0xFFFFFFEB, +2→0xFFFFFFED</td></tr>
+<tr><td>T3</td><td>ITER</td><td>0xFFFFFFDC</td><td>...</td><td>0x00000009</td><td>-2</td><td>0</td><td>...</td></tr>
+<tr><td>...</td><td>ITER</td><td colspan="5">... 继续 28 次迭代 ...</td></tr>
+<tr><td>T31</td><td>ITER</td><td>0xFFFFFFFE</td><td>—</td><td>0xFFFFFFFC</td><td>—</td><td>0</td><td>无符号商=0xFFFFFFFC</td></tr>
+<tr><td>T32</td><td>CORR</td><td>0xFFFFFFFD</td><td>—</td><td>0x00000003</td><td>—</td><td>—</td><td>异号→商取反=-3; 余数=除数-余数=2-2=0→商=-3余=-1</td></tr>
+</table>
+
+<pre>
+<span class="cm">// scr1_pipe_ialu.sv:461-464 — 商位生成</span>
+div_quo_bit = ~(div_op1_is_neg ^ div_res_rem_c)
+            | (div_op1_is_neg & ({mdu_sum_res, div_dvdnd_lo_next} == <span class="num">'0</span>));
+<span class="cm">// div_op1_is_neg=0 (无符号): 商位 = ~余数符号 = 余数非负→1</span>
+<span class="cm">// div_op1_is_neg=1 (有符号): 商位 = 余数符号 ^ 被除数符号 取反</span>
+<span class="cm">// 第二项: 边界情况 — 余数和 dividend_lo 同时为 0 时强制商位=1</span></pre>
+
+<pre>
+<span class="cm">// scr1_pipe_ialu.sv:314-316 — CORR 触发条件</span>
+div_corr_req = div_cmd_div & main_ops_diff_sgn;        <span class="cm">// DIV 且 op1/op2 异号 → 修正商</span>
+rem_corr_req = div_cmd_rem & |div_res_rem & (op1_sgn ^ rem_c);  <span class="cm">// REM 且余数符号不对 → 修正余数</span>
+mdu_corr_req = mdu_cmd_div & (div_corr_req | rem_corr_req);
+</pre>
 
 <table>
 <tr><th>div_cmd</th><th>指令</th><th>符号</th></tr>
@@ -247,33 +453,57 @@ ialu2exu_main_res_o = mul_cmd_hi ? mul_res[<span class="num">63</span>:<span cla
 <tr><td>11</td><td>REMU</td><td>无符号</td></tr>
 </table>
 
-<div class="box warn">
-  <div class="box-title">CORR 阶段: 有符号修正</div>
-  非恢复式除法的迭代产生无符号商。有符号除法 (DIV/REM) 最后需要一个 CORR 周期: 若被除数与除数异号, 商取反; 若余数符号与预期不符, 余数修正为 <code>除数 - 余数</code>。
-</div>
-
 <!-- ============ LSU FSM ============ -->
 <h2 id="lsu-fsm">第八课: LSU 2 状态 FSM + 命令锁存器</h2>
 
-<pre>
-          dmem_req_vd
-    IDLE ──────────▶ BUSY      <span class="cm">// 发请求</span>
-      ▲               │
-      │ dmem_resp     │
-      └───────────────┘        <span class="cm">// 收到响应, 返回 IDLE</span></pre>
+<h3>FSM 状态图与全部转移条件</h3>
 
 <pre>
-<span class="cm">// scr1_pipe_lsu.sv:86 -- 三重条件同时满足才能进入 BUSY</span>
-dmem_req_vd = exu2lsu_req_i &amp; dmem2lsu_req_ack_i &amp; ~lsu_exc_req;
-
-<span class="cm">// scr1_pipe_lsu.sv:122 -- 核心约束: 同一时刻最多 1 个事务</span>
-lsu2dmem_req_o = exu2lsu_req_i &amp; ~lsu_exc_req &amp; lsu_fsm_idle;</pre>
-
-<h3>命令锁存器 (lsu_cmd_ff) 的必要性</h3>
+           dmem_req_vd = exu2lsu_req_i & dmem2lsu_req_ack_i & ~lsu_exc_req
+           ┌───────────────────────────────────────────────────────────────┐
+           │                                                               │
+     ┌─────┴─────┐                                                    ┌────▼─────┐
+     │   IDLE    │──── dmem_req_vd=1 ────▶                           │   BUSY   │
+     │ (lsu_fsm_ │                                                    │          │
+     │  idle=1)  │◀── dmem_resp_received=1 ────                       └────┬─────┘
+     └───────────┘          (dmem_resp_ok | dmem_resp_er)                 │
+           ▲                                                               │
+           │                       ~dmem_resp_received                     │
+           └───────────────────────────────────────────────────────────────┘
+                                      保持 BUSY</pre>
 
 <pre>
-<span class="cm">// scr1_pipe_lsu.sv:193-200</span>
-lsu_cmd_upd = lsu_fsm_idle &amp; dmem_req_vd;   <span class="cm">// 只在进入 BUSY 时锁存</span>
+<span class="cm">// scr1_pipe_lsu.sv:178-189 — FSM next state 逻辑</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (lsu_fsm_curr)
+        SCR1_LSU_FSM_IDLE: lsu_fsm_next = dmem_req_vd        ? SCR1_LSU_FSM_BUSY
+                                                              : SCR1_LSU_FSM_IDLE;
+        SCR1_LSU_FSM_BUSY: lsu_fsm_next = dmem_resp_received ? SCR1_LSU_FSM_IDLE
+                                                              : SCR1_LSU_FSM_BUSY;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<table>
+  <tr><th>信号</th><th>表达式</th><th>含义</th></tr>
+  <tr><td><code>dmem_req_vd</code></td><td><code>exu2lsu_req_i & dmem2lsu_req_ack_i & ~lsu_exc_req</code></td><td>EXU 请求 + DMEM 确认 + 无异常 → 三重条件</td></tr>
+  <tr><td><code>dmem_resp_ok</code></td><td><code>dmem2lsu_resp_i == SCR1_MEM_RESP_RDY_OK</code></td><td>DMEM 返回正常响应</td></tr>
+  <tr><td><code>dmem_resp_er</code></td><td><code>dmem2lsu_resp_i == SCR1_MEM_RESP_RDY_ER</code></td><td>DMEM 返回错误响应 (Access Fault)</td></tr>
+  <tr><td><code>dmem_resp_received</code></td><td><code>dmem_resp_ok | dmem_resp_er</code></td><td>收到任何响应 (OK 或 ER)</td></tr>
+  <tr><td><code>lsu_exc_req</code></td><td><code>dmem_addr_mslgn_l | dmem_addr_mslgn_s | lsu_exc_hwbrk</code></td><td>任何异常阻止 DMEM 请求</td></tr>
+  <tr><td><code>lsu2dmem_req_o</code></td><td><code>exu2lsu_req_i & ~lsu_exc_req & lsu_fsm_idle</code></td><td>向 DMEM 发请求: EXU 请求 + 无异常 + FSM 空闲</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">关键约束: 同一时刻最多 1 个事务</div>
+  <code>lsu2dmem_req_o = exu2lsu_req_i & ~lsu_exc_req & lsu_fsm_idle</code><br>
+  只有在 IDLE 态才能发请求, 进入 BUSY 后即使 EXU 来新请求也不发 DMEM 请求。这保证流水线中 LSU 串行化: 前一个 LD/ST 完成前, 后续 LD/ST 等待。
+</div>
+
+<h3 id="lsu-cmd-latch">命令锁存器 (lsu_cmd_ff) 的完整机制</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_lsu.sv:140-148 — 锁存器更新逻辑</span>
+lsu_cmd_upd = lsu_fsm_idle & dmem_req_vd;   <span class="cm">// 只在进入 BUSY 当拍锁存</span>
 
 <span class="kw">always_ff</span> @(posedge clk, negedge rst_n) <span class="kw">begin</span>
     <span class="kw">if</span> (~rst_n)
@@ -287,57 +517,110 @@ lsu_cmd_upd = lsu_fsm_idle &amp; dmem_req_vd;   <span class="cm">// 只在进入
   请求发出后 <code>exu2lsu_cmd_i</code> 仅 1 拍有效。DMEM 响应多拍后到达时, LSU 需要用 <code>lsu_cmd_ff</code> 知道当初发的是什么指令 — 用来做符号/零扩展, 以及区分 LD_ACCESS_FAULT 和 ST_ACCESS_FAULT。
 </div>
 
+<div class="fig">
+波形示意 (假设 DMEM 延迟 2 拍):
+            T0       T1       T2       T3
+  clk      ┌─┐     ┌─┐     ┌─┐     ┌─┐
+  exu_req  ──┐     └───────┘       ┌── (下一条指令)
+  exu_cmd  ==LH=====??=============LB==  &lt;-- T2 时已变!
+  dmem_ack ──┐                     └──
+  fsm      ==BUSY==================IDLE==
+  cmd_upd  ──┐                     └──
+  lsu_cmd_ff==LH========================  &lt;-- BUSY 期间锁定!
+  dmem_rsp ──────────────────┐     └── (T2 响应到达)
+  ldata    扩展逻辑用 lsu_cmd_ff=LH, 而非 exu2lsu_cmd_i=LB → 正确!
+</div>
+
 <!-- ============ 地址未对齐 ============ -->
-<h2 id="lsu-misalign">第九课: 地址未对齐检测</h2>
+<h2 id="lsu-misalign">第九课: 地址未对齐检测 — 位级逻辑</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_lsu.sv:224-225</span>
-dmem_addr_mslgn = exu2lsu_req_i &amp; (
-    (dmem_wdth_hword &amp; exu2lsu_addr_i[<span class="num">0</span>])          <span class="cm">// 半字: addr[0]=1 → 未对齐</span>
-  | (dmem_wdth_word  &amp; |exu2lsu_addr_i[<span class="num">1</span>:<span class="num">0</span>])     <span class="cm">// 字: addr[1:0]≠0 → 未对齐</span>
-);</pre>
+<span class="cm">// scr1_pipe_lsu.sv:206-209 — 逐位检测</span>
+dmem_addr_mslgn   = exu2lsu_req_i & (
+    (dmem_wdth_hword & exu2lsu_addr_i[<span class="num">0</span>])          <span class="cm">// 半字: addr[0]=1 → 未对齐</span>
+  | (dmem_wdth_word  & |exu2lsu_addr_i[<span class="num">1</span>:<span class="num">0</span>])     <span class="cm">// 字: addr[1:0]≠0 → 未对齐</span>
+);
+dmem_addr_mslgn_l = dmem_addr_mslgn & dmem_cmd_load;    <span class="cm">// 加载未对齐</span>
+dmem_addr_mslgn_s = dmem_addr_mslgn & dmem_cmd_store;   <span class="cm">// 存储未对齐</span></pre>
+
+<h3>位级逻辑分解</h3>
 
 <table>
-<tr><th>数据宽度</th><th>对齐要求</th><th>检测条件</th><th>异常编码</th></tr>
-<tr><td>BYTE (LB/LBU/SB)</td><td>无</td><td>不检测</td><td>—</td></tr>
-<tr><td>HWORD (LH/LHU/SH)</td><td>2 字节</td><td><code>addr[0] != 0</code></td><td>LD/ST_ADDR_MISALIGN (4/6)</td></tr>
-<tr><td>WORD (LW/SW)</td><td>4 字节</td><td><code>|addr[1:0] != 0</code></td><td>LD/ST_ADDR_MISALIGN (4/6)</td></tr>
+<tr><th>宽度标志</th><th>条件</th><th>检测表达式</th><th>位级展开</th></tr>
+<tr><td><code>dmem_wdth_byte</code></td><td>LB/LBU/SB</td><td>不检测</td><td>—</td></tr>
+<tr><td><code>dmem_wdth_hword</code></td><td>LH/LHU/SH</td><td><code>exu2lsu_addr_i[0]</code></td><td>最低位 = 1 → 不是 2 的倍数 → 未对齐</td></tr>
+<tr><td><code>dmem_wdth_word</code></td><td>LW/SW</td><td><code>|exu2lsu_addr_i[1:0]</code></td><td>低 2 位任何一位 = 1 → 不是 4 的倍数 → 未对齐</td></tr>
 </table>
+
+<div class="box">
+  <div class="box-title"><code>|exu2lsu_addr_i[1:0]</code> 的含义</div>
+  <code>|</code> 是一元归约或: 等价于 <code>addr[1] | addr[0]</code>。为 1 表示低 2 位不全为零。<br>
+  Word 对齐要求 addr[1:0] == 2'b00, 即地址是 4 的倍数。<br>
+  Halfword 对齐要求 addr[0] == 1'b0, 即地址是 2 的倍数。
+</div>
+
+<h3>异常阻止 DMEM 请求的链式逻辑</h3>
+
+<pre>
+<span class="cm">// 未对齐检测 → lsu_exc_req 拉高</span>
+lsu_exc_req = dmem_addr_mslgn_l | dmem_addr_mslgn_s | lsu_exc_hwbrk;
+
+<span class="cm">// lsu_exc_req=1 → dmem_req_vd=0</span>
+dmem_req_vd = exu2lsu_req_i & dmem2lsu_req_ack_i & ~lsu_exc_req;
+
+<span class="cm">// dmem_req_vd=0 → lsu2dmem_req_o=0 (不发请求)</span>
+lsu2dmem_req_o = exu2lsu_req_i & ~lsu_exc_req & lsu_fsm_idle;
+
+<span class="cm">// 同时 lsu2exu_exc_o=1 (直接报异常, 不访问存储器)</span>
+lsu2exu_exc_o = dmem_resp_er | lsu_exc_req;
+</pre>
 
 <div class="box warn">
   <div class="box-title">异常阻止 DMEM 请求</div>
-  地址未对齐被检测后, <code>lsu_exc_req=1</code> → <code>dmem_req_vd=0</code> → LSU 不发 DMEM 请求。异常指令不触发实际的存储器访问, 直接报异常。
+  地址未对齐被检测后, <code>lsu_exc_req=1</code> → <code>dmem_req_vd=0</code> → LSU 不发 DMEM 请求。异常指令不触发实际的存储器访问, 直接报异常。这避免了向 DMEM 发起非法地址的访问。
 </div>
 
 <!-- ============ 符号/零扩展 ============ -->
-<h2 id="lsu-extend">第十课: 加载数据符号/零扩展 — 使用锁存命令</h2>
+<h2 id="lsu-extend">第十课: 加载数据符号/零扩展 — Combinational Case Statement</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_lsu.sv:317-326 -- 扩展逻辑基于 lsu_cmd_ff (锁存值)</span>
+<span class="cm">// scr1_pipe_lsu.sv:240-248 — 基于 lsu_cmd_ff 的纯组合扩展</span>
 <span class="kw">always_comb begin</span>
     <span class="kw">case</span> (lsu_cmd_ff)
-        SCR1_LSU_CMD_LH :  ldata = {<span class="num">{16{dmem[15]}},  dmem[15:0]}</span>;  <span class="cm">// 符号扩展</span>
-        SCR1_LSU_CMD_LHU:  ldata = { <span class="num">16'b0,             dmem[15:0]</span>};  <span class="cm">// 零扩展</span>
-        SCR1_LSU_CMD_LB :  ldata = {<span class="num">{24{dmem[7]}},   dmem[7:0]}</span>;   <span class="cm">// 符号扩展</span>
-        SCR1_LSU_CMD_LBU:  ldata = { <span class="num">24'b0,             dmem[7:0]}</span>};  <span class="cm">// 零扩展</span>
-        <span class="kw">default</span>         :  ldata = dmem;                            <span class="cm">// LW 直通</span>
+        SCR1_LSU_CMD_LH :  lsu2exu_ldata_o = {<span class="num">{16{dmem2lsu_rdata_i[15]}},  dmem2lsu_rdata_i[15:0]}</span>;
+        SCR1_LSU_CMD_LHU:  lsu2exu_ldata_o = { <span class="num">16'b0,                            dmem2lsu_rdata_i[15:0]</span>};
+        SCR1_LSU_CMD_LB :  lsu2exu_ldata_o = {<span class="num">{24{dmem2lsu_rdata_i[7]}},   dmem2lsu_rdata_i[7:0]}</span>;
+        SCR1_LSU_CMD_LBU:  lsu2exu_ldata_o = { <span class="num">24'b0,                            dmem2lsu_rdata_i[7:0]}</span>};
+        <span class="kw">default</span>         :  lsu2exu_ldata_o = dmem2lsu_rdata_i;   <span class="cm">// LW (WORD) 或 NONE 直通</span>
     <span class="kw">endcase</span>
 <span class="kw">end</span></pre>
 
+<table>
+<tr><th>命令</th><th>读 DMEM 宽度</th><th>扩展方式</th><th>复制位</th><th>目标 32 位组合</th></tr>
+<tr><td><code>LB</code></td><td>1 字节</td><td>符号扩展</td><td>dmem[7]</td><td><code>{24{dmem[7]}, dmem[7:0]}</code></td></tr>
+<tr><td><code>LBU</code></td><td>1 字节</td><td>零扩展</td><td>0</td><td><code>{24'b0, dmem[7:0]}</code></td></tr>
+<tr><td><code>LH</code></td><td>2 字节</td><td>符号扩展</td><td>dmem[15]</td><td><code>{16{dmem[15]}, dmem[15:0]}</code></td></tr>
+<tr><td><code>LHU</code></td><td>2 字节</td><td>零扩展</td><td>0</td><td><code>{16'b0, dmem[15:0]}</code></td></tr>
+<tr><td><code>LW</code></td><td>4 字节</td><td>无需扩展</td><td>—</td><td><code>dmem[31:0]</code> 直通</td></tr>
+</table>
+
 <div class="box tip">
   <div class="box-title">为什么用 lsu_cmd_ff 而非 exu2lsu_cmd_i?</div>
-  <code>exu2lsu_cmd_i</code> 只在请求发出的当拍有效, DMEM 响应几拍后到达。回来看 <code>exu2lsu_cmd_i</code> 已经变成下一条指令了。锁存值 <code>lsu_cmd_ff</code> 在整段 BUSY 期间保持原值。
+  <code>exu2lsu_cmd_i</code> 只在请求发出的当拍有效, DMEM 响应几拍后到达。回来看 <code>exu2lsu_cmd_i</code> 已经变成下一条指令了。锁存值 <code>lsu_cmd_ff</code> 在整段 BUSY 期间保持原值。<br><br>
+  扩展逻辑是 <code>always_comb</code>, 纯组合, 无寄存器。当 DMEM 响应到达时, <code>lsu_cmd_ff</code> 仍为原来的命令, <code>dmem2lsu_rdata_i</code> 为有效数据 → 同一拍输出正确的扩展结果。
 </div>
 
 <!-- ============ LSU 异常优先级 ============ -->
 <h2 id="lsu-exc-prio">第十一课: LSU 异常优先级仲裁</h2>
 
 <pre>
-<span class="cm">// scr1_pipe_lsu.sv:263-271 -- 4 级异常优先级</span>
+<span class="cm">// scr1_pipe_lsu.sv:212-224 — 4 级异常优先级</span>
 <span class="kw">case</span> (<span class="num">1'b1</span>)
-    <span class="cm">// P1: DMEM 错误 (最高)</span>
-    dmem_resp_er     : exc_code = lsu_cmd_ff_store ? ST_ACCESS_FAULT : LD_ACCESS_FAULT;
-    <span class="cm">// P2: TDU 断点</span>
+    <span class="cm">// P1: DMEM 错误 (最高) — 数据已损坏</span>
+    dmem_resp_er     : exc_code = lsu_cmd_ff_load  ? LD_ACCESS_FAULT
+                                : lsu_cmd_ff_store ? ST_ACCESS_FAULT
+                                                   : INSTR_MISALIGN;
+    <span class="cm">// P2: TDU 断点 — 调试器需要捕获</span>
     lsu_exc_hwbrk    : exc_code = BREAKPOINT;
     <span class="cm">// P3: 加载未对齐</span>
     dmem_addr_mslgn_l: exc_code = LD_ADDR_MISALIGN;
@@ -348,7 +631,7 @@ dmem_addr_mslgn = exu2lsu_req_i &amp; (
 
 <div class="box">
   <div class="box-title">优先级设计动因</div>
-  DMEM 错误 &gt; 断点 &gt; 加载未对齐 &gt; 存储未对齐。数据已损坏时报 Access Fault 优先于一切。断点优先于未对齐: 调试器需要捕获断点事件。加载优先于存储: 防御性设计,同一拍不可能同时有 Load 和 Store。
+  DMEM 错误 &gt; 断点 &gt; 加载未对齐 &gt; 存储未对齐。数据已损坏时 Access Fault 优先于一切。断点优先于未对齐: 调试器需要捕获断点事件。加载优先于存储: 防御性设计, 同一拍不可能同时有 Load 和 Store。
 </div>
 
 <!-- ============ MPRF x0 ============ -->
@@ -365,59 +648,122 @@ dmem_addr_mslgn = exu2lsu_req_i &amp; (
 <span class="cm">// 地址有效性判定: 全位或 = 0 → x0</span>
 rs1_addr_vd = |exu2mprf_rs1_addr_i;    <span class="cm">// addr==5'b0 → vd=0 → 输出 0</span>
 
-<span class="cm">// 输出 MUX</span>
-mprf2exu_rs1_data_o = rs1_addr_vd ? mprf_int[rs1_addr] : <span class="num">'0</span>;</pre>
+<span class="cm">// 输出 MUX (分布逻辑)</span>
+mprf2exu_rs1_data_o = rs1_addr_vd ? mprf_int[rs1_addr] : <span class="num">'0</span>;
+
+<span class="cm">// 输出 MUX (RAM 实现 — 加旁路)</span>
+mprf2exu_rs1_data_o = rs1_new_data_req_ff ? rd_data_ff
+                    : rs1_addr_vd_ff       ? rs1_data_ff
+                                           : <span class="num">'0</span>;
+</pre>
 
 <h3>写 x0: 被抑制</h3>
 
 <pre>
-wr_req_vd = exu2mprf_w_req_i &amp; |exu2mprf_rd_addr_i;  <span class="cm">// rd=x0 → wr_req_vd=0</span>
+wr_req_vd = exu2mprf_w_req_i & |exu2mprf_rd_addr_i;  <span class="cm">// rd=x0 → wr_req_vd=0</span>
 
 <span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
     <span class="kw">if</span> (wr_req_vd)  <span class="cm">// x0 写请求永远不进入此 if</span>
         mprf_int[rd_addr] &lt;= rd_data;
 <span class="kw">end</span></pre>
 
+<div class="box tip">
+  <div class="box-title">x0 双路径保证</div>
+  读路径: <code>rs1_addr_vd = |addr_i</code>, 地址全零 → vd=0 → MUX 选 0。<br>
+  写路径: <code>wr_req_vd = w_req_i & |rd_addr_i</code>, rd=x0 → vd=0 → 不写。<br>
+  两条独立的路径保证 x0 永远为 0, 即使在同一个周期内对 x0 发读写。
+</div>
+
 <!-- ============ RAM 实现 ============ -->
 <h2 id="mprf-ram">第十三课: RAM 实现 — 双份副本 + 写优先旁路</h2>
 
 <div class="fig">
-                    两份独立 RAM 副本
+              两份独立 RAM 副本 (2R1W → 1R1W × 2)
   rs1_addr ───────▶ mprf_int  ──▶ rs1_data_ff ──┐
-                      │ wr_data                  │
-  rd_addr  ──┬──────▶ mprf_int2 ──▶ rs2_data_ff ─┤
+                    │ wr_data                    │
+  rd_addr  ──┬─────▶ mprf_int2 ──▶ rs2_data_ff ──┤
              │                                   │
-             │    冲突检测 (组合逻辑)              ├──▶ MUX 输出
-             │    new_data_req = rs_addr==rd      │
-             │    rd_data_ff (旁路寄存器)          │
+             │  冲突检测 (组合逻辑)                ├──▶ MUX 输出
+             │  rs1_new_data_req = rs1_addr==rd   │
+             │  rd_data_ff (旁路寄存器)            │
              │                                   │
   └──────────────────────────────────────────────┘
 </div>
 
 <h3>为什么两份副本?</h3>
 
-FPGA RAM 块只支持简单双端口 (1R1W)。要实现 2R1W, 用两份独立 RAM 分别服务 rs1/rs2 读端口。写操作同时写入两份。
-
-<h3>写优先旁路的时序</h3>
+<p>FPGA RAM 块只支持简单双端口 (1R1W)。要实现 2R1W (两读一写), 用两份独立 RAM 分别服务 rs1/rs2 读端口。写操作同时写入两份:</p>
 
 <pre>
-T0: 读 rs1=x5, 同时写 x5=0xAA → 冲突检测 → rs1_new_data_req=1
-    rd_data_ff ← 0xAA                    <span class="cm">// 旁路寄存器锁存新数据</span>
-T1: rs1_new_data_req_ff=1 → 输出 MUX 选 rd_data_ff → 0xAA  ✓
-
-<span class="cm">// 关键代码</span>
-rs1_new_data_req = wr_req_vd &amp; (exu2mprf_rs1_addr_i == exu2mprf_rd_addr_i);
-mprf2exu_rs1_data_o = rs1_new_data_req_ff ? rd_data_ff
-                     : rs1_addr_vd_ff     ? rs1_data_ff
-                                          : <span class="num">'0</span>;</pre>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (wr_req_vd) <span class="kw">begin</span>
+        mprf_int[exu2mprf_rd_addr_i]  &lt;= exu2mprf_rd_data_i;   <span class="cm">// 写入副本 1</span>
+        mprf_int2[exu2mprf_rd_addr_i] &lt;= exu2mprf_rd_data_i;   <span class="cm">// 写入副本 2</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
 
 <div class="box warn">
   <div class="box-title">同步读引入的 1 拍延迟</div>
-  RAM 读需要 1 拍: T0 发地址, T1 得数据。控制信号 (addr_vd, new_data_req) 也同步延迟 1 拍对齐。这是为什么旁路没有在 T0 当拍生效——旁路也要等 1 拍,但它能拿到正确的新值 (0xAA) 而非旧值 (RAM 读出的旧 x5 值)。
+  RAM 读需要 1 拍: T0 发地址, T1 得数据。控制信号 (addr_vd, new_data_req) 也同步延迟 1 拍对齐。这是为什么旁路没有在 T0 当拍生效 — 旁路也要等 1 拍, 但它能拿到正确的新值 (0xAA) 而非旧值 (RAM 读出的旧 x5 值)。
 </div>
 
+<h3 id="mprf-bypass">写优先旁路 (Write-First Bypass) 的完整时序</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_mprf.sv:78-112 — 旁路逻辑</span>
+
+<span class="cm">// 组合检测: 同周期读写相同寄存器?</span>
+rs1_new_data_req = wr_req_vd & (exu2mprf_rs1_addr_i == exu2mprf_rd_addr_i);
+rs2_new_data_req = wr_req_vd & (exu2mprf_rs2_addr_i == exu2mprf_rd_addr_i);
+read_new_data_req = rs1_new_data_req | rs2_new_data_req;
+
+<span class="cm">// 打拍对齐 RAM 读延迟</span>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    rs1_addr_vd_ff      &lt;= rs1_addr_vd;
+    rs2_addr_vd_ff      &lt;= rs2_addr_vd;
+    rs1_new_data_req_ff &lt;= rs1_new_data_req;
+    rs2_new_data_req_ff &lt;= rs2_new_data_req;
+<span class="kw">end</span>
+
+<span class="cm">// 旁路寄存器: 锁存新写数据</span>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (read_new_data_req)
+        rd_data_ff &lt;= exu2mprf_rd_data_i;
+<span class="kw">end</span>
+
+<span class="cm">// 输出 MUX: 旁路优先 → RAM 读 → 零 (x0)</span>
+mprf2exu_rs1_data_o = rs1_new_data_req_ff ? rd_data_ff
+                    : rs1_addr_vd_ff       ? rs1_data_ff
+                                           : <span class="num">'0</span>;
+</pre>
+
+<h3>时序实例: 同周期读写冲突</h3>
+
+<table>
+<tr><th>拍</th><th>rs1_addr</th><th>rd_addr</th><th>wr_req</th><th>wr_data</th><th>new_req</th><th>new_req_ff</th><th>rd_data_ff</th><th>RAM 读 rs1</th><th>最终输出</th></tr>
+<tr><td>T0</td><td>x5</td><td>x5</td><td>1</td><td>0xAA</td><td>1</td><td>0 (旧)</td><td>旧值</td><td>—</td><td>—</td></tr>
+<tr><td>T1</td><td>x6</td><td>x6</td><td>1</td><td>0xBB</td><td>1</td><td>1</td><td>0xAA</td><td>旧 x5 值</td><td><strong>0xAA</strong> (旁路!)</td></tr>
+<tr><td>T2</td><td>x7</td><td>—</td><td>0</td><td>—</td><td>0</td><td>1</td><td>0xBB</td><td>x6 新值 0xBB</td><td><strong>0xBB</strong> (旁路!)</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">旁路为什么是 1 拍而非 0 拍?</div>
+  RAM 同步读本身有 1 拍延迟: T0 发地址 → T1 获得 RAM 数据。写操作 T0 写入 RAM, 写入的 0xAA 在 T1 才可在读端口看到 (写优先模式下)。<br>
+  但 rd_data_ff 在 T0 锁存 0xAA, T1 输出。RAM 读出的仍是旧值 (如果写入与读取地址相同)。MUX 选 rd_data_ff 的 0xAA → 正确的新值。<br>
+  如果不用 rd_data_ff 旁路, T1 输出的是 RAM 读出的旧值 → 读后写 (RAW) 冒险!
+</div>
+
+<h3>旁路优先级的 MUX 树</h3>
+
+<pre>
+mprf2exu_rs1_data_o:
+  ├── rs1_new_data_req_ff=1 → rd_data_ff         (旁路, 优先级最高)
+  ├── rs1_new_data_req_ff=0, rs1_addr_vd_ff=1 → rs1_data_ff (正常 RAM 读)
+  └── rs1_new_data_req_ff=0, rs1_addr_vd_ff=0 → 0          (x0)
+</pre>
+
 <!-- ============ 分布逻辑实现 ============ -->
-<h2 id="mprf-dist">第十四课: 分布逻辑实现 — 异步读,零延迟</h2>
+<h2 id="mprf-dist">第十四课: 分布逻辑实现 — 异步读, 零延迟</h2>
 
 <pre>
 <span class="cm">// 异步组合读: 当拍即可得数据</span>
@@ -448,10 +794,32 @@ mprf2exu_rs1_data_o = rs1_addr_vd ? mprf_int[rs1_addr] : <span class="num">'0</s
 <tr><td>面积</td><td>小 (RAM 块密度高)</td><td>大 (LUT 实现)</td></tr>
 <tr><td>功耗</td><td>低 (RAM 块优化)</td><td>较高 (组合路径翻转)</td></tr>
 <tr><td>EXU 约束</td><td>强制 ~NO_EXE_STAGE</td><td>无约束</td></tr>
+<tr><td>读延迟</td><td>T0 发地址 → T1 得数据</td><td>T0 发地址 → T0 得数据</td></tr>
+<tr><td>额外逻辑</td><td>冲突检测 + rd_data_ff + 信号打拍</td><td>无额外逻辑</td></tr>
 </table>
 
+<h3>时序对比</h3>
+
+<pre>
+<span class="cm">RAM 实现时序:</span>
+  T0: rs1_addr→RAM 地址端口    (输入)
+  T1: RAM 数据输出→rs1_data_ff (读回)
+  T2: MUX→mprf2exu_rs1_data_o  (输出)
+  → 2 拍从地址到数据
+
+<span class="cm">分布逻辑时序:</span>
+  T0: rs1_addr→MUX→mprf_int[addr] (组合读)
+  T0: →mprf2exu_rs1_data_o        (当拍输出)
+  → 0 拍从地址到数据
+</pre>
+
+<div class="box warn">
+  <div class="box-title">RAM 实现的 EXU 约束</div>
+  1 拍读延迟意味着 EXU 必须在 EXE 阶段之前的一拍发出读地址。SCR1 通过 ~NO_EXE_STAGE 约束实现: 即 ID 阶段发出地址, EXE 阶段获得数据。分布逻辑无此约束。
+</div>
+
 <!-- ============ 练习 ============ -->
-<h2 id="exercise">练</h2>
+<h2 id="exercise">练习</h2>
 
 <fieldset>
   <legend>练习 1: 减法标志位追踪</legend>
@@ -478,22 +846,60 @@ mprf2exu_rs1_data_o = rs1_addr_vd ? mprf_int[rs1_addr] : <span class="num">'0</s
   <p>指令 <code>beq x1, x2, label</code> 在 EXU 执行时, 哪些硬件单元在工作? 主加法器做比较, 地址加法器算目标。如果两者共用通路, 会有什么后果?</p>
 </fieldset>
 
+<fieldset>
+  <legend>练习 6: 设计一个简单 ALU (综合题)</legend>
+  <p>设计一个 8 位 ALU, 支持以下操作:</p>
+  <ul style="margin:6px 0;">
+    <li>ADD: op1 + op2</li>
+    <li>SUB: op1 - op2</li>
+    <li>AND: op1 & op2</li>
+    <li>OR: op1 | op2</li>
+    <li>SLT: (op1 &lt; op2) 有符号比较 → 结果 1 或 0</li>
+    <li>SLTU: (op1 &lt; op2) 无符号比较 → 结果 1 或 0</li>
+  </ul>
+  <p><strong>要求:</strong></p>
+  <ol style="margin:4px 0;">
+    <li>写出 9 位加法器设计 (为什么需要 9 位?), 以及进位/零/符号/溢出 4 个标志位的提取</li>
+    <li>设计 3 位操作码编码 (opcode) 来控制 6 种运算</li>
+    <li>SLT 用 <code>s ^ o</code> 判定, SLTU 用进位位判定</li>
+    <li>画出数据通路框图 (加法器 → 标志位 → 比较逻辑 → 结果 MUX)</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 7: 非恢复式除法手算</legend>
+  <p>用非恢复式除法计算 <code>13 ÷ 3</code> (无符号)。画出每次迭代的余数、商位和商的变化。验证最终商 = 4, 余数 = 1。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: LSU 命令宽度解码</legend>
+  <p>设计一个组合逻辑块, 输入为 <code>lsu_cmd (LB/LBU/LH/LHU/LW/SB/SH/SW)</code>, 输出 3 个信号:</p>
+  <ol style="margin:4px 0;">
+    <li><code>is_load</code>: 是否为加载指令</li>
+    <li><code>is_store</code>: 是否为存储指令</li>
+    <li><code>width[1:0]</code>: 数据宽度 (00=BYTE, 01=HWORD, 10=WORD)</li>
+  </ol>
+  <p>然后基于这 3 个信号推导地址未对齐检测条件。用 Verilog 写出完整模块。</p>
+</fieldset>
+
 <!-- ============ 总结 ============ -->
 <h2 id="summary">总结</h2>
 
 <div class="box">
   <div class="box-title">学完本周你应该能回答</div>
   <ol style="margin:8px 0 0;">
-    <li>主加法器的 4 个标志位 (c/z/s/o) 如何提取? 各表示什么?</li>
-    <li>有符号小于为什么是 <code>s ^ o</code> 而不是简单的 s?</li>
+    <li>主加法器为何是 33 位? 4 个标志位 (c/z/s/o) 如何从 33 位结果中提取?</li>
+    <li>有符号小于为什么是 <code>s ^ o</code> 而不是简单的 s? 用溢出实例说明。</li>
     <li>地址加法器有哪些指令使用? 和主加法器的独立性有什么好处?</li>
-    <li>Radix-2 乘法器和快速乘法器如何实现 4 种 MUL 指令? MULH/MULHSU/MULHU 取高 32 位怎么实现?</li>
-    <li>非恢复式除法为什么不需要"恢复余数"? 上一次商位如何决定下一次加减方向?</li>
-    <li>LSU 的 lsu_cmd_ff 为什么重要? 不用它会有 bug 吗?</li>
-    <li>地址未对齐的检测条件是什么? 异常发生后阻止 DMEM 请求了吗?</li>
-    <li>LSU 异常优先级从高到低怎么排? 为什么?</li>
+    <li>FAST_MUL 单周期乘法器如何用 33×33 位完成 4 种 MUL 指令? 符号扩展位的作用?</li>
+    <li>Radix-2 乘法器的 MDU FSM 有几个状态? 每拍执行什么操作? 初始化和迭代有何不同?</li>
+    <li>非恢复式除法的商位如何确定? CORR 修正阶段做什么? 为什么省掉了恢复步骤?</li>
+    <li>LSU 的 lsu_cmd_ff 为什么重要? 画波形说明响应到达时 exu2lsu_cmd_i 已变的情况下扩展逻辑仍正确。</li>
+    <li>地址未对齐的检测条件是什么? <code>|addr[1:0]</code> 归约或的含义?</li>
+    <li>LSU 异常优先级从高到低怎么排? 为什么 Access Fault 最高?</li>
     <li>MPRF 的 x0 寄存器如何在读/写两条路径上保证为零?</li>
-    <li>RAM 实现的写优先旁路为什么不是 0 延迟而是 1 拍? 分布逻辑实现的异步读有什么代价?</li>
+    <li>RAM 实现的写优先旁路为什么不是 0 延迟而是 1 拍? 画出 T0-T2 的完整信号波形。</li>
+    <li>分布逻辑实现与 RAM 实现的关键区别: 读延迟、面积、旁路需求各是什么?</li>
   </ol>
 </div>
 

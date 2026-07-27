@@ -3,621 +3,481 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RISC-V 指令集架构基础 -- 结合 SCR1 实战学习</title>
+<title>RISC-V 指令集架构基础 | SCR1 第 3 周</title>
 <style>
-  :root {
-    --blue: #1a73e8;
-    --blue-light: #e8f0fe;
-    --gray: #5f6368;
-    --border: #dadce0;
-    --code-bg: #f1f3f4;
-  }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.7; }
-  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
-  h2 { color: #1a365d; margin-top: 40px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
-  h3 { color: #2d3748; margin-top: 28px; }
-  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.9em; color: #d63384; }
-  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.85em; line-height: 1.5; }
-  pre .kw { color: #569cd6; }
-  pre .num { color: #b5cea8; }
-  pre .cm { color: #6a9955; }
-  pre .str { color: #ce9178; }
-  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
-  th { background: var(--blue-light); font-weight: 600; }
-  tr:hover td { background: #f8f9fa; }
-  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
-  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
-  .warn { background: #fff3cd; border-color: #ffc107; }
-  .warn .box-title { color: #856404; }
-  .tip { background: #d4edda; border-color: #28a745; }
-  .tip .box-title { color: #155724; }
-  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
-  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
-  .nav a:hover { color: #1a365d; }
-  .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
-  .reg-map { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0; }
-  .reg-map div { background: var(--blue-light); border: 1px solid var(--border); border-radius: 4px; padding: 8px; text-align: center; font-size: 0.85em; }
-  .reg-map .reg-name { font-weight: 700; color: var(--blue); }
-  .reg-map .reg-desc { color: var(--gray); font-size: 0.8em; }
-  .fmt-table td:first-child { font-family: monospace; white-space: nowrap; font-weight: 600; background: var(--code-bg); }
-  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
-  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
-  .highlight { background: #fff3cd; padding: 2px 4px; border-radius: 3px; }
-  .bits { font-family: monospace; letter-spacing: 1px; }
-  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
-  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+:root{--blue:#1a73e8;--bluel:#e8f0fe;--gray:#5f6368;--bd:#dadce0;--cbg:#f1f3f4}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',sans-serif;max-width:1024px;margin:0 auto;padding:20px;background:#fff;color:#202124;line-height:1.72}h1{color:#1a365d;border-bottom:3px solid var(--blue);padding-bottom:12px;text-align:center}h2{color:#1a365d;margin-top:44px;padding:8px 14px;background:var(--bluel);border-radius:6px;border-left:5px solid var(--blue)}h3{color:#2d3748;margin-top:28px}code{background:var(--cbg);padding:2px 7px;border-radius:4px;font-family:'Fira Code',monospace;font-size:.87em;color:#d63384}pre{background:#1e1e1e;color:#d4d4d4;padding:16px;border-radius:8px;overflow-x:auto;font-family:'Fira Code',monospace;font-size:.81em;line-height:1.5}pre .kw{color:#569cd6}pre .num{color:#b5cea8}pre .cm{color:#6a9955}pre .str{color:#ce9178}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}th,td{padding:9px 12px;text-align:left;border:1px solid var(--bd)}th{background:var(--bluel);font-weight:600}tr:hover td{background:#f8f9fa}.box{background:var(--bluel);border:1px solid var(--blue);border-radius:8px;padding:14px 18px;margin:16px 0}.box-title{font-weight:700;color:var(--blue);margin-bottom:6px}.warn{background:#fff3cd;border-color:#ffc107}.warn .box-title{color:#856404}.tip{background:#d4edda;border-color:#28a745}.tip .box-title{color:#155724}.nav{position:fixed;top:20px;right:20px;background:white;border:1px solid var(--bd);border-radius:8px;padding:12px 16px;box-shadow:0 2px 8px rgba(0,0,0,.1);max-width:230px;z-index:100;max-height:80vh;overflow-y:auto;font-size:.83em}.nav a{display:block;padding:3px 0;color:var(--blue);text-decoration:none}.nav a:hover{color:#1a365d}.nav-title{font-weight:700;margin-bottom:6px;color:#1a365d;font-size:1em}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}.grid4 div{background:var(--bluel);border:1px solid var(--bd);border-radius:4px;padding:8px;text-align:center;font-size:.83em}.grid4 .rn{font-weight:700;color:var(--blue)}.grid4 .rd{color:var(--gray);font-size:.78em}.step{background:white;border:1px solid var(--bd);border-radius:8px;padding:12px 18px;margin:10px 0}.step-num{display:inline-block;background:var(--blue);color:white;width:26px;height:26px;border-radius:50%;text-align:center;line-height:26px;margin-right:8px;font-weight:700;font-size:.85em}fieldset{border:1px solid var(--bd);border-radius:8px;padding:12px 18px;margin:12px 0}legend{font-weight:700;color:var(--blue);padding:0 6px}.bits{font-family:monospace;letter-spacing:1px}.lr{color:var(--gray);font-size:.78em;font-weight:400}
 </style>
 </head>
 <body>
 
-<h1>RISC-V 指令集架构基础 -- 结合 SCR1 实战学习</h1>
+<h1>RISC-V 指令集架构基础 | SCR1 第 3 周</h1>
 
 <nav class="nav">
-  <div class="nav-title">课程导航</div>
-  <a href="#why">为什么学 RISC-V？</a>
-  <a href="#reg">通用寄存器 x0-x31</a>
-  <a href="#format">六大指令格式 R/I/S/B/U/J</a>
-  <a href="#arith">算术逻辑指令</a>
-  <a href="#mem">访存指令 LW/SW 等</a>
-  <a href="#branch">分支与跳转</a>
-  <a href="#system">系统指令 ECALL/MRET/WFI</a>
-  <a href="#csr">CSR 控制状态寄存器</a>
-  <a href="#rvc">RVC 压缩指令</a>
-  <a href="#encode">SCR1 源码对照</a>
-  <a href="#exercise">动手练习</a>
-  <a href="#summary">总结: 一张图看懂</a>
+<div class="nav-title">课程导航</div>
+<a href="#why">一、为什么学 RISC-V</a>
+<a href="#reg">二、通用寄存器 x0-x31</a>
+<a href="#format">三、六大指令格式</a>
+<a href="#arith">四、算术逻辑指令</a>
+<a href="#mem">五、访存指令</a>
+<a href="#branch">六、分支与跳转</a>
+<a href="#system">七、系统指令</a>
+<a href="#csr">八、CSR 控制状态寄存器</a>
+<a href="#rvc">九、RVC 压缩指令</a>
+<a href="#encode">十、手工编码实战</a>
+<a href="#exercise">十一、动手练习</a>
+<a href="#summary">总结</a>
 </nav>
 
-<!-- ============================================================ -->
-<h2 id="why">第一课: 为什么学 RISC-V？</h2>
-<!-- ============================================================ -->
+<h2 id="why">一、为什么学 RISC-V <span class="lr">(源码: scr1_arch_description.svh)</span></h2>
 
-<div class="box">
-  <div class="box-title">本课程目标</div>
-  理解 SCR1 处理器能执行的所有指令，能够阅读 RISC-V 汇编代码，知道每条指令在 SCR1 硬件中经历了哪些模块。
-</div>
+<div class="box"><div class="box-title">本课程目标</div>理解 SCR1 能执行的所有指令，阅读 RISC-V 汇编代码，知道每条指令在 SCR1 硬件中经历了哪些模块。</div>
 
-<p>RISC-V 是一个 <strong>开源</strong> 的指令集架构（ISA），由加州大学伯克利分校于 2010 年发布。和 x86（Intel/AMD）、ARM 不同，RISC-V 的设计哲学是 <strong>精简、模块化、可扩展</strong>。</p>
+<p>RISC-V 由 UC Berkeley 于 2010 年发布，设计哲学是<strong>精简、模块化、可扩展</strong>。与 x86 上千条指令不同，RV32I 基础整数指令集仅 40 条。SCR1 支持的扩展:</p>
 
-<p>SCR1 处理器支持的 RISC-V 子集:</p>
 <table>
-  <tr><th>扩展</th><th>全称</th><th>指令数</th><th>说明</th></tr>
-  <tr><td><code>RV32I</code></td><td>Base Integer</td><td>40 条</td><td>基础整数指令集，所有 RISC-V 处理器必须实现</td></tr>
-  <tr><td><code>RV32E</code></td><td>Embedded</td><td>40 条</td><td>嵌入式精简版（仅 16 个寄存器），SCR1 可选</td></tr>
-  <tr><td><code>M</code></td><td>Multiply/Divide</td><td>8 条</td><td>整数乘除法扩展（MUL, DIV, REM 等）</td></tr>
-  <tr><td><code>C</code></td><td>Compressed</td><td>约 26 条</td><td>16 位压缩指令，让代码体积减少 25%-30%</td></tr>
+<tr><th>扩展</th><th>全称</th><th>指令数</th><th>说明</th></tr>
+<tr><td><code>RV32I</code></td><td>Base Integer</td><td>40</td><td>基础整数集，所有 RISC-V 核必须实现</td></tr>
+<tr><td><code>RV32E</code></td><td>Embedded</td><td>40</td><td>仅 16 个寄存器，嵌入式精简版 (SCR1 可选)</td></tr>
+<tr><td><code>M</code></td><td>Multiply/Divide</td><td>8</td><td>整数乘除 (SCR1_CFG_RV32IMC_MAX 含此扩展)</td></tr>
+<tr><td><code>C</code></td><td>Compressed</td><td>~26</td><td>16 位压缩指令，代码体积减少 25-30%</td></tr>
 </table>
 
-<p>SCR1 预定义了三档配置:</p>
-<ul>
-  <li><strong>MIN</strong>: RV32EC (2 级流水线，最小面积)</li>
-  <li><strong>BASE</strong>: RV32IC (3 级流水线，平衡)</li>
-  <li><strong>MAX</strong>: RV32IMC (4 级流水线，完整功能)</li>
-</ul>
+<p>SCR1 三档配置: <strong>MIN</strong>=RV32EC (2级) / <strong>BASE</strong>=RV32IC (3级) / <strong>MAX</strong>=RV32IMC (4级)。</p>
 
-<div class="box tip">
-  <div class="box-title">SCR1 源码线索</div>
-  打开 <code>src/includes/scr1_arch_description.svh</code>，搜索 <code>SCR1_RVM_EXT</code> 和 <code>SCR1_RVC_EXT</code> 宏定义，可以看到编译开关如何控制指令扩展的启用。
+<div class="box tip"><div class="box-title">SCR1 源码线索</div>打开 <code>src/includes/scr1_arch_description.svh</code>，搜索 <code>SCR1_RVM_EXT</code> 和 <code>SCR1_RVC_EXT</code> —— 编译宏控制 M/C 扩展开关。各模块通过 <code>`ifdef SCR1_RVM_EXT</code> 等条件编译选择是否包含乘除法硬件。</div>
+
+<h2 id="reg">二、通用寄存器 x0-x31 <span class="lr">(硬件: scr1_pipe_mprf.sv)</span></h2>
+
+<p>32 个 32 位通用寄存器，每个在 ABI 中有约定用途。设计精妙之处在于: <strong>寄存器号和用途有规律</strong>，译码器不需要查表就能理解。</p>
+
+<div class="grid4">
+<div><span class="rn">x0 / zero</span><br><span class="rd">硬连线零</span></div>
+<div><span class="rn">x1 / ra</span><br><span class="rd">返回地址</span></div>
+<div><span class="rn">x2 / sp</span><br><span class="rd">栈指针</span></div>
+<div><span class="rn">x3 / gp</span><br><span class="rd">全局指针</span></div>
+<div><span class="rn">x4 / tp</span><br><span class="rd">线程指针</span></div>
+<div><span class="rn">x5 / t0</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x6 / t1</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x7 / t2</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x8 / s0/fp</span><br><span class="rd">保存/帧指针</span></div>
+<div><span class="rn">x9 / s1</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x10 / a0</span><br><span class="rd">参数+返回值</span></div>
+<div><span class="rn">x11 / a1</span><br><span class="rd">参数+返回值</span></div>
+<div><span class="rn">x12 / a2</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x13 / a3</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x14 / a4</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x15 / a5</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x16 / a6</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x17 / a7</span><br><span class="rd">参数</span></div>
+<div><span class="rn">x18 / s2</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x19 / s3</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x20 / s4</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x21 / s5</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x22 / s6</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x23 / s7</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x24 / s8</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x25 / s9</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x26 / s10</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x27 / s11</span><br><span class="rd">保存</span></div>
+<div><span class="rn">x28 / t3</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x29 / t4</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x30 / t5</span><br><span class="rd">临时</span></div>
+<div><span class="rn">x31 / t6</span><br><span class="rd">临时</span></div>
 </div>
 
-<!-- ============================================================ -->
-<h2 id="reg">第二课: 通用寄存器 x0-x31</h2>
-<!-- ============================================================ -->
+<h3>寄存器分组与调用约定</h3>
 
-<p>RISC-V 有 32 个 32 位通用寄存器（RV32E 只有 16 个），每个寄存器在 ABI（应用程序二进制接口）中有约定的用途:</p>
+<table>
+<tr><th>组</th><th>寄存器</th><th>含义</th><th>调用者保存?</th><th>典型用途</th></tr>
+<tr><td>零</td><td>x0</td><td>恒为零</td><td>--</td><td>丢弃结果、与零比较、NOP</td></tr>
+<tr><td>指针</td><td>x1(ra), x2(sp), x3(gp), x4(tp)</td><td>返回/栈/全局/线程</td><td>是</td><td>函数调用、栈管理、全局变量、TLS</td></tr>
+<tr><td>临时 t</td><td>x5-7, x28-31</td><td>Temporary</td><td><strong>是</strong></td><td>子函数可随意覆盖，跨调前需保存</td></tr>
+<tr><td>保存 s</td><td>x8-9, x18-27</td><td>Saved</td><td><strong>否</strong></td><td>函数入口保存、出口恢复</td></tr>
+<tr><td>参数 a</td><td>x10-17</td><td>Argument</td><td>是</td><td>前 8 个参数 (a0-a7)，a0/a1 双用为返回值</td></tr>
+</table>
 
-<div class="reg-map">
-  <div><span class="reg-name">x0 / zero</span><br><span class="reg-desc">零寄存器</span></div>
-  <div><span class="reg-name">x1 / ra</span><br><span class="reg-desc">返回地址</span></div>
-  <div><span class="reg-name">x2 / sp</span><br><span class="reg-desc">栈指针</span></div>
-  <div><span class="reg-name">x3 / gp</span><br><span class="reg-desc">全局指针</span></div>
-  <div><span class="reg-name">x4 / tp</span><br><span class="reg-desc">线程指针</span></div>
-  <div><span class="reg-name">x5 / t0</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x6 / t1</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x7 / t2</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x8 / s0 / fp</span><br><span class="reg-desc">保存寄存器/帧指针</span></div>
-  <div><span class="reg-name">x9 / s1</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x10 / a0</span><br><span class="reg-desc">函数参数/返回值</span></div>
-  <div><span class="reg-name">x11 / a1</span><br><span class="reg-desc">函数参数/返回值</span></div>
-  <div><span class="reg-name">x12 / a2</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x13 / a3</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x14 / a4</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x15 / a5</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x16 / a6</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x17 / a7</span><br><span class="reg-desc">函数参数</span></div>
-  <div><span class="reg-name">x18 / s2</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x19 / s3</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x20 / s4</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x21 / s5</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x22 / s6</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x23 / s7</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x24 / s8</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x25 / s9</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x26 / s10</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x27 / s11</span><br><span class="reg-desc">保存寄存器</span></div>
-  <div><span class="reg-name">x28 / t3</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x29 / t4</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x30 / t5</span><br><span class="reg-desc">临时寄存器</span></div>
-  <div><span class="reg-name">x31 / t6</span><br><span class="reg-desc">临时寄存器</span></div>
-</div>
+<div class="box warn"><div class="box-title">为什么分"调用者保存"和"被调用者保存"?</div>
+<p>假设函数 A 调用函数 B。A 用 <code>t0</code> 存了重要数据，B 可能也会用 <code>t0</code>。如果 A 在调用 B 之前不保存 <code>t0</code>，B 返回后 <code>t0</code> 就被破坏了。但 <code>s0-s11</code> 不同: B 承诺"我如果用，走之前会恢复"。</p>
+<p>这种分工减少不必要的保存/恢复: 临时变量用 t 寄存器 (只在使用者需要时才保存)，跨函数变量用 s 寄存器 (保证不被破坏)。</p></div>
 
-<div class="box">
-  <div class="box-title">关键概念: x0 是硬连线的零</div>
-  写 <code>x0</code> 的任何数据都会被丢弃，读 <code>x0</code> 始终返回 0。<br>
-  在 SCR1 中，这个逻辑实现在 <code>src/core/pipeline/scr1_pipe_mprf.sv</code> 里 —— 当 rd_addr==0 时，写使能被强制置 0。
-</div>
+<h3>x0 硬连线零 -- MPRF 的实现 (scr1_pipe_mprf.sv:71-74)</h3>
 
-<div class="box warn">
-  <div class="box-title">记忆技巧: 寄存器分组</div>
-  <strong>t</strong>0-t6: <strong>T</strong>emporary（临时，函数调用不保存）<br>
-  <strong>s</strong>0-s11: <strong>S</strong>aved（被调用者保存，函数返回前要恢复）<br>
-  <strong>a</strong>0-a7: <strong>A</strong>rgument（函数参数和返回值）<br>
-  <strong>ra</strong>: <strong>R</strong>eturn <strong>A</strong>ddress（JAL 指令自动写入的返回地址）<br>
-  <strong>sp</strong>: <strong>S</strong>tack <strong>P</strong>ointer（栈指针，指向栈顶）
-</div>
+<pre>
+assign rs1_addr_vd = <span class="str">|</span>exu2mprf_rs1_addr_i;  <span class="cm">// |5'b00000 = 0 → 输出 '0</span>
+assign rs2_addr_vd = <span class="str">|</span>exu2mprf_rs2_addr_i;  <span class="cm">// |5'bxxxxx = 1 → 正常读</span>
+assign wr_req_vd   = exu2mprf_w_req_i <span class="str">&amp; |</span>exu2mprf_rd_addr_i;  <span class="cm">// 写 x0 → addr=0 → wr_req_vd=0 → 抑制写入</span></pre>
 
-<!-- ============================================================ -->
-<h2 id="format">第三课: 六大指令格式 R/I/S/B/U/J</h2>
-<!-- ============================================================ -->
+<p>关键: 寄存器数组从索引 <strong>1</strong> 开始 (<code>mprf_int[1:31]</code>)，x0 不占物理存储。归约或 <code>|</code> 把 5 位地址全部或起来: 只有 5'b00000 得 0，其余都得 1。三行代码实现 x0 全部特性，不消耗额外硬件。</p>
 
-<p>RISC-V 只有 6 种基本指令格式，比 x86（上千种格式）精简得多。所有 32 位指令都用这 6 种编码:</p>
+<h2 id="format">三、六大指令格式 R/I/S/B/U/J <span class="lr">(译码: scr1_pipe_idu.sv)</span></h2>
 
-<fieldset>
-<legend>R-type: 寄存器-寄存器操作 (opcode = 0110011)</legend>
+<p>RISC-V 只有 6 种基本格式。核心设计: rs1、rs2、rd 在所有格式中<strong>位位置固定</strong> (bit 19-15, 24-20, 11-7)，译码器不需判断指令类型就能直接提取寄存器地址。</p>
+
+<h3>R-type: 寄存器-寄存器操作 <span class="lr">(opcode=0110011)</span></h3>
 <pre class="bits">
 | 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
 |   funct7   |    rs2    |    rs1    |  funct3  |     rd     |  opcode |
-   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits
-</pre>
-<p>用途: <code>ADD rd, rs1, rs2</code> —— rd = rs1 + rs2</p>
-<p>包含: ADD, SUB, AND, OR, XOR, SLL, SRL, SRA, SLT, SLTU, MUL, DIV 等</p>
-</fieldset>
+   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits</pre>
+<p>三个寄存器均参与: rs1 和 rs2 是源操作数，rd 是目标。<code>funct7</code> 与 <code>funct3</code> 组合决定具体运算。例如: ADD 是 funct7=0000000+funct3=000，SUB 是 funct7=0100000+funct3=000 —— 同一个 funct3=000，靠 funct7 的最高位区分加法和减法。</p>
+<p>包含: ADD, SUB, AND, OR, XOR, SLL, SRL, SRA, SLT, SLTU, MUL, DIV 等。</p>
 
-<fieldset>
-<legend>I-type: 立即数操作 (opcode = 0010011 / 0000011 / 1100111)</legend>
+<h3>I-type: 立即数操作 <span class="lr">(opcode=0010011/0000011/1100111)</span></h3>
 <pre class="bits">
 | 31..............20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
 |     imm[11:0]      |    rs1    |  funct3  |     rd     |  opcode |
-      12 bits           5 bits     3 bits      5 bits       7 bits
-</pre>
-<p>用途: <code>ADDI rd, rs1, imm</code> —— rd = rs1 + imm</p>
-<p>包含: ADDI, ANDI, ORI, XORI, SLLI, SRLI, SRAI, SLTI, LW, JALR, CSR 指令</p>
-</fieldset>
+      12 bits           5 bits     3 bits      5 bits       7 bits</pre>
+<p>把一个 12 位立即数<strong>符号扩展</strong>到 32 位后与 rs1 运算，结果写入 rd。注意: I-type 也是 Load 和 JALR 的格式 —— opcode 区分功能 (OP-IMM / LOAD / JALR)。</p>
+<p>包含: ADDI, ANDI, ORI, XORI, SLLI(只有低 5 位有效), SRLI, SRAI, SLTI, SLTIU, LW/LH/LB/LHU/LBU, JALR, CSR 指令系列。</p>
 
-<fieldset>
-<legend>S-type: 存储指令 (opcode = 0100011)</legend>
+<h3>S-type: 存储指令 <span class="lr">(opcode=0100011) -- 详细解析</span></h3>
 <pre class="bits">
 | 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
 |  imm[11:5] |    rs2    |    rs1    |  funct3  |  imm[4:0]  |  opcode |
-   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits
-</pre>
-<p>用途: <code>SW rs2, offset(rs1)</code> —— MEM[rs1+offset] = rs2</p>
-<p>包含: SW, SH, SB</p>
-</fieldset>
+   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits</pre>
 
-<fieldset>
-<legend>B-type: 条件分支 (opcode = 1100011)</legend>
-<pre class="bits">
-| 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
-|imm[12|10:5]|    rs2    |    rs1    |  funct3  |imm[4:1|11]|  opcode |
-   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits
-</pre>
-<p>用途: <code>BEQ rs1, rs2, offset</code> —— if rs1==rs2 then PC = PC+offset</p>
-<p>包含: BEQ, BNE, BLT, BGE, BLTU, BGEU</p>
-</fieldset>
+<p>S-type 只有 3 条: <strong>SB</strong> (存字节, funct3=000), <strong>SH</strong> (存半字, funct3=001), <strong>SW</strong> (存字, funct3=010)。共同点是: <strong>没有 rd 字段</strong> (bit 11-7 借给立即数低位)，存储不写寄存器。</p>
 
-<fieldset>
-<legend>U-type: 高位立即数 (opcode = 0110111 / 0010111)</legend>
-<pre class="bits">
-| 31...................................12 | 11.......7 | 6......0 |
-|              imm[31:12]                 |     rd     |  opcode |
-               20 bits                      5 bits       7 bits
-</pre>
-<p>用途: <code>LUI rd, imm</code> —— rd = imm &lt;&lt; 12 (高 20 位写入，低 12 位清零)</p>
-<p>包含: LUI, AUIPC</p>
-</fieldset>
+<h4>立即数拼接: 为什么要拆成两段?</h4>
+<pre>
+imm = {instr[31:25], instr[11:7]}   <span class="cm">// = imm[11:5] + imm[4:0]</span>
+       高 7 位       低 5 位</pre>
+<p>不是乱切的 -- 看 R-type 的同位置: bit 31-25 是 funct7, bit 11-7 是 rd。S-type 不写寄存器, 这两个字段正好借给立即数。这样 rs1/rs2/funct3/opcode 六种格式完全对齐, 硬件译码极度简洁。</p>
 
-<fieldset>
-<legend>J-type: 无条件跳转 (opcode = 1101111)</legend>
-<pre class="bits">
-| 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
-|imm[20|10:1|11|19:12]|          rd          |  opcode |
-   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits
-</pre>
-<p>用途: <code>JAL rd, offset</code> —— rd = PC+4; PC = PC+offset</p>
-<p>包含: JAL</p>
-</fieldset>
-
-<div class="box">
-  <div class="box-title">为什么立即数要打乱？</div>
-  看起来立即数字段被切得很散（尤其是 S-type 和 B-type），这是为了 <strong>简化硬件译码</strong>。所有格式的 rs1、rs2、rd 字段都在相同位置（bit 19-15, 24-20, 11-7），译码器不用判断指令类型就能直接提取寄存器地址。这就是 RISC-V "精简"哲学的体现 —— 用编码复杂度换取硬件简洁性。
-</div>
-
-<!-- ============================================================ -->
-<h2 id="arith">第四课: 算术和逻辑指令</h2>
-<!-- ============================================================ -->
-
-<h3>基础运算指令</h3>
-
-<table class="fmt-table">
-  <tr><th>指令</th><th>格式</th><th>操作</th><th>C 语言等价</th></tr>
-  <tr><td><code>ADD rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 + rs2</td><td>rd = rs1 + rs2</td></tr>
-  <tr><td><code>SUB rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 - rs2</td><td>rd = rs1 - rs2</td></tr>
-  <tr><td><code>ADDI rd, rs1, imm</code></td><td>I</td><td>rd = rs1 + imm</td><td>rd = rs1 + imm</td></tr>
-  <tr><td><code>AND rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 & rs2</td><td>rd = rs1 & rs2</td></tr>
-  <tr><td><code>ANDI rd, rs1, imm</code></td><td>I</td><td>rd = rs1 & imm</td><td>rd = rs1 & imm</td></tr>
-  <tr><td><code>OR rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 | rs2</td><td>rd = rs1 | rs2</td></tr>
-  <tr><td><code>ORI rd, rs1, imm</code></td><td>I</td><td>rd = rs1 | imm</td><td>rd = rs1 | imm</td></tr>
-  <tr><td><code>XOR rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 ^ rs2</td><td>rd = rs1 ^ rs2</td></tr>
-  <tr><td><code>XORI rd, rs1, imm</code></td><td>I</td><td>rd = rs1 ^ imm</td><td>rd = rs1 ^ imm</td></tr>
-  <tr><td><code>SLL rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 &lt;&lt; rs2</td><td>rd = rs1 &lt;&lt; rs2</td></tr>
-  <tr><td><code>SLLI rd, rs1, shamt</code></td><td>I</td><td>rd = rs1 &lt;&lt; shamt</td><td>rd = rs1 &lt;&lt; shamt</td></tr>
-  <tr><td><code>SRL rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 &gt;&gt; rs2 (逻辑)</td><td>rd = (u32)rs1 &gt;&gt; rs2</td></tr>
-  <tr><td><code>SRLI rd, rs1, shamt</code></td><td>I</td><td>rd = rs1 &gt;&gt; shamt (逻辑)</td><td>rd = (u32)rs1 &gt;&gt; shamt</td></tr>
-  <tr><td><code>SRA rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 &gt;&gt; rs2 (算术)</td><td>rd = rs1 &gt;&gt; rs2 (有符号)</td></tr>
-  <tr><td><code>SRAI rd, rs1, shamt</code></td><td>I</td><td>rd = rs1 &gt;&gt; shamt (算术)</td><td>rd = rs1 &gt;&gt; shamt (有符号)</td></tr>
-</table>
-
-<h3>比较置位指令</h3>
-
-<table class="fmt-table">
-  <tr><th>指令</th><th>格式</th><th>操作</th></tr>
-  <tr><td><code>SLT rd, rs1, rs2</code></td><td>R</td><td>rd = (rs1 &lt; rs2) ? 1 : 0 (有符号)</td></tr>
-  <tr><td><code>SLTU rd, rs1, rs2</code></td><td>R</td><td>rd = (rs1 &lt; rs2) ? 1 : 0 (无符号)</td></tr>
-  <tr><td><code>SLTI rd, rs1, imm</code></td><td>I</td><td>rd = (rs1 &lt; imm) ? 1 : 0 (有符号)</td></tr>
-  <tr><td><code>SLTIU rd, rs1, imm</code></td><td>I</td><td>rd = (rs1 &lt; imm) ? 1 : 0 (无符号)</td></tr>
-</table>
-
-<h3>高位立即数指令</h3>
-
-<table class="fmt-table">
-  <tr><th>指令</th><th>格式</th><th>操作</th><th>典型用途</th></tr>
-  <tr><td><code>LUI rd, imm</code></td><td>U</td><td>rd = imm &lt;&lt; 12</td><td>加载 32 位常数的高 20 位</td></tr>
-  <tr><td><code>AUIPC rd, imm</code></td><td>U</td><td>rd = PC + (imm &lt;&lt; 12)</td><td>PC 相对寻址</td></tr>
-</table>
-
-<div class="box tip">
-  <div class="box-title">如何加载 32 位立即数？</div>
-  RISC-V 没有单条 "加载 32 位常数" 指令，需要两条配合:<br>
-  <code>LUI x5, 0x12345</code>  → x5 = 0x12345000<br>
-  <code>ADDI x5, x5, 0x678</code> → x5 = 0x12345678<br>
-  （这是一个经典面试题: LUI + ADDI 组合，注意 ADDI 的立即数是有符号 12 位的，会有符号扩展干扰。实际用伪指令 <code>LI</code>，汇编器自动处理。）
-</div>
-
-<h3>乘除法扩展 (M 扩展，SCR1 可选)</h3>
-
-<table class="fmt-table">
-  <tr><th>指令</th><th>操作</th><th>说明</th></tr>
-  <tr><td><code>MUL rd, rs1, rs2</code></td><td>rd = rs1 * rs2 (低 32 位)</td><td>有符号乘法</td></tr>
-  <tr><td><code>MULH rd, rs1, rs2</code></td><td>rd = (rs1 * rs2) &gt;&gt; 32 (有符号)</td><td>取高 32 位</td></tr>
-  <tr><td><code>MULHU rd, rs1, rs2</code></td><td>rd = (u32(rs1) * u32(rs2)) &gt;&gt; 32</td><td>无符号取高位</td></tr>
-  <tr><td><code>MULHSU rd, rs1, rs2</code></td><td>rd = (rs1 * u32(rs2)) &gt;&gt; 32</td><td>混合符号取高位</td></tr>
-  <tr><td><code>DIV rd, rs1, rs2</code></td><td>rd = rs1 / rs2 (有符号)</td><td>除零 = -1</td></tr>
-  <tr><td><code>DIVU rd, rs1, rs2</code></td><td>rd = u32(rs1) / u32(rs2)</td><td>无符号除法</td></tr>
-  <tr><td><code>REM rd, rs1, rs2</code></td><td>rd = rs1 % rs2 (有符号)</td><td>除零 = rs1</td></tr>
-  <tr><td><code>REMU rd, rs1, rs2</code></td><td>rd = u32(rs1) % u32(rs2)</td><td>无符号取余</td></tr>
-</table>
-
-<div class="box warn">
-  <div class="box-title">SCR1 中的乘除法实现</div>
-  源码在 <code>src/core/pipeline/scr1_pipe_ialu.sv</code>，有两个选项:<br>
-  <code>SCR1_FAST_MUL</code>: 单周期乘法器（用 FPGA DSP 块），速度快但面积大<br>
-  默认: 32 周期迭代乘法器（移位加），面积小但慢<br>
-  除法器始终是 33 周期的非恢复除法算法，不支持单周期。
-</div>
-
-<!-- ============================================================ -->
-<h2 id="mem">第五课: 访存指令</h2>
-<!-- ============================================================ -->
-
-<p>RISC-V 是 Load-Store 架构: 只有 Load/Store 指令可以访问内存，ALU 指令只能操作寄存器。</p>
-
-<h3>加载指令 (I-type)</h3>
-<table class="fmt-table">
-  <tr><th>指令</th><th>操作</th><th>说明</th></tr>
-  <tr><td><code>LW rd, offset(rs1)</code></td><td>rd = MEM[rs1 + offset] (32 位)</td><td>加载字</td></tr>
-  <tr><td><code>LH rd, offset(rs1)</code></td><td>rd = 符号扩展(MEM[rs1 + offset]) (16 位)</td><td>加载半字, 有符号</td></tr>
-  <tr><td><code>LHU rd, offset(rs1)</code></td><td>rd = 零扩展(MEM[rs1 + offset]) (16 位)</td><td>加载半字, 无符号</td></tr>
-  <tr><td><code>LB rd, offset(rs1)</code></td><td>rd = 符号扩展(MEM[rs1 + offset]) (8 位)</td><td>加载字节, 有符号</td></tr>
-  <tr><td><code>LBU rd, offset(rs1)</code></td><td>rd = 零扩展(MEM[rs1 + offset]) (8 位)</td><td>加载字节, 无符号</td></tr>
-</table>
-
-<h3>存储指令 (S-type)</h3>
-<table class="fmt-table">
-  <tr><th>指令</th><th>操作</th><th>说明</th></tr>
-  <tr><td><code>SW rs2, offset(rs1)</code></td><td>MEM[rs1 + offset] = rs2 (32 位)</td><td>存储字</td></tr>
-  <tr><td><code>SH rs2, offset(rs1)</code></td><td>MEM[rs1 + offset] = rs2[15:0] (16 位)</td><td>存储半字</td></tr>
-  <tr><td><code>SB rs2, offset(rs1)</code></td><td>MEM[rs1 + offset] = rs2[7:0] (8 位)</td><td>存储字节</td></tr>
-</table>
-
-<div class="box">
-  <div class="box-title">一条 SW 指令在 SCR1 中的旅程</div>
-  <div class="step"><span class="step-num">1</span> IFU: 根据 PC 从指令存储器取出指令字，放入指令队列</div>
-  <div class="step"><span class="step-num">2</span> IDU: 解析 opcode=0100011, funct3 确定是 SW → 生成 <code>lsu_cmd=SW</code></div>
-  <div class="step"><span class="step-num">3</span> EXU: 从 MPRF 读出 rs1_data (基址) 和 rs2_data (存储数据)</div>
-  <div class="step"><span class="step-num">4</span> IALU: sum2 加法器计算地址 = rs1 + imm</div>
-  <div class="step"><span class="step-num">5</span> LSU: 向数据存储器发起写请求, addr=IALU 地址, wdata=rs2_data</div>
-  <div class="step"><span class="step-num">6</span> 写回阶段: SW 指令不写寄存器 (rd_wb_sel=NONE)</div>
-</div>
-
-<!-- ============================================================ -->
-<h2 id="branch">第六课: 分支与跳转</h2>
-<!-- ============================================================ -->
-
-<h3>条件分支 (B-type)</h3>
-<table class="fmt-table">
-  <tr><th>指令</th><th>条件</th><th>说明</th></tr>
-  <tr><td><code>BEQ rs1, rs2, offset</code></td><td>rs1 == rs2</td><td>相等则分支</td></tr>
-  <tr><td><code>BNE rs1, rs2, offset</code></td><td>rs1 != rs2</td><td>不等则分支</td></tr>
-  <tr><td><code>BLT rs1, rs2, offset</code></td><td>rs1 &lt; rs2 (有符号)</td><td>小于则分支</td></tr>
-  <tr><td><code>BGE rs1, rs2, offset</code></td><td>rs1 &gt;= rs2 (有符号)</td><td>大于等于则分支</td></tr>
-  <tr><td><code>BLTU rs1, rs2, offset</code></td><td>rs1 &lt; rs2 (无符号)</td><td>无符号小于则分支</td></tr>
-  <tr><td><code>BGEU rs1, rs2, offset</code></td><td>rs1 &gt;= rs2 (无符号)</td><td>无符号大于等于则分支</td></tr>
-</table>
-
-<h3>无条件跳转</h3>
-<table class="fmt-table">
-  <tr><th>指令</th><th>格式</th><th>操作</th></tr>
-  <tr><td><code>JAL rd, offset</code></td><td>J</td><td>rd = PC+4; PC = PC + offset</td></tr>
-  <tr><td><code>JALR rd, rs1, offset</code></td><td>I</td><td>rd = PC+4; PC = (rs1 + offset) & ~1</td></tr>
-</table>
-
-<div class="box">
-  <div class="box-title">JAL 和 JALR 的区别</div>
-  <strong>JAL</strong>: 目标地址 = PC + 偏移（立即数编码在指令中），±1MB 范围<br>
-  <strong>JALR</strong>: 目标地址 = 寄存器值 + 偏移，最低位强制清零（对齐到 2 字节）<br>
-  两者都会把 PC+4 写入 rd，形成 "链接" —— 就是函数调用的返回地址。<br>
-  <code>JAL x0, offset</code> 等价于无条件跳转（因为 x0 丢弃了返回值）。<br>
-  <code>JALR x0, ra, 0</code> 等价于函数返回（ret 伪指令）。
-</div>
-
-<div class="box">
-  <div class="box-title">分支指令在 SCR1 中的处理</div>
-  条件分支在 EXU 中:<br>
-  1. IALU 计算 rs1 - rs2，产生比较标志 (eq, lt, ltu, ge, geu, ne)<br>
-  2. EXU 根据 funct3 选择对应的标志位<br>
-  3. 如果条件成立: 产生 <code>new_pc_req</code> → IFU 更新 PC → 清空流水线 (flush)<br>
-  4. 如果条件不成立: PC 照常递增 → 无 flush<br><br>
-  源码: <code>src/core/pipeline/scr1_pipe_exu.sv</code> 中的 <code>always_comb</code> 块，搜索 <code>SCR1_IALU_CMD_SUB_EQ</code>。
-</div>
-
-<!-- ============================================================ -->
-<h2 id="system">第七课: 系统指令</h2>
-<!-- ============================================================ -->
-
-<table class="fmt-table">
-  <tr><th>指令</th><th>操作</th><th>SCR1 中的用途</th></tr>
-  <tr><td><code>ECALL</code></td><td>触发 Environment Call 异常</td><td>M-mode 下产生异常，切换到陷阱处理程序</td></tr>
-  <tr><td><code>EBREAK</code></td><td>触发 Environment Break 异常</td><td>进入调试模式（如果调试使能），否则产生异常</td></tr>
-  <tr><td><code>MRET</code></td><td>Machine-mode 异常返回</td><td>从陷阱处理程序返回到被中断的程序</td></tr>
-  <tr><td><code>WFI</code></td><td>Wait for Interrupt</td><td>暂停处理器直到有中断到来</td></tr>
-  <tr><td><code>FENCE.I</code></td><td>指令缓存刷新</td><td>确保后续取指看到最新的指令（自修改代码用）</td></tr>
-</table>
-
-<div class="box">
-  <div class="box-title">ECALL 的完整流程</div>
-  <div class="step"><span class="step-num">1</span> EXU 检测到 ECALL → 产生异常请求 exc_req, exc_code=ECALL_M</div>
-  <div class="step"><span class="step-num">2</span> CSR 接收异常事件: MEPC ← 当前 PC, MCAUSE ← 11 (ECALL_M), MTVAL ← 0</div>
-  <div class="step"><span class="step-num">3</span> MSTATUS.MPIE ← MSTATUS.MIE; MSTATUS.MIE ← 0 (禁用中断)</div>
-  <div class="step"><span class="step-num">4</span> MSTATUS.MPP ← 当前特权级 (M-mode = 3)</div>
-  <div class="step"><span class="step-num">5</span> PC ← MTVEC (陷阱向量基址), 流水线清空, 从新 PC 取指</div>
-</div>
-
-<!-- ============================================================ -->
-<h2 id="csr">第八课: CSR 控制状态寄存器</h2>
-<!-- ============================================================ -->
-
-<p>CSR (Control and Status Register) 是 RISC-V 的核心配置机制。SCR1 仅支持 M-mode，所以只有 M-mode CSR。</p>
-
-<h3>核心 CSR 寄存器速览</h3>
-
-<table>
-  <tr><th>寄存器</th><th>地址</th><th>描述</th></tr>
-  <tr><td><code>MSTATUS</code></td><td>0x300</td><td>机器状态: MIE(全局中断使能), MPIE(先前中断使能), MPP(先前特权级)</td></tr>
-  <tr><td><code>MIE</code></td><td>0x304</td><td>中断使能: MSIE(软件), MTIE(定时器), MEIE(外部)</td></tr>
-  <tr><td><code>MIP</code></td><td>0x344</td><td>中断挂起: MSIP, MTIP, MEIP</td></tr>
-  <tr><td><code>MTVEC</code></td><td>0x305</td><td>陷阱向量基址 + 模式 (direct=00 / vectored=01)</td></tr>
-  <tr><td><code>MEPC</code></td><td>0x341</td><td>异常返回地址 (保存触发异常的 PC)</td></tr>
-  <tr><td><code>MCAUSE</code></td><td>0x342</td><td>异常原因: bit31=1中断, bit30:0=异常编号</td></tr>
-  <tr><td><code>MTVAL</code></td><td>0x343</td><td>异常附加值 (如未对齐地址、非法指令编码)</td></tr>
-  <tr><td><code>MISA</code></td><td>0x301</td><td>ISA 和扩展: MXL(XLEN编码) + Extensions 位掩码</td></tr>
-  <tr><td><code>MVENDORID</code></td><td>0xF11</td><td>厂商标识 (SCR1 为 0)</td></tr>
-  <tr><td><code>MARCHID</code></td><td>0xF12</td><td>架构标识</td></tr>
-  <tr><td><code>MIMPID</code></td><td>0xF13</td><td>实现标识</td></tr>
-  <tr><td><code>MHARTID</code></td><td>0xF14</td><td>硬件线程 ID</td></tr>
-</table>
-
-<h3>CSR 操作指令</h3>
-<table class="fmt-table">
-  <tr><th>指令</th><th>操作</th></tr>
-  <tr><td><code>CSRRW rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=rs1; rd=tmp (原子读后写)</td></tr>
-  <tr><td><code>CSRRS rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=tmp|rs1; rd=tmp (读后置位)</td></tr>
-  <tr><td><code>CSRRC rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=tmp&~rs1; rd=tmp (读后清零)</td></tr>
-  <tr><td><code>CSRRWI rd, csr, zimm</code></td><td>立即数版本的 CSRRW (rs1 字段用作 5 位无符号立即数)</td></tr>
-  <tr><td><code>CSRRSI rd, csr, zimm</code></td><td>立即数版本的 CSRRS</td></tr>
-  <tr><td><code>CSRRCI rd, csr, zimm</code></td><td>立即数版本的 CSRRC</td></tr>
-</table>
-
-<div class="box">
-  <div class="box-title">CSR 的三种写命令 (SCR1 实现)</div>
-  SCR1 CSR 模块支持三种原子写操作:<br>
-  <code>WRITE</code>: CSR = wdata (直接覆盖)<br>
-  <code>SET</code>: CSR = CSR | wdata (按位或，置位某些位)<br>
-  <code>CLEAR</code>: CSR = CSR & ~wdata (按位清除)<br><br>
-  源码: <code>src/core/pipeline/scr1_pipe_csr.sv</code> 中的 <code>type_scr1_csr_cmd_sel_e</code> 枚举。
-</div>
-
-<!-- ============================================================ -->
-<h2 id="rvc">第九课: RVC 压缩指令扩展</h2>
-<!-- ============================================================ -->
-
-<p>RVC (RISC-V Compressed) 将常用指令编码为 16 位，让代码体积减少约 25%-30%。在嵌入式场景中，这直接等于节省 Flash 成本。</p>
-
-<p>关键设计: 所有 RVC 指令在译码阶段<strong>展开为对应的 32 位 RVI 指令</strong>，后续流水线完全不需要修改。SCR1 的 IDU 模块有专门的 RVC 解压缩逻辑:</p>
-
-<pre><span class="cm">// IDU 中的 RVC 处理: 将 16 位压缩指令展开为 32 位等价指令</span>
-<span class="kw">if</span> (instr_rvc) <span class="kw">begin</span>
-    <span class="kw">unique case</span> (funct3)  <span class="cm">// RVC funct3 在 bit[15:13]</span>
-        <span class="num">3'b000</span>: <span class="cm">// C.ADDI4SPN, C.FLD 等</span>
-        <span class="num">3'b010</span>: <span class="cm">// C.LW, C.SW 等</span>
-        <span class="cm">// ... 根据 funct3 和 opcode 展开为对应 RVI 指令</span>
+<h4>IDU 译码 S-type (scr1_pipe_idu.sv:206-223)</h4>
+<pre>
+<span class="kw">SCR1_OPCODE_STORE</span> : <span class="kw">begin</span>
+    idu2exu_use_rs1_o  = <span class="num">1'b1</span>;      <span class="cm">// rs1 = 基地址</span>
+    idu2exu_use_rs2_o  = <span class="num">1'b1</span>;      <span class="cm">// rs2 = 存储数据</span>
+    idu2exu_cmd_o.imm  = {{<span class="num">21</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">30</span>:<span class="num">25</span>], instr[<span class="num">11</span>:<span class="num">7</span>]};
+    <span class="kw">case</span> (funct3)
+        <span class="num">3'b000</span>: lsu_cmd = SCR1_LSU_CMD_SB;  <span class="cm">// 字节</span>
+        <span class="num">3'b001</span>: lsu_cmd = SCR1_LSU_CMD_SH;  <span class="cm">// 半字</span>
+        <span class="num">3'b010</span>: lsu_cmd = SCR1_LSU_CMD_SW;  <span class="cm">// 字</span>
     <span class="kw">endcase</span>
 <span class="kw">end</span></pre>
 
-<table>
-  <tr><th>RVC 指令</th><th>展开为</th><th>说明</th></tr>
-  <tr><td><code>C.ADDI4SPN rd', imm</code></td><td><code>ADDI rd', sp, imm</code></td><td>栈指针 + 立即数, rd' 只有 s0-s1, a0-a5 (3位编码)</td></tr>
-  <tr><td><code>C.LW rd', offset(rs1')</code></td><td><code>LW rd', offset(rs1')</code></td><td>加载字, 寄存器子集</td></tr>
-  <tr><td><code>C.SW rs2', offset(rs1')</code></td><td><code>SW rs2', offset(rs1')</code></td><td>存储字, 寄存器子集</td></tr>
-  <tr><td><code>C.ADDI rd, imm</code></td><td><code>ADDI rd, rd, imm</code></td><td>rd != x0</td></tr>
-  <tr><td><code>C.JAL offset</code></td><td><code>JAL x1, offset</code></td><td>函数调用 (RV32 专用)</td></tr>
-  <tr><td><code>C.LI rd, imm</code></td><td><code>ADDI rd, x0, imm</code></td><td>加载小立即数</td></tr>
-  <tr><td><code>C.LUI rd, imm</code></td><td><code>LUI rd, imm</code></td><td>rd != {x0, x2}, imm != 0</td></tr>
-  <tr><td><code>C.ADDI16SP imm</code></td><td><code>ADDI sp, sp, imm</code></td><td>16 字节对齐的栈调整</td></tr>
-  <tr><td><code>C.JR rs1</code></td><td><code>JALR x0, rs1, 0</code></td><td>函数返回</td></tr>
-  <tr><td><code>C.JALR rs1</code></td><td><code>JALR x1, rs1, 0</code></td><td>间接函数调用</td></tr>
-  <tr><td><code>C.BEQZ rs1', offset</code></td><td><code>BEQ rs1', x0, offset</code></td><td>等于零则分支</td></tr>
-  <tr><td><code>C.BNEZ rs1', offset</code></td><td><code>BNE rs1', x0, offset</code></td><td>不等于零则分支</td></tr>
-  <tr><td><code>C.NOP</code></td><td><code>ADDI x0, x0, 0</code></td><td>空操作 (是 C.ADDI 的特例)</td></tr>
-</table>
+<h4>LSU 未对齐检查 (scr1_pipe_lsu.sv:206-209)</h4>
+<pre>
+assign dmem_addr_mslgn = exu2lsu_req_i &amp; (
+    (dmem_wdth_hword &amp; exu2lsu_addr_i[<span class="num">0</span>])              <span class="cm">// SH 地址 bit0 必须为 0</span>
+  | (dmem_wdth_word  &amp; <span class="str">|</span>exu2lsu_addr_i[<span class="num">1</span>:<span class="num">0</span>])       <span class="cm">// SW 地址 bit1:0 必须为 00</span>
+);</pre>
+
+<p>半字必须对齐到 2 字节边界 (bit0=0)，字必须对齐到 4 字节边界 (bit1:0=00)。字节无对齐要求。<strong>RISC-V 不强制自然对齐</strong>，但 SCR1 选择抛出异常而非支持未对齐访问。</p>
+
+<h4>S-type 数据流: 一条 SW 指令的旅程</h4>
+<div class="step"><span class="step-num">1</span>IFU: 根据 PC 从 IMEM 取指令 → 入队列 → 判断为 RV32I (instr[1:0]=11)</div>
+<div class="step"><span class="step-num">2</span>IDU: opcode=0100011 → STORE 分支。从 instr[19:15] 取 rs1_addr, instr[24:20] 取 rs2_addr, 拼接 imm</div>
+<div class="step"><span class="step-num">3</span>EXU: 同时读 MPRF -- rs1 输出给地址加法器, rs2 输出给 LSU 的写数据通路</div>
+<div class="step"><span class="step-num">4</span>EXU sum2 加法器: dmem_addr = rs1_data + imm (地址计算)</div>
+<div class="step"><span class="step-num">5</span>LSU: 检查未对齐 → 无异常 → 发 DMEM 写请求: cmd=WR, addr=计算地址, wdata=rs2_data</div>
+<div class="step"><span class="step-num">6</span>写回阶段: SW 不写寄存器 → rd_wb_sel=NONE → MPRF 无写入</div>
+
+<h3>B-type: 条件分支 <span class="lr">(opcode=1100011)</span></h3>
+<pre class="bits">
+| 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
+|imm[12|10:5]|    rs2    |    rs1    |  funct3  |imm[4:1|11]|  opcode |
+   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits</pre>
+
+<p>立即数被切成 4 段 (<code>imm[12]+imm[10:5]+imm[4:1]+imm[11]</code>)。B-type 偏移总是 2 字节对齐 (imm[0] 固定为 0, 不编码), 所以实际范围是 ±4KB。6 条指令: BEQ, BNE, BLT, BGE, BLTU, BGEU。</p>
 
 <div class="box">
-  <div class="box-title">IFU 中的 RVC 处理</div>
-  RVC 的 16 位指令给取指带来了一个难题: 指令队列是 4x16 位，需要判断每个半字是独立的 RVC 指令还是 32 位指令的一半。<br>
-  SCR1 IFU 的做法: 根据每个半字的 instr[1:0] 判断 —— 如果是 11，说明是 RVI 的低半部，需要与下一个半字拼接成 32 位。<br>
-  源码: <code>src/core/pipeline/scr1_pipe_ifu.sv</code>，搜索 <code>SCR1_INSTR_RVI</code>。
-</div>
+<div class="box-title">分支在 SCR1 硬件中的处理 (scr1_pipe_exu.sv)</div>
+<p>IALU 用减法计算 rs1 - rs2, 同时产生 4 个比较标志位: eq, lt, ltu, ge, geu, ne。EXU 根据 funct3 选择对应标志:</p>
+<pre>
+<span class="kw">unique case</span> (exu2ialu_cmd_o)
+    SCR1_IALU_CMD_SUB_EQ: beq = rs1_eq;
+    SCR1_IALU_CMD_SUB_LT: blt = rs1_lt;
+    SCR1_IALU_CMD_SUB_LTU: bltu = rs1_ltu;
+    <span class="cm">// ...</span>
+<span class="kw">endcase</span></pre>
+<p>条件成立 → <code>new_pc_req</code> → IFU 更新 PC → 清空流水线 (flush)。不成立 → PC+4 照常递增。</p></div>
 
-<!-- ============================================================ -->
-<h2 id="encode">第十课: 手工编码实战 -- 一条 ADDI 是怎么变成 32 位二进制数的</h2>
-<!-- ============================================================ -->
+<h3>U-type: 高位立即数 <span class="lr">(opcode=0110111/0010111)</span></h3>
+<pre class="bits">
+| 31...................................12 | 11.......7 | 6......0 |
+|              imm[31:12]                 |     rd     |  opcode |
+               20 bits                      5 bits       7 bits</pre>
+<p>20 位立即数左移 12 位, 无 rs1 和 rs2。仅 2 条: <strong>LUI</strong> (rd = imm&lt;&lt;12) 和 <strong>AUIPC</strong> (rd = PC + imm&lt;&lt;12)。RISC-V 没有单条"加载 32 位常数"指令, 需 LUI+ADDI 配合: <code>LUI x5, 0x12345</code> 然后 <code>ADDI x5, x5, 0x678</code> → x5=0x12345678。</p>
 
-<p>以 <code>ADDI x5, x1, 10</code> 为例，我们手工编码。</p>
+<h3>J-type: 无条件跳转 <span class="lr">(opcode=1101111)</span></h3>
+<pre class="bits">
+| 31......25 | 24.....20 | 19.....15 | 14....12 | 11.......7 | 6......0 |
+|imm[20|10:1|11|19:12]|          rd          |  opcode |
+   7 bits       5 bits     5 bits      3 bits      5 bits       7 bits</pre>
+<p>仅 1 条: <strong>JAL</strong>。rd=PC+4 (链接返回地址), PC=PC+offset。offset 范围 ±1MB。JALR (I-type) 是间接跳转: PC = (rs1+imm)&~1, 最低位强制清零保证 2 字节对齐。</p>
 
-<fieldset>
-<legend>ADDI 编码过程</legend>
-<div class="step"><span class="step-num">1</span> 确定格式: ADDI 是 I-type, opcode = 0010011 (OP-IMM)</div>
-<div class="step"><span class="step-num">2</span> rd = x5 = 5 → bit[11:7] = 00101</div>
-<div class="step"><span class="step-num">3</span> funct3 = 000 (ADDI 的 funct3 是 0)</div>
-<div class="step"><span class="step-num">4</span> rs1 = x1 = 1 → bit[19:15] = 00001</div>
-<div class="step"><span class="step-num">5</span> imm = 10 = 0b000000001010 → bit[31:20] = 000000001010</div>
-<div class="step"><span class="step-num">6</span> opcode = 0010011 → bit[6:0]</div>
+<h2 id="arith">四、算术逻辑指令</h2>
+
+<h3>基础运算</h3>
+<table>
+<tr><th>指令</th><th>格式</th><th>操作</th><th>说明</th></tr>
+<tr><td><code>ADD rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 + rs2</td><td>32 位加法，忽略溢出</td></tr>
+<tr><td><code>SUB rd, rs1, rs2</code></td><td>R</td><td>rd = rs1 - rs2</td><td>funct7 最高位=1 区分 SUB 与 ADD</td></tr>
+<tr><td><code>ADDI rd, rs1, imm</code></td><td>I</td><td>rd = rs1 + imm</td><td>imm 有符号扩展到 32 位</td></tr>
+<tr><td><code>AND/OR/XOR rd,rs1,rs2</code></td><td>R</td><td>rd = rs1 & | ^ rs2</td><td>按位逻辑运算</td></tr>
+<tr><td><code>ANDI/ORI/XORI rd,rs1,imm</code></td><td>I</td><td>rd = rs1 & | ^ imm</td><td>imm 符号扩展后按位运算</td></tr>
+<tr><td><code>SLL/SRL/SRA rd,rs1,rs2</code></td><td>R</td><td>rd = rs1 &lt;&lt; / &gt;&gt; rs2[4:0]</td><td>移位量仅低 5 位有效 (0-31)</td></tr>
+<tr><td><code>SLLI/SRLI/SRAI rd,rs1,shamt</code></td><td>I</td><td>rd = rs1 &lt;&lt; / &gt;&gt; shamt</td><td>shamt 在 bit 24-20 (也是 rs2 位置)</td></tr>
+</table>
+
+<h3>比较置位</h3>
+<table>
+<tr><th>指令</th><th>操作</th></tr>
+<tr><td><code>SLT rd, rs1, rs2</code></td><td>rd = (rs1 &lt; rs2 有符号) ? 1 : 0</td></tr>
+<tr><td><code>SLTU rd, rs1, rs2</code></td><td>rd = (rs1 &lt; rs2 无符号) ? 1 : 0</td></tr>
+<tr><td><code>SLTI rd, rs1, imm</code></td><td>rd = (rs1 &lt; imm 有符号) ? 1 : 0</td></tr>
+<tr><td><code>SLTIU rd, rs1, imm</code></td><td>rd = (rs1 &lt; imm 无符号) ? 1 : 0</td></tr>
+</table>
+
+<p>RISC-V 没有 x86 那样的条件码寄存器 (EFLAGS)。比较结果直接写入通用寄存器, 简化了流水线设计 -- 不需要维护独立的标志寄存器转发逻辑。</p>
+
+<h3>高位立即数</h3>
+<table>
+<tr><th>指令</th><th>格式</th><th>操作</th></tr>
+<tr><td><code>LUI rd, imm</code></td><td>U</td><td>rd = imm &lt;&lt; 12 (低 12 位为零)</td></tr>
+<tr><td><code>AUIPC rd, imm</code></td><td>U</td><td>rd = PC + (imm &lt;&lt; 12)</td></tr>
+</table>
+
+<h3>乘除法扩展 (M 扩展) <span class="lr">(硬件: scr1_pipe_ialu.sv)</span></h3>
+<table>
+<tr><th>指令</th><th>操作</th><th>说明</th></tr>
+<tr><td><code>MUL rd,rs1,rs2</code></td><td>rd = rs1 * rs2 (低 32 位)</td><td>有符号乘法</td></tr>
+<tr><td><code>MULH rd,rs1,rs2</code></td><td>rd = (rs1*rs2) >> 32 (有符号)</td><td>取高 32 位, 用于 64 位结果</td></tr>
+<tr><td><code>MULHU rd,rs1,rs2</code></td><td>rd = (u32* u32) >> 32 (无符号)</td><td>无符号取高位</td></tr>
+<tr><td><code>MULHSU rd,rs1,rs2</code></td><td>rd = (有符号*无符号) >> 32</td><td>混合符号</td></tr>
+<tr><td><code>DIV/DIVU rd,rs1,rs2</code></td><td>rd = rs1 / rs2</td><td>除零 → rd = -1 (DIV) 或 2^32-1 (DIVU)</td></tr>
+<tr><td><code>REM/REMU rd,rs1,rs2</code></td><td>rd = rs1 % rs2</td><td>除零 → rd = rs1</td></tr>
+</table>
+
+<div class="box warn"><div class="box-title">SCR1 乘除法实现</div>
+两个选项:<br>
+<strong>默认</strong>: 32 周期迭代乘法 (Radix-2), 33 周期非恢复除法 -- 面积小, 慢<br>
+<strong>SCR1_FAST_MUL</strong>: 单周期乘法器 (用 FPGA DSP 硬核) -- 快, 面积大<br>
+源码: <code>src/core/pipeline/scr1_pipe_ialu.sv</code>, 搜索 <code>SCR1_FAST_MUL</code> 条件编译。</div>
+
+<h2 id="mem">五、访存指令 <span class="lr">(硬件: scr1_pipe_lsu.sv + scr1_pipe_mprf.sv)</span></h2>
+
+<p>RISC-V 是 Load-Store 架构: <strong>只有 Load/Store 可以访问内存</strong>。ALU 只能操作寄存器, 不能直接读写内存地址。</p>
+
+<h3>加载指令 (I-type, opcode=0000011)</h3>
+<table>
+<tr><th>指令</th><th>funct3</th><th>位宽</th><th>扩展方式</th><th>操作</th></tr>
+<tr><td><code>LW rd, offset(rs1)</code></td><td>010</td><td>32</td><td>--</td><td>rd = MEM[rs1+offset]</td></tr>
+<tr><td><code>LH rd, offset(rs1)</code></td><td>001</td><td>16</td><td>符号扩展</td><td>rd = sign_ext(MEM[rs1+offset][15:0])</td></tr>
+<tr><td><code>LHU rd, offset(rs1)</code></td><td>101</td><td>16</td><td>零扩展</td><td>rd = zero_ext(MEM[rs1+offset][15:0])</td></tr>
+<tr><td><code>LB rd, offset(rs1)</code></td><td>000</td><td>8</td><td>符号扩展</td><td>rd = sign_ext(MEM[rs1+offset][7:0])</td></tr>
+<tr><td><code>LBU rd, offset(rs1)</code></td><td>100</td><td>8</td><td>零扩展</td><td>rd = zero_ext(MEM[rs1+offset][7:0])</td></tr>
+</table>
+
+<h3>存储指令 (S-type, opcode=0100011) <span class="lr">(详细见第三课 S-type 专节)</span></h3>
+<table>
+<tr><th>指令</th><th>funct3</th><th>位宽</th><th>操作</th></tr>
+<tr><td><code>SW rs2, offset(rs1)</code></td><td>010</td><td>32</td><td>MEM[rs1+offset] = rs2</td></tr>
+<tr><td><code>SH rs2, offset(rs1)</code></td><td>001</td><td>16</td><td>MEM[rs1+offset] = rs2[15:0]</td></tr>
+<tr><td><code>SB rs2, offset(rs1)</code></td><td>000</td><td>8</td><td>MEM[rs1+offset] = rs2[7:0]</td></tr>
+</table>
+
+<div class="box"><div class="box-title">访存未对齐与异常</div>
+<p>SCR1 LSU (scr1_pipe_lsu.sv:206-209) 检查地址对齐: SW 要求 bit1:0=00, SH 要求 bit0=0, LW 要求 bit1:0=00, LH 要求 bit0=0。未对齐 → <code>SCR1_EXC_CODE_LD_ADDR_MISALIGN</code> 或 <code>SCR1_EXC_CODE_ST_ADDR_MISALIGN</code> 异常。注意 RISC-V 规范允许未对齐访问, SCR1 选择不支持以简化硬件。</p></div>
+
+<h2 id="branch">六、分支与跳转 <span class="lr">(控制流: scr1_pipe_exu.sv + scr1_pipe_ifu.sv)</span></h2>
+
+<h3>条件分支 (B-type)</h3>
+<table>
+<tr><th>指令</th><th>funct3</th><th>条件</th><th>IALU 命令</th></tr>
+<tr><td><code>BEQ rs1, rs2, offset</code></td><td>000</td><td>rs1 == rs2</td><td>SUB_EQ</td></tr>
+<tr><td><code>BNE rs1, rs2, offset</code></td><td>001</td><td>rs1 != rs2</td><td>SUB_EQ (取反)</td></tr>
+<tr><td><code>BLT rs1, rs2, offset</code></td><td>100</td><td>rs1 &lt; rs2 (有符号)</td><td>SUB_LT</td></tr>
+<tr><td><code>BGE rs1, rs2, offset</code></td><td>101</td><td>rs1 &gt;= rs2 (有符号)</td><td>SUB_GE</td></tr>
+<tr><td><code>BLTU rs1, rs2, offset</code></td><td>110</td><td>rs1 &lt; rs2 (无符号)</td><td>SUB_LTU</td></tr>
+<tr><td><code>BGEU rs1, rs2, offset</code></td><td>111</td><td>rs1 &gt;= rs2 (无符号)</td><td>SUB_GEU</td></tr>
+</table>
+
+<h3>无条件跳转</h3>
+<table>
+<tr><th>指令</th><th>格式</th><th>操作</th><th>典型伪指令</th></tr>
+<tr><td><code>JAL rd, offset</code></td><td>J</td><td>rd=PC+4; PC=PC+offset</td><td><code>JAL x0, offset</code> → j (无条件跳)</td></tr>
+<tr><td><code>JALR rd, rs1, offset</code></td><td>I</td><td>rd=PC+4; PC=(rs1+offset)&~1</td><td><code>JALR x0, ra, 0</code> → ret (返回)</td></tr>
+</table>
+
+<div class="box"><div class="box-title">SCR1 第 7 周知识点: NEW_PC 6 路多路器</div>
+分支和跳转最终通过 NEW_PC 六路多路器 (IFU 内) 选择下一个 PC 来源: PC+4 (顺序) / JAL 偏移 / JALR 地址 / 分支目标 / 异常向量 / MRET 返回地址。条件成立时 EXU 产生 <code>new_pc_req</code> → IFU 清空流水线 (flush) → 从新 PC 取指。</div>
+
+<h2 id="system">七、系统指令</h2>
+
+<table>
+<tr><th>指令</th><th>操作</th><th>SCR1 中的用途</th></tr>
+<tr><td><code>ECALL</code></td><td>触发 Environment Call 异常</td><td>M-mode 下产生异常, 切换到陷阱处理程序</td></tr>
+<tr><td><code>EBREAK</code></td><td>触发 Environment Break 异常</td><td>进入调试模式 (TDU 使能时), 否则产生异常</td></tr>
+<tr><td><code>MRET</code></td><td>Machine-mode 异常返回</td><td>从陷阱返回: PC←MEPC, MIE←MPIE, MPP→特权级</td></tr>
+<tr><td><code>WFI</code></td><td>Wait for Interrupt</td><td>暂停取指直到有中断到来 (SCR1 中 IFU 状态机挂起)</td></tr>
+<tr><td><code>FENCE</code></td><td>访存屏障</td><td>确保之前的内存操作对之后的可见</td></tr>
+<tr><td><code>FENCE.I</code></td><td>指令缓存刷新</td><td>自修改代码后刷新取指 (SCR1 无 I$, 直接刷新 IFU)</td></tr>
+</table>
+
+<div class="box"><div class="box-title">ECALL 完整流程 (scr1_pipe_csr.sv + scr1_pipe_exu.sv)</div>
+<div class="step"><span class="step-num">1</span>EXU 检测 ECALL → 产生异常请求 <code>exc_req</code>, exc_code=ECALL_M (11)</div>
+<div class="step"><span class="step-num">2</span>CSR: MEPC ← 当前 PC (保存返回地址), MCAUSE ← 11, MTVAL ← 0</div>
+<div class="step"><span class="step-num">3</span>MSTATUS: MPIE ← MIE, MIE ← 0 (禁用中断), MPP ← M-mode</div>
+<div class="step"><span class="step-num">4</span>PC ← MTVEC (陷阱向量基址), 清空流水线, 从新 PC 取指</div>
+<div class="step"><span class="step-num">5</span>MRET 时: PC ← MEPC, MIE ← MPIE, 恢复执行</div></div>
+
+<h2 id="csr">八、CSR 控制状态寄存器 <span class="lr">(硬件: scr1_pipe_csr.sv + scr1_ipic.sv)</span></h2>
+
+<h3>核心 CSR 速览</h3>
+<table>
+<tr><th>寄存器</th><th>地址</th><th>描述</th></tr>
+<tr><td><code>MSTATUS</code></td><td>0x300</td><td>MIE(全局中断使能), MPIE(先前 MIE), MPP(先前特权级)</td></tr>
+<tr><td><code>MIE</code></td><td>0x304</td><td>MSIE(软件), MTIE(定时器), MEIE(外部) 中断使能</td></tr>
+<tr><td><code>MIP</code></td><td>0x344</td><td>MSIP, MTIP, MEIP 中断挂起标志</td></tr>
+<tr><td><code>MTVEC</code></td><td>0x305</td><td>陷阱向量基址 + MODE (direct=00 / vectored=01)</td></tr>
+<tr><td><code>MEPC</code></td><td>0x341</td><td>异常返回地址 (保存触发异常的指令 PC)</td></tr>
+<tr><td><code>MCAUSE</code></td><td>0x342</td><td>bit31=1→中断, bit30:0→异常编号</td></tr>
+<tr><td><code>MTVAL</code></td><td>0x343</td><td>异常附加值 (未对齐地址、非法指令编码等)</td></tr>
+<tr><td><code>MCYCLE</code></td><td>0xB00</td><td>64 位周期计数器 (低 32 位)</td></tr>
+<tr><td><code>MCYCLEH</code></td><td>0xB80</td><td>64 位周期计数器 (高 32 位)</td></tr>
+<tr><td><code>MINSTRET</code></td><td>0xB02</td><td>64 位退休指令计数器 (低 32 位)</td></tr>
+<tr><td><code>MISA</code></td><td>0x301</td><td>MXL + Extensions 位掩码 (SCR1=RV32IMC)</td></tr>
+<tr><td><code>MHARTID</code></td><td>0xF14</td><td>硬件线程 ID (SCR1 单核=0)</td></tr>
+</table>
+
+<h3>CSR 操作指令 (I-type, opcode=1110011)</h3>
+<table>
+<tr><th>指令</th><th>操作</th></tr>
+<tr><td><code>CSRRW rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=rs1; rd=tmp (原子读后写)</td></tr>
+<tr><td><code>CSRRS rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=tmp|rs1; rd=tmp (读后置位)</td></tr>
+<tr><td><code>CSRRC rd, csr, rs1</code></td><td>tmp=CSR[csr]; CSR[csr]=tmp&~rs1; rd=tmp (读后清零)</td></tr>
+<tr><td><code>CSRRWI/CSRRSI/CSRRCI</code></td><td>立即数版本 (rs1 字段用作 5 位无符号立即数 zimm)</td></tr>
+</table>
+
+<div class="box"><div class="box-title">SCR1 CSR 模块三种原子写 (scr1_pipe_csr.sv)</div>
+<code>WRITE</code>: CSR = wdata (直接覆盖)<br>
+<code>SET</code>: CSR = CSR | wdata (按位置位)<br>
+<code>CLEAR</code>: CSR = CSR & ~wdata (按位清除)<br>
+此枚举 <code>type_scr1_csr_cmd_sel_e</code> 在 CSR 模块的 <code>always_comb</code> 块中被选择, 实现所有 CSR 指令的原子操作语义。</div>
+
+<h2 id="rvc">九、RVC 压缩指令 <span class="lr">(译码: scr1_pipe_idu.sv, 取指: scr1_pipe_ifu.sv)</span></h2>
+
+<p>RVC 将最常用的 RV32I 指令编码为 16 位。核心思想: <strong>在 IDU 译码阶段展开为等效的 RVI 32 位指令</strong>，后续流水线完全不用改动。</p>
+
+<h3>IFU 的 RVC 处理: 如何区分 16 位和 32 位指令?</h3>
+<p>IFU 的指令队列是 4x16 位环形缓冲。每个半字到达时, 检查 instr[1:0]:</p>
+<ul>
+<li><code>11</code> → 这是 32 位 RV32I 指令的低半部, 需要与下一个半字拼接</li>
+<li><code>00/01/10</code> → 这是独立的 16 位 RVC 指令</li>
+</ul>
+<p>源码: <code>src/core/pipeline/scr1_pipe_ifu.sv</code>, 搜索 <code>SCR1_INSTR_RVI</code> / <code>SCR1_INSTR_RVC</code>。</p>
+
+<h3>IDU 的 RVC 展开: 映射表</h3>
+<table>
+<tr><th>RVC 指令</th><th>展开为等效 RVI</th><th>说明</th></tr>
+<tr><td><code>C.ADDI4SPN rd', imm</code></td><td><code>ADDI rd', sp, imm</code></td><td>栈指针偏移, rd' 范围 x8-x15</td></tr>
+<tr><td><code>C.LW rd', uimm(rs1')</code></td><td><code>LW rd', uimm(rs1')</code></td><td>寄存器子集 (rd'/rs1': x8-x15)</td></tr>
+<tr><td><code>C.SW rs2', uimm(rs1')</code></td><td><code>SW rs2', uimm(rs1')</code></td><td>存储字, 寄存器子集</td></tr>
+<tr><td><code>C.ADDI rd, imm</code></td><td><code>ADDI rd, rd, imm</code></td><td>rd != x0</td></tr>
+<tr><td><code>C.LI rd, imm</code></td><td><code>ADDI rd, x0, imm</code></td><td>加载小立即数 (x0+imm)</td></tr>
+<tr><td><code>C.LUI rd, imm</code></td><td><code>LUI rd, imm</code></td><td>rd != {x0, x2}, imm != 0</td></tr>
+<tr><td><code>C.MV rd, rs2</code></td><td><code>ADD rd, x0, rs2</code></td><td>寄存器拷贝 (rd = 0 + rs2)</td></tr>
+<tr><td><code>C.J offset</code></td><td><code>JAL x0, offset</code></td><td>无条件跳转</td></tr>
+<tr><td><code>C.JAL offset</code></td><td><code>JAL x1, offset</code></td><td>函数调用 (仅 RV32)</td></tr>
+<tr><td><code>C.JR rs1</code></td><td><code>JALR x0, rs1, 0</code></td><td>函数返回 (rs1=x1 时即 ret)</td></tr>
+<tr><td><code>C.JALR rs1</code></td><td><code>JALR x1, rs1, 0</code></td><td>间接函数调用</td></tr>
+<tr><td><code>C.BEQZ rs1', offset</code></td><td><code>BEQ rs1', x0, offset</code></td><td>等于零则跳 (rs1': x8-x15)</td></tr>
+<tr><td><code>C.BNEZ rs1', offset</code></td><td><code>BNE rs1', x0, offset</code></td><td>不等于零则跳</td></tr>
+<tr><td><code>C.NOP</code></td><td><code>ADDI x0, x0, 0</code></td><td>空操作 (C.ADDI 对 x0 的特例)</td></tr>
+</table>
+
+<div class="box"><div class="box-title">C.MV 的巧妙之处</div>
+<p><code>C.MV rd, rs2</code> 在 RVI 中编码为 <code>ADD rd, x0, rs2</code> —— 任何数 + 0 = 自身。这是 RISC-V 的经典微架构技巧: 复用现有加法器, 零开销实现。</p></div>
+
+<h2 id="encode">十、手工编码实战</h2>
+
+<p>以 <code>ADDI x5, x1, 10</code> 为例, 手算 32 位编码。</p>
+
+<fieldset><legend>编码步骤</legend>
+<div class="step"><span class="step-num">1</span>ADDI 是 I-type, opcode=0010011</div>
+<div class="step"><span class="step-num">2</span>rd=x5=5 → bit[11:7]=00101</div>
+<div class="step"><span class="step-num">3</span>funct3=000 (ADDI)</div>
+<div class="step"><span class="step-num">4</span>rs1=x1=1 → bit[19:15]=00001</div>
+<div class="step"><span class="step-num">5</span>imm=10=0b000000001010 → bit[31:20]</div>
+<div class="step"><span class="step-num">6</span>pc=0010011 → bit[6:0]</div>
 </fieldset>
 
 <pre>
-<span class="cm">最终编码:</span>
 <span class="num">000000001010</span> <span class="str">00001</span> <span class="kw">000</span> <span class="str">00101</span> <span class="kw">0010011</span>
-  imm[11:0]     rs1  f3    rd   opcode
+  imm[11:0]     rs1  f3   rd    opcode
+= <span class="num">0x00A28293</span></pre>
 
-= <span class="num">0x00A28293</span>
-</pre>
-
-<p>SCR1 的 IDU 看到这 32 位，译码过程:</p>
+<h3>SCR1 IDU 看到 0x00A28293 后的译码 (伪代码)</h3>
 <pre>
-<span class="cm">// instr[1:0] = 11 → 这是 RV32I 指令</span>
+<span class="cm">// instr[1:0] = 11 → RV32I 指令</span>
 <span class="cm">// instr[6:2] = 00100 → SCR1_OPCODE_OP_IMM</span>
-<span class="cm">// instr[14:12] = 000 → funct3 → ADDI 操作</span>
-<span class="cm">// instr[19:15] = 00001 → rs1 = x1</span>
-<span class="cm">// instr[11:7]  = 00101 → rd = x5</span>
-<span class="cm">// instr[31:20] = 0x00A → imm = 10 (有符号扩展)</span>
+exu_cmd.ialu_cmd  = SCR1_IALU_CMD_ADD;      <span class="cm">// funct3=000 → ADD</span>
+exu_cmd.ialu_op   = SCR1_IALU_OP_REG_IMM;   <span class="cm">// I-type → 寄存器+立即数</span>
+exu_cmd.rs1_addr  = <span class="num">1</span>;                      <span class="cm">// x1</span>
+exu_cmd.rd_addr   = <span class="num">5</span>;                      <span class="cm">// x5</span>
+exu_cmd.imm       = <span class="num">10</span>;                     <span class="cm">// 符号扩展 imm[11:0]</span>
+exu_cmd.rd_wb_sel = SCR1_RD_WB_IALU;       <span class="cm">// 结果从 ALU 写回 MPRF</span></pre>
 
-<span class="kw">exu_cmd</span>.ialu_cmd  = SCR1_IALU_CMD_ADD;   <span class="cm">// ALU 做加法</span>
-<span class="kw">exu_cmd</span>.ialu_op   = SCR1_IALU_OP_REG_IMM; <span class="cm">// 操作数来自寄存器和立即数</span>
-<span class="kw">exu_cmd</span>.rs1_addr  = 1;                   <span class="cm">// 读 x1</span>
-<span class="kw">exu_cmd</span>.rd_addr   = 5;                   <span class="cm">// 写到 x5</span>
-<span class="kw">exu_cmd</span>.imm       = 10;                   <span class="cm">// 立即数 = 10</span>
-<span class="kw">exu_cmd</span>.rd_wb_sel = SCR1_RD_WB_IALU;    <span class="cm">// 写回来自 ALU 结果</span>
-</pre>
+<h2 id="exercise">十一、动手练习</h2>
 
-<!-- ============================================================ -->
-<h2 id="exercise">第十一课: 动手练习</h2>
-<!-- ============================================================ -->
+<fieldset><legend>练习 1: 手工编码 (15 分钟)</legend>
+<p>编码为 32 位十六进制:<br>
+(1) <code>SUB x6, x7, x8</code> -- 提示: funct7=0100000<br>
+(2) <code>LW x3, 8(x2)</code><br>
+(3) <code>BEQ x1, x2, +12</code> (跳 12 字节, 即 3 条指令)<br>
+(4) <code>LUI x10, 0xDEADB</code><br>
+(5) <code>JAL x0, +64</code> (跳 64 字节)</p></fieldset>
 
-<div class="box">
-  <div class="box-title">练习 1: 手工编码 (15 分钟)</div>
-  请将以下指令手工编码为 32 位十六进制数:<br>
-  (1) <code>SUB x6, x7, x8</code><br>
-  (2) <code>LW x3, 8(x2)</code><br>
-  (3) <code>BEQ x1, x2, +12</code> (向前跳 12 字节)<br>
-  (4) <code>LUI x10, 0xDEADB</code><br>
-  (5) <code>JAL x0, +64</code> (无条件跳转 64 字节)<br><br>
-  <em>提示: 参考上方的指令格式字段分布图，答案可以对照 SCR1 项目 SCR1_abbreviations.txt 中的缩写表验证。</em>
-</div>
-
-<div class="box">
-  <div class="box-title">练习 2: C 转汇编 (20 分钟)</div>
-  将以下 C 函数翻译为 RISC-V 汇编 (假设 a0=x, a1=y, 返回值在 a0):<br>
-  <pre>
-<span class="kw">int</span> max(<span class="kw">int</span> x, <span class="kw">int</span> y) {
+<fieldset><legend>练习 2: C 转汇编 (20 分钟)</legend>
+<pre>
+<span class="kw">int</span> max(<span class="kw">int</span> x, <span class="kw">int</span> y) {              <span class="cm">// a0=x, a1=y, 返回在 a0</span>
     <span class="kw">if</span> (x > y) <span class="kw">return</span> x;
     <span class="kw">else</span> <span class="kw">return</span> y;
 }
 
-<span class="kw">int</span> sum_array(<span class="kw">int</span> *arr, <span class="kw">int</span> n) {
+<span class="kw">int</span> sum_array(<span class="kw">int</span> *arr, <span class="kw">int</span> n) {      <span class="cm">// a0=arr指针, a1=n</span>
     <span class="kw">int</span> sum = <span class="num">0</span>;
-    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i < n; i++) {
-        sum += arr[i];
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; n; i++) {
+        sum += arr[i];                 <span class="cm">// LW + ADD 循环</span>
     }
     <span class="kw">return</span> sum;
-}</pre>
-  <em>提示: 用 <code>t0</code> 做中间变量；数组访问 = LW 配合偏移；循环用条件分支 + JAL 组合。</em>
-</div>
+}</pre></fieldset>
 
-<div class="box">
-  <div class="box-title">练习 3: 源码追踪 (30 分钟)</div>
-  在 SCR1 源码中完成以下追踪:<br>
-  (1) 打开 <code>src/includes/scr1_riscv_isa_decoding.svh</code>，找到 <code>SCR1_OPCODE_BRANCH</code> 的定义，确认它的 opcode 值<br>
-  (2) 打开 <code>src/core/pipeline/scr1_pipe_idu.sv</code>，搜索 <code>OPCODE_BRANCH</code>，画出分支指令的译码决策树<br>
-  (3) 打开 <code>src/core/pipeline/scr1_pipe_exu.sv</code>，搜索 <code>branch_req</code>，找到分支条件判断的逻辑<br>
-  (4) 打开 <code>src/core/pipeline/scr1_pipe_csr.sv</code>，找到 ECALL 异常的处理代码，对比我们第七课的 ECALL 流程描述
-</div>
+<fieldset><legend>练习 3: 源码追踪 (30 分钟)</legend>
+<p>(1) 打开 <code>src/includes/scr1_riscv_isa_decoding.svh</code>, 找 <code>SCR1_OPCODE_BRANCH</code> 和 <code>SCR1_OPCODE_STORE</code> 的 opcode 值<br>
+(2) 打开 <code>src/core/pipeline/scr1_pipe_idu.sv</code>, 搜索 <code>SCR1_OPCODE_BRANCH</code> 和 <code>SCR1_OPCODE_STORE</code>, 画出译码 switch-case 分支结构<br>
+(3) 打开 <code>src/core/pipeline/scr1_pipe_exu.sv</code>, 搜索 <code>new_pc_req</code>, 列出触发 PC 更新的所有条件<br>
+(4) 打开 <code>src/core/pipeline/scr1_pipe_lsu.sv:240-260</code>, 确认 LSU 的 load/store 符号/零扩展逻辑</p></fieldset>
 
-<div class="box">
-  <div class="box-title">练习 4: 运行真实测试 (如果环境支持)</div>
-  在项目根目录运行:<br>
-  <pre>
-<span class="cm"># 使用 Verilator 运行 hello 测试</span>
-make run_verilator <span class="str">TARGETS=hello</span></pre>
-  然后查看生成的 tracelog，找到 ADDI、JAL、ECALL 这三条指令在 trace 中的表现，理解它们的执行顺序。
-</div>
+<h2 id="summary">总结: RISC-V RV32I 指令全览</h2>
 
-<!-- ============================================================ -->
-<h2 id="summary">总结: 一张图看懂 RISC-V 指令集</h2>
-<!-- ============================================================ -->
+<pre class="bits" style="font-size:.73em;">
+                       RISC-V RV32I 基础指令集 (40 条)
+┌──────────┬────────────────────────────────────────┬──────┬────────────────┐
+│ 类型      │ 指令                                   │ 格式  │ 硬件模块        │
+├──────────┼────────────────────────────────────────┼──────┼────────────────┤
+│ 寄存器运算 │ ADD,SUB,AND,OR,XOR,SLL,SRL,SRA        │ R     │ IALU           │
+│           │ SLT,SLTU                               │ R     │ IALU(比较)     │
+│ 立即数运算 │ ADDI,ANDI,ORI,XORI                     │ I     │ IALU           │
+│           │ SLLI,SRLI,SRAI,SLTI,SLTIU              │ I     │ IALU           │
+│ 高位加载   │ LUI                                     │ U     │ IALU(直通)     │
+│           │ AUIPC                                   │ U     │ IALU(PC加法)   │
+│ 访存       │ LW,LH,LHU,LB,LBU                       │ I     │ LSU(加载)      │
+│           │ SW,SH,SB                                │ S     │ LSU(存储)      │
+│ 分支       │ BEQ,BNE,BLT,BGE,BLTU,BGEU              │ B     │ EXU+IFU(NEW_PC)│
+│ 跳转       │ JAL                                     │ J     │ EXU+IFU        │
+│           │ JALR                                    │ I     │ EXU+IFU        │
+│ 系统       │ ECALL,EBREAK,MRET,WFI,FENCE,FENCE.I    │ I     │ EXU+CSR        │
+│ CSR       │ CSRRW,CSRRS,CSRRC,CSRRWI,CSRRSI,CSRRCI │ I     │ CSR            │
+├──────────┴────────────────────────────────────────┴──────┴────────────────┤
+│ M 扩展 (8 条, 可选):  MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU     │
+│ C 扩展 (~26 条, 可选): 16 位压缩指令, 每条映射为 RV32I 等价指令            │
+│ E 扩展: RV32E 仅 x0-x15 (16 个寄存器), 其余与 RV32I 相同                  │
+└──────────────────────────────────────────────────────────────────────────┘</pre>
 
-<pre class="bits" style="font-size:0.75em;">
-                      RISC-V RV32I 指令全览 (40 条基础指令)
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 类型      │ 指令                                        │ 格式  │ 操作         │
-├───────────┼─────────────────────────────────────────────┼───────┼─────────────┤
-│ 寄存器运算 │ ADD, SUB, AND, OR, XOR, SLL, SRL, SRA      │ R     │ rd=rs1 op rs2│
-│           │ SLT, SLTU                                    │ R     │ rd=比较结果   │
-│ 立即数运算 │ ADDI, ANDI, ORI, XORI                       │ I     │ rd=rs1 op imm│
-│           │ SLLI, SRLI, SRAI, SLTI, SLTIU                │ I     │ rd=rs1 op imm│
-│ 高位加载   │ LUI                                          │ U     │ rd=imm&lt;&lt;12  │
-│           │ AUIPC                                        │ U     │ rd=PC+imm&lt;&lt;12│
-│ 访存       │ LW, LH, LHU, LB, LBU                        │ I     │ rd=MEM[addr] │
-│           │ SW, SH, SB                                   │ S     │ MEM[addr]=rs2│
-│ 分支       │ BEQ, BNE, BLT, BGE, BLTU, BGEU              │ B     │ if cond: jump│
-│ 跳转       │ JAL                                          │ J     │ rd=PC+4; jump│
-│           │ JALR                                         │ I     │ rd=PC+4; jump│
-│ 系统       │ ECALL, EBREAK                                │ I     │ 触发异常/调试 │
-│           │ MRET                                         │ I     │ 异常返回      │
-│           │ WFI                                          │ I     │ 等待中断      │
-│           │ FENCE, FENCE.I                                │ I     │ 访存/取指屏障  │
-│ CSR       │ CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI  │ I     │ CSR 原子操作  │
-├───────────┴─────────────────────────────────────────────┴───────┴─────────────┤
-│ M 扩展 (8 条, 可选):  MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU         │
-│ C 扩展 (~26 条, 可选): 16 位压缩指令, 每一条映射为一个 RV32I 指令              │
-└──────────────────────────────────────────────────────────────────────────────┘
-</pre>
-
-<div class="box tip">
-  <div class="box-title">下一步学什么</div>
-  掌握了 RISC-V 指令集基础后，建议进入学习计划的 <strong>第五周: SCR1 整体架构初探</strong>。届时你可以用本课学到的指令知识，在源码中追踪一条 ADD 指令从 IFU → IDU → EXU → MPRF 的完整旅程。
-</div>
+<div class="box tip"><div class="box-title">下一步</div>已掌握 RISC-V 指令集和 SCR1 模块映射。建议进入第 4 周"RISC-V 特权架构与 CSR"和第 5 周"SCR1 整体架构初探", 届时可以追踪一条 ADD 指令在 IFU→IDU→EXU→MPRF 的完整旅程。</div>
 
 </body>
 </html>

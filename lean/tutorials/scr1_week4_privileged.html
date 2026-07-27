@@ -50,6 +50,12 @@
   .bit-chart .b-hi { color: #f1fa8c; }
   .bit-chart .b-md { color: #ffb86c; }
   .bit-chart .b-lo { color: #568867; }
+  .timing { font-family: 'Fira Code', monospace; font-size: 0.8em; background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 6px; overflow-x: auto; white-space: pre; line-height: 1.4; }
+  .timing .t-label { color: #569cd6; }
+  .timing .t-change { color: #f1fa8c; }
+  .timing .t-comment { color: #6a9955; }
+  .new { background: #d4edda; border: 1px solid #28a745; border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .new .box-title { color: #155724; }
 </style>
 </head>
 <body>
@@ -60,6 +66,7 @@
   <div class="nav-title">课程导航</div>
   <a href="#why">为什么学特权架构？</a>
   <a href="#modes">特权模式与 M-mode</a>
+  <a href="#sync-async">同步异常 vs 异步中断</a>
   <a href="#mstatus">MSTATUS 机器状态</a>
   <a href="#mie-mip">MIE/MIP 中断使能与挂起</a>
   <a href="#mtvec">MTVEC 陷阱向量</a>
@@ -67,12 +74,17 @@
   <a href="#mcause">MCAUSE 异常原因</a>
   <a href="#mtval">MTVAL 异常附加值</a>
   <a href="#trap-flow">陷阱处理完整流程</a>
+  <a href="#timing-diagrams">CSR 时序状态转换图</a>
   <a href="#event-priority">事件优先级与互斥</a>
+  <a href="#exc-priority-encoder">异常优先级编码器</a>
   <a href="#new-pc">新 PC 生成</a>
   <a href="#counters">计数器 MCYCLE/MINSTRET</a>
+  <a href="#ecall-mret-wfi">ECALL/MRET/WFI 硬件流程</a>
+  <a href="#ipic-priority-tree">IPIC search_one_16 优先级树</a>
   <a href="#non-std">非标准 CSR</a>
   <a href="#csr-map">CSR 地址映射总表</a>
   <a href="#exercise">动手练习</a>
+  <a href="#exercise-asm">汇编中断处理程序练习</a>
   <a href="#summary">总结</a>
 </nav>
 
@@ -82,7 +94,7 @@
 
 <div class="box">
   <div class="box-title">本课程目标</div>
-  理解 SCR1 处理器中的 M-mode 特权机制，掌握 10 个核心 CSR 寄存器（MSTATUS/MIE/MIP/MTVEC/MEPC/MCAUSE/MTVAL/MSCRATCH/MCYCLE/MINSTRET），能追踪异常和中断从触发到返回的完整硬件流程。
+  理解 SCR1 处理器中的 M-mode 特权机制，掌握 10 个核心 CSR 寄存器（MSTATUS/MIE/MIP/MTVEC/MEPC/MCAUSE/MTVAL/MSCRATCH/MCYCLE/MINSTRET），能追踪异常和中断从触发到返回的完整硬件流程。深入理解 IPIC 优先级控制器、异常优先级编码器，以及同步/异步事件的硬件检测机制。
 </div>
 
 <div class="box warn">
@@ -92,7 +104,7 @@
 
 <div class="tip box">
   <div class="box-title">学习建议</div>
-  本周内容较抽象，建议每学完一个 CSR 就暂停回顾它的作用，最后用完整流程串起来。每天读 1 课，7 天刚好完成。
+  本周内容较抽象，建议每学完一个 CSR 就暂停回顾它的作用，最后用完整流程串起来。新增了硬件时序图和 IPIC 优先级树，建议配合源码逐行阅读。每天读 1-2 课，7 天刚好完成。
 </div>
 
 <!-- ============================================================ -->
@@ -130,6 +142,71 @@
 <span class="cm">// bit[1:0]  bit[8]  bit[12] bit[2]</span></pre>
 
 <!-- ============================================================ -->
+<h2 id="sync-async">第二课补充: 同步异常与异步中断的硬件检测</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">核心区别: 同步(异常) vs 异步(中断)</div>
+</div>
+
+<h3>SCR1 硬件中的检测路径</h3>
+
+<p>在 SCR1 的 RTL 中，异常和中断的检测路径完全不同，这决定了它们的"同步"或"异步"属性：</p>
+
+<table>
+<tr><th>属性</th><th>同步异常 (Exception)</th><th>异步中断 (Interrupt)</th></tr>
+<tr><td>触发来源</td><td>流水线内部指令执行结果</td><td>SOC 外部信号 (soc2csr_irq_*)</td></tr>
+<tr><td>检测模块</td><td>EXU / IDU / LSU / CSR / IFU</td><td>SOC 信号 + CSR 使能判断</td></tr>
+<tr><td>检测信号</td><td><code>exu_queue.exc_req</code>, <code>lsu_exc_req</code>, <code>csr2exu_rw_exc_i</code></td><td><code>soc2csr_irq_ext_i</code>, <code>soc2csr_irq_soft_i</code>, <code>soc2csr_irq_mtimer_i</code></td></tr>
+<tr><td>时序确定性</td><td>确定性: 同一条指令每次都触发</td><td>非确定性: 可在任意周期到来</td></tr>
+<tr><td>MEPC 保存</td><td><code>curr_pc</code> (异常指令地址, 可重试)</td><td><code>next_pc</code> (被中断指令的下一条)</td></tr>
+<tr><td>MCAUSE[31]</td><td><code>1'b0</code></td><td><code>1'b1</code></td></tr>
+<tr><td>MTVAL</td><td>有附加信息(非法指令/地址)</td><td>固定为 0</td></tr>
+</table>
+
+<h3>EXU 端的异常生成 (scr1_pipe_exu.sv:483-529)</h3>
+
+<p>异常请求信号 <code>exu_exc_req</code> 由多条并行路径 OR 而成：</p>
+
+<pre>
+<span class="cm">// scr1_pipe_exu.sv:483-493 -- 异常请求汇总 (同步检测)</span>
+<span class="kw">assign</span> exu_exc_req  = exu_queue_vd &amp; (exu_queue.exc_req | lsu_exc_req
+                                                        | csr2exu_rw_exc_i
+<span class="cm">// 每条来源编码映射 (scr1_pipe_exu.sv:514-529)</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        exu_queue.exc_req  : exc_code = exu_queue.exc_code;     <span class="cm">// IDU 传来的异常编码</span>
+        lsu_exc_req        : exc_code = lsu_exc_code;           <span class="cm">// LSU 生成 (地址未对齐/访存错)</span>
+        csr2exu_rw_exc_i   : exc_code = SCR1_EXC_CODE_ILLEGAL_INSTR; <span class="cm">// CSR 非法访问</span>
+        <span class="kw">default</span>            : exc_code = SCR1_EXC_CODE_ECALL_M;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>CSR 端的中断优先使能判断 (异步检测)</h3>
+
+<p>中断信号来自 SOC 外部线，需要经过三层使能条件才能被 CPU 响应：</p>
+
+<pre>
+<span class="cm">// 第1层: MIP 挂起 AND MIE 本地使能 (scr1_pipe_csr.sv:300-302)</span>
+<span class="kw">assign</span> csr_eirq_pnd_en = csr_mip_meip &amp; csr_mie_meie_ff;
+<span class="kw">assign</span> csr_sirq_pnd_en = csr_mip_msip &amp; csr_mie_msie_ff;
+<span class="kw">assign</span> csr_tirq_pnd_en = csr_mip_mtip &amp; csr_mie_mtie_ff;
+
+<span class="cm">// 第2层: "有挂起且使能" OR 生成 ip_ie 信号 (scr1_pipe_csr.sv:992)</span>
+<span class="kw">assign</span> csr2exu_ip_ie_o  = csr_eirq_pnd_en | csr_sirq_pnd_en | csr_tirq_pnd_en;
+
+<span class="cm">// 第3层: ip_ie AND 全局使能 MIE -> 最终中断请求 (scr1_pipe_csr.sv:993)</span>
+<span class="kw">assign</span> csr2exu_irq_o    = csr2exu_ip_ie_o &amp; csr_mstatus_mie_ff;
+
+<span class="cm">// 第4层: EXU 端还要检查 busy/调试状态 (scr1_pipe_exu.sv:973-981)</span>
+<span class="kw">assign</span> exu2csr_take_irq_o = csr2exu_irq_i &amp; ~exu2pipe_exu_busy_o;
+</pre>
+
+<div class="box tip">
+  <div class="box-title">关键设计: 为什么中断有 4 层条件?</div>
+  这是为了允许软件分层地管理中断响应：MIP 表示"外设发了请求"、MIE 表示"软件愿意响应这类中断"、MSTATUS.MIE 表示"软件当前允许任何中断"、EXU busy 表示"当前周期是否可以切走执行"。每一层可以独立开关，灵活且高效。
+</div>
+
+<!-- ============================================================ -->
 <h2 id="mstatus">第三课: MSTATUS -- 机器状态寄存器 (0x300)</h2>
 <!-- ============================================================ -->
 
@@ -148,6 +225,56 @@
 <div class="bit-chart">
 <span class="b-hi">31</span> ........ <span class="b-md">12</span> <span class="b-lo">11</span> <span class="b-md">10</span> <span class="b-md">9</span> <span class="b-md">8</span> <span class="b-lo">7</span> <span class="b-md">6</span> <span class="b-md">5</span> <span class="b-md">4</span> <span class="b-lo">3</span> <span class="b-md">2</span> <span class="b-md">1</span> <span class="b-md">0</span><br>
 <span class="cm"> 0 ........ 0 </span><span class="b-hi">MPP=11 </span><span class="cm">0 0 0 </span><span class="b-hi">MPIE</span><span class="cm"> 0 0 0 </span><span class="b-hi">MIE</span><span class="cm"> 0 0 0</span>
+</div>
+
+<h3>MSTATUS CSR 实现的完整 RTL (scr1_pipe_csr.sv:612-653)</h3>
+
+<p>MSTATUS 由两个独立触发器 <code>csr_mstatus_mie_ff</code> 和 <code>csr_mstatus_mpie_ff</code> 驱动，通过 always_comb 的 case 语句决定 next 值：</p>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:617-625 -- MSTATUS 触发器实例化</span>
+<span class="kw">always_ff</span> @(negedge rst_n, posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>
+        csr_mstatus_mie_ff  &lt;= SCR1_CSR_MSTATUS_MIE_RST_VAL;   <span class="cm">// = 1'b0</span>
+        csr_mstatus_mpie_ff &lt;= SCR1_CSR_MSTATUS_MPIE_RST_VAL;  <span class="cm">// = 1'b1</span>
+    <span class="kw">end else begin</span>
+        csr_mstatus_mie_ff  &lt;= csr_mstatus_mie_next;
+        csr_mstatus_mpie_ff &lt;= csr_mstatus_mpie_next;
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="cm">// scr1_pipe_csr.sv:627-646 -- MSTATUS next 值逻辑</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        e_exc, e_irq  : <span class="kw">begin</span>                            <span class="cm">// 陷阱进入</span>
+            csr_mstatus_mie_next  = <span class="num">1'b0</span>;                   <span class="cm">// 关全局中断</span>
+            csr_mstatus_mpie_next = csr_mstatus_mie_ff;      <span class="cm">// 保存旧 MIE</span>
+        <span class="kw">end</span>
+        e_mret        : <span class="kw">begin</span>                            <span class="cm">// MRET 返回</span>
+            csr_mstatus_mie_next  = csr_mstatus_mpie_ff;     <span class="cm">// 恢复旧 MIE</span>
+            csr_mstatus_mpie_next = <span class="num">1'b1</span>;                   <span class="cm">// MPIE 复位</span>
+        <span class="kw">end</span>
+        csr_mstatus_upd: <span class="kw">begin</span>                           <span class="cm">// 软件写入 CSR</span>
+            csr_mstatus_mie_next  = csr_w_data[<span class="num">3</span>];          <span class="cm">// offset=3</span>
+            csr_mstatus_mpie_next = csr_w_data[<span class="num">7</span>];          <span class="cm">// offset=7</span>
+        <span class="kw">end</span>
+        <span class="kw">default</span>       : <span class="kw">begin</span>
+            csr_mstatus_mie_next  = csr_mstatus_mie_ff;     <span class="cm">// 保持</span>
+            csr_mstatus_mpie_next = csr_mstatus_mpie_ff;    <span class="cm">// 保持</span>
+        <span class="kw">end</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+
+<span class="cm">// scr1_pipe_csr.sv:648-653 -- MSTATUS 读值组合 (MPP 硬连线)</span>
+<span class="kw">always_comb begin</span>
+    csr_mstatus[<span class="num">3</span>]         = csr_mstatus_mie_ff;      <span class="cm">// offset=3</span>
+    csr_mstatus[<span class="num">7</span>]         = csr_mstatus_mpie_ff;     <span class="cm">// offset=7</span>
+    csr_mstatus[<span class="num">12</span>:<span class="num">11</span>]   = SCR1_CSR_MSTATUS_MPP;     <span class="cm">// 硬连线 2'b11</span>
+<span class="kw">end</span></pre>
+
+<div class="box warn">
+  <div class="box-title">MSTATUS 组合逻辑读值的关键设计</div>
+  MSTATUS 的"聚合"输出信号 <code>csr_mstatus</code> 是纯组合逻辑 —— 它不由触发器直接驱动，而是通过 always_comb 从实际触发器 <code>csr_mstatus_mie_ff</code>、<code>csr_mstatus_mpie_ff</code> 和硬连线 MPP 拼接而成。这保证 CSR 读指令能立即看到最近更新的值。源文件 <code>scr1_csr.svh:142-145</code> 定义了各字段的 offset 常量。
 </div>
 
 <h3>MSTATUS 的陷阱自动切换（SCR1 真实逻辑）</h3>
@@ -183,8 +310,8 @@
 
 <div class="box warn">
   <div class="box-title">关键机制</div>
-  SCR1 在检测到 mstatus 更新的同一周期，EXU 会停止提交指令。源码在 <code>scr1_pipe_exu.sv:500</code>：
-  <pre><span class="cm">// scr1_pipe_exu.sv:500</span>
+  SCR1 在检测到 mstatus 更新的同一周期，EXU 会停止提交指令。源码在 <code>scr1_pipe_exu.sv:804</code>：
+  <pre><span class="cm">// scr1_pipe_exu.sv:804</span>
 csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>; <span class="cm">// mstatus 更新周期不允许提交</span></pre>
   这是必要的设计——MRET 指令修改 MIE 后，流水线需要额外一个周期让新 MIE 值生效。
 </div>
@@ -215,7 +342,11 @@ csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>; <span class=
 
 <div class="box warn">
   <div class="box-title">MIP 是组合逻辑直连</div>
-  与 MIE 不同，MIP 没有触发器（FF），它直接由 SOC 输入信号驱动。写入 MIP 被静默忽略——这是 RISC-V 规范要求的行为。
+  源码 <code>scr1_pipe_csr.sv:853-862</code> 显示 MIP 没有触发器（FF），它直接由 SOC 输入信号驱动。写入 MIP 被静默忽略——这是 RISC-V 规范要求的行为。
+  <pre><span class="cm">// scr1_pipe_csr.sv:853-855</span>
+<span class="kw">assign</span> csr_mip_mtip = soc2csr_irq_mtimer_i;   <span class="cm">// 组合逻辑直连!</span>
+<span class="kw">assign</span> csr_mip_meip = soc2csr_irq_ext_i;
+<span class="kw">assign</span> csr_mip_msip = soc2csr_irq_soft_i;</pre>
 </div>
 
 <h3>中断触发条件： 挂起 + 使能 + 全局开关</h3>
@@ -273,6 +404,60 @@ csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>; <span class=
 <tr><td>Vectored (mode=1)</td><td><code>BASE + 0</code></td><td><code>BASE + 0x2C</code></td><td><code>BASE + 0x0C</code></td><td><code>BASE + 0x1C</code></td></tr>
 </table>
 
+<h3>MTVEC Vectored 模式的完整 RTL (scr1_pipe_csr.sv:998-1020)</h3>
+
+<div class="new">
+  <div class="box-title">源码级: Vectored 模式新 PC 生成</div>
+</div>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:998-1020 -- MTVEC 新 PC 多路选择</span>
+<span class="kw">ifndef</span> SCR1_MTVEC_MODE_EN
+<span class="kw">assign</span> csr2exu_new_pc_o = (exu2csr_mret_instr_i &amp; ~exu2csr_take_irq_i)
+                        ? csr_mepc                                   <span class="cm">// MRET: 跳到 MEPC</span>
+                        : {csr_mtvec_base, SCR1_CSR_MTVEC_BASE_ZERO_BITS'(0)}; <span class="cm">// Direct: BASE+0</span>
+<span class="kw">else</span> <span class="cm">// SCR1_MTVEC_MODE_EN</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">if</span> (exu2csr_mret_instr_i &amp; ~exu2csr_take_irq_i) <span class="kw">begin</span>
+        csr2exu_new_pc_o  = csr_mepc;                                <span class="cm">// MRET: 跳到 MEPC</span>
+    <span class="kw">end else begin</span>
+        <span class="kw">if</span> (csr_mtvec_mode_vect) <span class="kw">begin</span>
+            <span class="kw">case</span> (<span class="num">1'b1</span>)
+                exu2csr_take_exc_i: csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">6'd0</span>};   <span class="cm">// 异常: BASE+0</span>
+                csr_eirq_pnd_en   : csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">4'd11, 2'd0</span>}; <span class="cm">// 外部中断: BASE+0x2C</span>
+                csr_sirq_pnd_en   : csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">4'd3, 2'd0</span>};  <span class="cm">// 软件中断: BASE+0x0C</span>
+                csr_tirq_pnd_en   : csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">4'd7, 2'd0</span>};  <span class="cm">// 定时器中断: BASE+0x1C</span>
+                <span class="kw">default</span>           : csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">6'd0</span>};
+            <span class="kw">endcase</span>
+        <span class="kw">end else begin</span> <span class="cm">// direct mode</span>
+            csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">6'd0</span>};
+        <span class="kw">end</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+<span class="kw">endif</span> <span class="cm">// SCR1_MTVEC_MODE_EN</span></pre>
+
+<div class="box tip">
+  <div class="box-title">Vectored 模式地址计算公式</div>
+  BASE + 4 &times; exception_code。对于中断，外部中断 code=11 &rarr; 0x2C，软件中断 code=3 &rarr; 0x0C，定时器中断 code=7 &rarr; 0x1C。乘法通过左移 2 位实现（源码中 <code>{csr_mtvec_base, exc_code, 2'd0}</code>）。
+</div>
+
+<h3>MTVEC MODE 触发器 (scr1_pipe_csr.sv:724-737)</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:724-737 -- MTVEC MODE 字段实现</span>
+<span class="kw">ifdef</span> SCR1_MTVEC_MODE_EN
+<span class="kw">always_ff</span> @(negedge rst_n, posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>
+        csr_mtvec_mode_ff &lt;= SCR1_CSR_MTVEC_MODE_DIRECT;              <span class="cm">// 复位为 Direct</span>
+    <span class="kw">end else if</span> (csr_mtvec_upd) <span class="kw">begin</span>
+        csr_mtvec_mode_ff &lt;= csr_w_data[<span class="num">0</span>];                        <span class="cm">// 写入 bit[0]</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+<span class="kw">assign</span> csr_mtvec_mode_vect = (csr_mtvec_mode_ff == SCR1_CSR_MTVEC_MODE_VECTORED);
+<span class="kw">else</span> <span class="cm">// ~SCR1_MTVEC_MODE_EN</span>
+<span class="kw">assign</span> csr_mtvec_mode = SCR1_CSR_MTVEC_MODE_DIRECT;                <span class="cm">// 硬连线为 Direct</span>
+<span class="kw">endif</span></pre>
+
 <div class="box warn">
   <div class="box-title">SCR1 默认配置</div>
   如果 <code>SCR1_MTVEC_MODE_EN</code> 宏未定义，MODE 字段硬连线为 0（仅支持 Direct 模式）。Vectored 模式通过向量地址公式 <code>BASE + 4 &times; IRQ_exc_code</code> 计算，不同中断跳转到不同的偏移地址。
@@ -287,13 +472,19 @@ csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>; <span class=
 <table>
 <tr><th>事件</th><th>MEPC 保存的值</th><th>原因</th></tr>
 <tr><td><code>e_exc</code>（异常）</td><td><code>curr_pc</code></td><td>异常指令本身需要被重试，返回当前 PC</td></tr>
-<tr><td><code>e_irq_nmret</code>（中断）</td><td><code>next_pc</code></td><td>被中断的指令尚未执行，返回下条指令 PC</td></tr>
+<tr><td><code>e_irq_nmret</code>（中断且非 MRET）</td><td><code>next_pc</code></td><td>被中断的指令尚未执行，返回下条指令 PC</td></tr>
 </table>
 
 <pre>
-<span class="cm">// scr1_pipe_csr.sv:778-779 -- MEPC 保存策略</span>
-e_exc       : csr_mepc_next = exu2csr_pc_curr_i[<span class="num">`</span>SCR1_XLEN-<span class="num">1</span>:PC_LSB];
-e_irq_nmret : csr_mepc_next = exu2csr_pc_next_i[<span class="num">`</span>SCR1_XLEN-<span class="num">1</span>:PC_LSB];</pre>
+<span class="cm">// scr1_pipe_csr.sv:776-783 -- MEPC 保存策略 (完整逻辑)</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        e_exc       : csr_mepc_next = exu2csr_pc_curr_i[<span class="num">`</span>SCR1_XLEN-<span class="num">1</span>:PC_LSB];
+        e_irq_nmret : csr_mepc_next = exu2csr_pc_next_i[<span class="num">`</span>SCR1_XLEN-<span class="num">1</span>:PC_LSB];
+        csr_mepc_upd: csr_mepc_next = csr_w_data[<span class="num">`</span>SCR1_XLEN-<span class="num">1</span>:PC_LSB];   <span class="cm">// 软件写入</span>
+        <span class="kw">default</span>     : csr_mepc_next = csr_mepc_ff;                    <span class="cm">// 保持</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
 
 <div class="box">
   <div class="box-title">为什么异常保存 curr_pc 而中断保存 next_pc？</div>
@@ -303,6 +494,29 @@ e_irq_nmret : csr_mepc_next = exu2csr_pc_next_i[<span class="num">`</span>SCR1_X
 <h3>PC_LSB 低位补零</h3>
 
 <p>MEPC 只存储 <code>[31:PC_LSB]</code> 位，低 <code>PC_LSB</code> 位补 0：RVC 扩展时 PC_LSB=1（低 1 位补 0），无 RVC 时 PC_LSB=2（低 2 位补 0），保证地址对齐。</p>
+
+<h3>e_irq_nmret 信号的定义 (scr1_pipe_csr.sv:297)</h3>
+
+<div class="new">
+  <div class="box-title">为什么需要 e_irq_nmret 而不是直接使用 e_irq?</div>
+</div>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:297 -- MRET + 中断 同时发生时的保护</span>
+<span class="kw">assign</span> e_irq_nmret = e_irq &amp; ~exu2csr_mret_instr_i;</pre>
+
+<p>如果 MRET 指令本身被中断（MRET 执行周期同时来了 IRQ），SCR1 的做法是优先处理中断，但 MEPC <strong>不能</strong>被 MRET 指令覆盖。换言之：中断打断 MRET 时，MEPC 应保持 MRET 之前的值，指向原本要返回的地址。e_irq_nmret 信号确保这种情况下的 MEPC 不被错误更新。</p>
+
+<div class="box warn">
+  <div class="box-title">SVA 断言验证 (scr1_pipe_csr.sv:1099-1103)</div>
+  <pre><span class="cm">// scr1_pipe_csr.sv:1099-1103 -- SVA: MRET+IRQ 行为检查</span>
+SCR1_SVA_CSR_MRET_IRQ : <span class="kw">assert property</span> (
+    @(negedge clk) disable iff (~rst_n)
+    (exu2csr_mret_instr_i &amp; e_irq)
+    |=&gt; ($stable(csr_mepc_ff) &amp; (exu2csr_pc_curr_i != csr_mepc))
+    ) <span class="kw">else</span> $error("CSR Error: MRET+IRQ wrong behavior");</pre>
+  这个断言在仿真中验证：当 MRET 和中断同时发生，MEPC 在下个周期保持不变（$stable），且当前 PC 已经不等于旧的 MEPC（说明中断确实被处理了，但 MEPC 没被覆盖）。
+</div>
 
 <!-- ============================================================ -->
 <h2 id="mcause">第七课: MCAUSE -- 机器异常原因寄存器 (0x342)</h2>
@@ -319,22 +533,47 @@ e_irq_nmret : csr_mepc_next = exu2csr_pc_next_i[<span class="num">`</span>SCR1_X
 <tr><td><code>[3:0]</code></td><td>Exception Code</td><td>异常/中断的具体编码（SCR1 仅用低 4 位）</td></tr>
 </table>
 
-<h3>完整异常编码映射表</h3>
+<h3>MCAUSE 异常编码设置的完整 RTL (scr1_pipe_csr.sv:806-824)</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:806-824 -- MCAUSE 寄存器 next 值逻辑 (完整)</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        e_exc         : <span class="kw">begin</span>
+            csr_mcause_i_next  = <span class="num">1'b0</span>;                      <span class="cm">// I=0: 异常</span>
+            csr_mcause_ec_next = exu2csr_exc_code_i;         <span class="cm">// 从 EXU 传入编码</span>
+        <span class="kw">end</span>
+        e_irq         : <span class="kw">begin</span>
+            csr_mcause_i_next  = <span class="num">1'b1</span>;                      <span class="cm">// I=1: 中断</span>
+            csr_mcause_ec_next = csr_mcause_ec_new;          <span class="cm">// 从 IPIC/CSR 仲裁结果</span>
+        <span class="kw">end</span>
+        csr_mcause_upd: <span class="kw">begin</span>                               <span class="cm">// 软件写入</span>
+            csr_mcause_i_next  = csr_w_data[`SCR1_XLEN-<span class="num">1</span>];
+            csr_mcause_ec_next = type_scr1_exc_code_e'(csr_w_data[<span class="num">3</span>:<span class="num">0</span>]);
+        <span class="kw">end</span>
+        <span class="kw">default</span>       : <span class="kw">begin</span>
+            csr_mcause_i_next  = csr_mcause_i_ff;
+            csr_mcause_ec_next = csr_mcause_ec_ff;
+        <span class="kw">end</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>完整异常编码映射表 (scr1_arch_types.svh:41-57)</h3>
 
 <table>
-<tr><th>编码</th><th>类型</th><th>符号</th><th>来源模块</th></tr>
-<tr><td>0</td><td>异常</td><td>INSTR_MISALIGN</td><td>EXU</td></tr>
-<tr><td>1</td><td>异常</td><td>INSTR_ACCESS_FAULT</td><td>IFU</td></tr>
-<tr><td>2</td><td>异常</td><td>ILLEGAL_INSTR</td><td>IDU / CSR</td></tr>
-<tr><td>3</td><td>异常</td><td>BREAKPOINT</td><td>IDU / BRKM</td></tr>
-<tr><td>4</td><td>异常</td><td>LD_ADDR_MISALIGN</td><td>LSU</td></tr>
-<tr><td>5</td><td>异常</td><td>LD_ACCESS_FAULT</td><td>LSU</td></tr>
-<tr><td>6</td><td>异常</td><td>ST_ADDR_MISALIGN</td><td>LSU</td></tr>
-<tr><td>7</td><td>异常</td><td>ST_ACCESS_FAULT</td><td>LSU</td></tr>
-<tr><td>11</td><td>异常</td><td>ECALL_M</td><td>IDU</td></tr>
-<tr style="background:#fff3cd;"><td>3</td><td>中断</td><td>IRQ_M_SOFTWARE</td><td>IPIC</td></tr>
-<tr style="background:#fff3cd;"><td>7</td><td>中断</td><td>IRQ_M_TIMER</td><td>SOC</td></tr>
-<tr style="background:#fff3cd;"><td>11</td><td>中断</td><td>IRQ_M_EXTERNAL</td><td>SOC</td></tr>
+<tr><th>编码</th><th>类型</th><th>符号</th><th>来源模块</th><th>源文件行号</th></tr>
+<tr><td>0</td><td>异常</td><td>INSTR_MISALIGN</td><td>EXU</td><td><code>scr1_arch_types.svh:42</code></td></tr>
+<tr><td>1</td><td>异常</td><td>INSTR_ACCESS_FAULT</td><td>IFU</td><td><code>scr1_arch_types.svh:43</code></td></tr>
+<tr><td>2</td><td>异常</td><td>ILLEGAL_INSTR</td><td>IDU / CSR</td><td><code>scr1_arch_types.svh:44</code></td></tr>
+<tr><td>3</td><td>异常</td><td>BREAKPOINT</td><td>IDU / BRKM</td><td><code>scr1_arch_types.svh:45</code></td></tr>
+<tr><td>4</td><td>异常</td><td>LD_ADDR_MISALIGN</td><td>LSU</td><td><code>scr1_arch_types.svh:46</code></td></tr>
+<tr><td>5</td><td>异常</td><td>LD_ACCESS_FAULT</td><td>LSU</td><td><code>scr1_arch_types.svh:47</code></td></tr>
+<tr><td>6</td><td>异常</td><td>ST_ADDR_MISALIGN</td><td>LSU</td><td><code>scr1_arch_types.svh:48</code></td></tr>
+<tr><td>7</td><td>异常</td><td>ST_ACCESS_FAULT</td><td>LSU</td><td><code>scr1_arch_types.svh:49</code></td></tr>
+<tr><td>11</td><td>异常</td><td>ECALL_M</td><td>IDU</td><td><code>scr1_arch_types.svh:50</code></td></tr>
+<tr style="background:#fff3cd;"><td>3</td><td>中断</td><td>IRQ_M_SOFTWARE</td><td>IPIC</td><td><code>scr1_arch_types.svh:54</code></td></tr>
+<tr style="background:#fff3cd;"><td>7</td><td>中断</td><td>IRQ_M_TIMER</td><td>SOC</td><td><code>scr1_arch_types.svh:55</code></td></tr>
+<tr style="background:#fff3cd;"><td>11</td><td>中断</td><td>IRQ_M_EXTERNAL</td><td>SOC</td><td><code>scr1_arch_types.svh:56</code></td></tr>
 </table>
 
 <div class="box">
@@ -354,10 +593,38 @@ e_irq_nmret : csr_mepc_next = exu2csr_pc_next_i[<span class="num">`</span>SCR1_X
 <tr><td><code>e_irq</code></td><td>0</td><td>中断无附加值</td></tr>
 </table>
 
+<h3>MTVAL 完整的 next 值逻辑 (scr1_pipe_csr.sv:840-846)</h3>
+
 <pre>
-<span class="cm">// scr1_pipe_csr.sv:842-843 -- MTVAL 更新逻辑</span>
-e_exc : csr_mtval_next = exu2csr_trap_val_i;
-e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
+<span class="cm">// scr1_pipe_csr.sv:840-846 -- MTVAL 更新逻辑 (完整)</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        e_exc        : csr_mtval_next = exu2csr_trap_val_i;      <span class="cm">// 异常附加值</span>
+        e_irq        : csr_mtval_next = '0;                       <span class="cm">// 中断写 0</span>
+        csr_mtval_upd: csr_mtval_next = csr_w_data;               <span class="cm">// 软件写入</span>
+        <span class="kw">default</span>      : csr_mtval_next = csr_mtval_ff;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>EXU 端 exc_trap_val 的完整编码 (scr1_pipe_exu.sv:545-575)</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_exu.sv:545-575 -- 各异常类型的 trap_val 赋值</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (exc_code)
+        SCR1_EXC_CODE_INSTR_MISALIGN    : exc_trap_val = jb_new_pc;
+        SCR1_EXC_CODE_INSTR_ACCESS_FAULT: exc_trap_val = instr_fault_rvi_hi ? inc_pc : pc_curr_ff;
+        SCR1_EXC_CODE_ILLEGAL_INSTR     : exc_trap_val = exu_queue.exc_req
+                                                         ? exu_queue.imm            <span class="cm">// EBREAK/ECALL</span>
+                                                         : exu_illegal_instr;       <span class="cm">// CSR非法指令编码</span>
+        SCR1_EXC_CODE_BREAKPOINT        : exc_trap_val = ... ;                      <span class="cm">// PC或地址</span>
+        SCR1_EXC_CODE_LD_ADDR_MISALIGN,
+        SCR1_EXC_CODE_LD_ACCESS_FAULT,
+        SCR1_EXC_CODE_ST_ADDR_MISALIGN,
+        SCR1_EXC_CODE_ST_ACCESS_FAULT   : exc_trap_val = ialu_addr_res;             <span class="cm">// 访存地址</span>
+        <span class="kw">default</span>                         : exc_trap_val = '0;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
 
 <div class="box tip">
   <div class="box-title">典型 MTVAL 示例</div>
@@ -367,7 +634,7 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 
 <h3>MSCRATCH 辅助</h3>
 
-<p>MSCRATCH（0x340）是一个纯通用 32 位 R/W 寄存器，无硬件自动更新逻辑。陷阱处理程序常用它暂存上下文指针（如保存栈顶到 mscratch，再把栈顶切换为陷阱专用栈）。</p>
+<p>MSCRATCH（0x340）是一个纯通用 32 位 R/W 寄存器，无硬件自动更新逻辑（<code>scr1_pipe_csr.sv:755-761</code>）。陷阱处理程序常用它暂存上下文指针（如保存栈顶到 mscratch，再把栈顶切换为陷阱专用栈）。</p>
 
 <!-- ============================================================ -->
 <h2 id="trap-flow">第九课: 陷阱处理完整流程</h2>
@@ -376,24 +643,24 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 <h3>从触发到返回的 6 个步骤</h3>
 
 <div class="step">
-  <span class="step-num">1</span> <strong>触发</strong>：异常来源于 EXU/LSU/IFU/IDU（编码通过 <code>exu2csr_exc_code_i</code> 传入 CSR）；中断来源于 SOC 外部信号
+  <span class="step-num">1</span> <strong>触发</strong>：异常来源于 EXU/LSU/IFU/IDU（编码通过 <code>exu2csr_exc_code_i</code> 传入 CSR）；中断来源于 SOC 外部信号（<code>soc2csr_irq_ext_i / soc2csr_irq_soft_i / soc2csr_irq_mtimer_i</code>）
 </div>
 <div class="step">
-  <span class="step-num">2</span> <strong>优先级裁决</strong>：CSR 模块按 <code>e_exc &gt; e_irq &gt; e_mret</code> 确定当前响应的事件类型
+  <span class="step-num">2</span> <strong>优先级裁决</strong>：CSR 模块按 <code>e_exc &gt; e_irq &gt; e_mret</code> 确定当前响应的事件类型（<code>scr1_pipe_csr.sv:282-296</code>）
 </div>
 <div class="step">
   <span class="step-num">3</span> <strong>保存上下文</strong>：硬件自动完成
   <table style="margin:8px 0;">
-    <tr><th>寄存器</th><th>操作</th></tr>
-    <tr><td>MEPC</td><td>异常=&gt;<code>curr_pc</code>，中断=&gt;<code>next_pc</code></td></tr>
-    <tr><td>MCAUSE</td><td>I 位 + 异常/中断编码</td></tr>
-    <tr><td>MTVAL</td><td>异常=&gt;附加值，中断=&gt;0</td></tr>
-    <tr><td>MSTATUS.MPIE</td><td>&larr; 旧的 MSTATUS.MIE</td></tr>
-    <tr><td>MSTATUS.MIE</td><td>&larr; 0（关全局中断）</td></tr>
+    <tr><th>寄存器</th><th>操作</th><th>源码行号</th></tr>
+    <tr><td>MEPC</td><td>异常=&gt;<code>curr_pc</code>，中断=&gt;<code>next_pc</code></td><td><code>scr1_pipe_csr.sv:778-779</code></td></tr>
+    <tr><td>MCAUSE</td><td>I 位 + 异常/中断编码</td><td><code>scr1_pipe_csr.sv:808-814</code></td></tr>
+    <tr><td>MTVAL</td><td>异常=&gt;附加值，中断=&gt;0</td><td><code>scr1_pipe_csr.sv:842-843</code></td></tr>
+    <tr><td>MSTATUS.MPIE</td><td>&larr; 旧的 MSTATUS.MIE</td><td><code>scr1_pipe_csr.sv:631</code></td></tr>
+    <tr><td>MSTATUS.MIE</td><td>&larr; 0（关全局中断）</td><td><code>scr1_pipe_csr.sv:630</code></td></tr>
   </table>
 </div>
 <div class="step">
-  <span class="step-num">4</span> <strong>生成新 PC</strong>：Direct 模式跳转到 <code>MTVEC.BASE</code>，Vectored 模式按中断类型跳转到 <code>BASE + 4&times;IRQ_code</code>
+  <span class="step-num">4</span> <strong>生成新 PC</strong>：Direct 模式跳转到 <code>MTVEC.BASE</code>，Vectored 模式按中断类型跳转到 <code>BASE + 4&times;IRQ_code</code>（<code>scr1_pipe_csr.sv:998-1020</code>）
 </div>
 <div class="step">
   <span class="step-num">5</span> <strong>执行处理程序</strong>：CPU 从新 PC 开始执行（通常先保存通用寄存器到栈，再读取 MCAUSE 判断原因）
@@ -417,6 +684,62 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 <span class="kw">end</span></pre>
 
 <!-- ============================================================ -->
+<h2 id="timing-diagrams">第九课补充: CSR 寄存器状态转换时序图</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">CSR 状态在陷阱流程中的精确时序</div>
+</div>
+
+<h3>场景: 外部中断触发 (假设 MIE=1, MEIE=1, MEIP=1, MTVEC=0x10100 Direct)</h3>
+
+<div class="timing">
+<span class="t-comment">时钟周期:     T0          T1 (中断检测)      T2 (进入陷阱)      T3 (处理程序首指令)</span>
+<span class="t-label">clk</span>            ____|----|____|----|____|----|____|----|____
+<span class="t-label">MSTATUS.MIE</span>    1           1                  <span class="t-change">0</span>                 0
+<span class="t-label">MSTATUS.MPIE</span>   0           0                  <span class="t-change">1</span>                 1
+<span class="t-label">MEPC</span>           x           x                  <span class="t-change">next_pc</span>          next_pc
+<span class="t-label">MCAUSE</span>         x           x                  <span class="t-change">I=1,ec=11</span>        I=1,ec=11
+<span class="t-label">MTVAL</span>          x           x                  <span class="t-change">0</span>                 0
+<span class="t-label">PC (curr_pc)</span>   T0_pc       T1_pc              <span class="t-change">0x10100</span>           0x10100+4
+
+<span class="t-comment">// T1 周期: csr2exu_irq_o=1 -> exu2csr_take_irq_o=1 -> e_irq=1
+// T2 周期: 所有 CSR 触发器采样新值, PC 跳转</span>
+</div>
+
+<h3>场景: ECALL 异常 (假设 MIE=1, MTVEC=0x10100 Direct, PC=0x200)</h3>
+
+<div class="timing">
+<span class="t-comment">时钟周期:     T0 (ECALL执行)     T1 (进入陷阱)      T2 (处理程序首指令)</span>
+<span class="t-label">clk</span>            ____|----|____|----|____|----|____
+<span class="t-label">exu_exc_req</span>    1                0                 0
+<span class="t-label">e_exc</span>          0                <span class="t-change">1</span>                 0
+<span class="t-label">MSTATUS.MIE</span>    1                <span class="t-change">0</span>                 0
+<span class="t-label">MSTATUS.MPIE</span>   0                <span class="t-change">1</span>                 1
+<span class="t-label">MEPC</span>           x                <span class="t-change">0x200</span>             0x200
+<span class="t-label">MCAUSE</span>         x                <span class="t-change">I=0,ec=11</span>        I=0,ec=11
+<span class="t-label">MTVAL</span>          x                <span class="t-change">0</span>                 0
+<span class="t-label">PC (curr_pc)</span>   0x200            <span class="t-change">0x10100</span>           0x10100+4
+
+<span class="t-comment">// T0 周期: ECALL 指令在 EXU 队列中, exu_exc_req=1
+// T1 周期: CSR 完成所有陷阱寄存器保存, PC 跳转</span>
+</div>
+
+<h3>场景: MRET 返回 (假设 MEPC=0x300, MSTATUS.MPIE=1)</h3>
+
+<div class="timing">
+<span class="t-comment">时钟周期:     T0 (MRET执行)      T1 (mstatus更新)    T2 (返回执行)</span>
+<span class="t-label">clk</span>            ____|----|____|----|____|----|____
+<span class="t-label">e_mret</span>         1                0                 0
+<span class="t-label">MSTATUS.MIE</span>    0                <span class="t-change">1</span>                 1
+<span class="t-label">MSTATUS.MPIE</span>   1                <span class="t-change">1</span>                 1
+<span class="t-label">PC (curr_pc)</span>   T0_pc            T0_pc+4           <span class="t-change">0x300</span>
+
+<span class="t-comment">// T0 周期: MRET 发送 e_mret=1, CSR 准备 mstatus_next
+// T1 周期: mstatus 触发器更新, csr2exu_mstatus_mie_up_o=1 阻塞 EXU
+// T2 周期: PC 跳转到 MEPC 地址</span>
+</div>
+
+<!-- ============================================================ -->
 <h2 id="event-priority">第十课: 事件优先级与互斥</h2>
 <!-- ============================================================ -->
 
@@ -437,12 +760,70 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 
 <div class="box">
   <div class="box-title">互斥保证</div>
-  <code>e_irq</code> 的公式中包含 <code>~exu2csr_take_exc_i</code>，确保异常和中断不会同时发生。SCR1 有 SVA 断言 <code>SCR1_SVA_CSR_EVENTS</code> 检查 <code>e_irq/e_exc/e_mret</code> 为 onehot0（至多一个为 1）。
+  <code>e_irq</code> 的公式中包含 <code>~exu2csr_take_exc_i</code>，确保异常和中断不会同时发生。SCR1 有 SVA 断言 <code>SCR1_SVA_CSR_EVENTS</code>（<code>scr1_pipe_csr.sv:1116-1119</code>）检查 <code>e_irq/e_exc/e_mret</code> 为 onehot0（至多一个为 1）。
+  <pre><span class="cm">// scr1_pipe_csr.sv:1116-1119</span>
+SCR1_SVA_CSR_EVENTS : <span class="kw">assert property</span> (
+    @(negedge clk) disable iff (~rst_n)
+    $onehot0({e_irq, e_exc, e_mret})
+    ) <span class="kw">else</span> $error("CSR Error: more than one event at a time");</pre>
 </div>
 
 <h3>HDU 调试暂停的全局阻塞</h3>
 
 <p>当调试单元发出 <code>hdu2csr_no_commit_i = 1</code> 时，所有事件（exc/irq/mret）都被强制为 0——相当于流水线被完全冻结（只在 <code>SCR1_DBG_EN</code> 宏定义时存在）。</p>
+
+<!-- ============================================================ -->
+<h2 id="exc-priority-encoder">第十课补充: 异常优先级编码器</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">当多个异常源同时触发时的优先裁决</div>
+</div>
+
+<p>理论上，同一周期可能多个异常来源同时报告。SCR1 通过 EXU 中的 case (1'b1) 优先级编码器处理（<code>scr1_pipe_exu.sv:514-529</code>）：</p>
+
+<h3>异常优先级编码器的优先顺序</h3>
+
+<table>
+<tr><th>优先级</th><th>异常源</th><th>exc_code</th><th>说明</th></tr>
+<tr><td>1（最高）</td><td>硬件断点 (TDU/DBG)</td><td>BREAKPOINT(3)</td><td>调试相关，优先级最高</td></tr>
+<tr><td>2</td><td><code>exu_queue.exc_req</code></td><td>指令自带编码</td><td>EBREAK/ECALL/非法指令等（来自 IDU）</td></tr>
+<tr><td>3</td><td><code>lsu_exc_req</code></td><td>LSU 编码</td><td>地址未对齐 / 访存错误</td></tr>
+<tr><td>4</td><td><code>csr2exu_rw_exc_i</code></td><td>ILLEGAL_INSTR(2)</td><td>CSR 非法访问</td></tr>
+<tr><td>5（最低）</td><td><code>jb_misalign</code></td><td>INSTR_MISALIGN(0)</td><td>跳转地址未对齐 (无RVC)</td></tr>
+</table>
+
+<pre>
+<span class="cm">// scr1_pipe_exu.sv:483-493 -- 异常请求汇总 (多源 OR)</span>
+<span class="kw">assign</span> exu_exc_req  = exu_queue_vd &amp; (exu_queue.exc_req | lsu_exc_req
+                                                        | csr2exu_rw_exc_i
+                            | jb_misalign           <span class="cm">// 无RVC时</span>
+                            | exu2hdu_ibrkpt_hw_o); <span class="cm">// TDU+DBG时</span>
+
+<span class="cm">// scr1_pipe_exu.sv:514-529 -- case(1'b1) 优先级编码器</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)                              <span class="cm">// 从上到下优先级递减</span>
+        exu2hdu_ibrkpt_hw_o: exc_code = SCR1_EXC_CODE_BREAKPOINT;
+        exu_queue.exc_req  : exc_code = exu_queue.exc_code;
+        lsu_exc_req        : exc_code = lsu_exc_code;
+        csr2exu_rw_exc_i   : exc_code = SCR1_EXC_CODE_ILLEGAL_INSTR;
+        jb_misalign        : exc_code = SCR1_EXC_CODE_INSTR_MISALIGN;
+        <span class="kw">default</span>            : exc_code = SCR1_EXC_CODE_ECALL_M;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<div class="box warn">
+  <div class="box-title">Verilog case(1'b1) 的隐式优先级</div>
+  case(1'b1) 在 Verilog 中是 unique case 的等价写法。第一个匹配的项"胜出"，后续即使也匹配也被忽略。这天然构成了一个优先级编码器。LSU 和 IDU 异常同时触发时，case 中先出现的 <code>exu_queue.exc_req</code> 优先于 <code>lsu_exc_req</code>。
+</div>
+
+<h3>异常与中断的跨层优先级</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:287 -- 中断被异常覆盖</span>
+<span class="kw">assign</span> e_irq = exu2csr_take_irq_i &amp; <span class="kw">~exu2csr_take_exc_i</span> &amp; ~hdu2csr_no_commit_i;
+
+<span class="cm">// scr1_pipe_csr.sv:1116 -- SVA 验证 onehot0</span>
+SCR1_SVA_CSR_EVENTS: <span class="kw">assert property</span> ($onehot0({e_irq, e_exc, e_mret}));</pre>
 
 <!-- ============================================================ -->
 <h2 id="new-pc">第十一课: 新 PC 生成逻辑</h2>
@@ -451,14 +832,14 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 <h3>CSR 模块内部的新 PC 计算（Direct 模式）</h3>
 
 <pre>
-<span class="cm">// scr1_pipe_csr.sv:999-1003 -- 新 PC 生成 (Direct 模式)</span>
+<span class="cm">// scr1_pipe_csr.sv:999-1001 -- 新 PC 生成 (Direct 模式)</span>
 <span class="kw">assign</span> csr2exu_new_pc_o = (exu2csr_mret_instr_i &amp; ~exu2csr_take_irq_i)
                  ? csr_mepc                                  <span class="cm">// MRET: 跳到 MEPC</span>
                  : {csr_mtvec_base, <span class="num">6'b0</span>};                   <span class="cm">// 陷阱: 跳到 MTVEC.BASE</span></pre>
 
 <h3>EXU 端的 PC 多路选择（6 优先级）</h3>
 
-<p>CSR 只生成 <code>csr2exu_new_pc_o</code>，最终 PC 由 EXU 模块中的 6 路复用器选出（<code>scr1_pipe_exu.sv:400-411</code>）：</p>
+<p>CSR 只生成 <code>csr2exu_new_pc_o</code>，最终 PC 由 EXU 模块中的 6 路复用器选出（<code>scr1_pipe_exu.sv:707-720</code>）：</p>
 
 <table>
 <tr><th>优先级</th><th>触发条件</th><th>新 PC 来源</th></tr>
@@ -470,10 +851,35 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 <tr><td>6</td><td>默认（跳转/分支）</td><td><code>ialu_addr_res &amp; JUMP_MASK</code></td></tr>
 </table>
 
+<h3>完整 PC 多路复用器 RTL (scr1_pipe_exu.sv:707-735)</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_exu.sv:707-735 -- EXU 端 PC 新值生成</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        init_pc             : exu2ifu_pc_new_o = SCR1_RST_VECTOR;
+        exu2csr_take_exc_o,
+        exu2csr_take_irq_o,
+        exu2csr_mret_instr_o: exu2ifu_pc_new_o = csr2exu_new_pc_i;  <span class="cm">// CSR 提供</span>
+        dbg_run_start_npbuf : exu2ifu_pc_new_o = hdu2exu_dbg_new_pc_i;
+        wfi_run_start_ff    : exu2ifu_pc_new_o = pc_curr_ff;
+        exu_queue.fencei_req: exu2ifu_pc_new_o = inc_pc;
+        <span class="kw">default</span>             : exu2ifu_pc_new_o = ialu_addr_res &amp; SCR1_JUMP_MASK;
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+
+<span class="kw">assign</span> exu2ifu_pc_new_req_o = init_pc
+                            | exu2csr_take_irq_o
+                            | exu2csr_take_exc_o
+                            | (exu2csr_mret_instr_o &amp; ~csr2exu_mstatus_mie_up_i)
+                            | (exu_queue_vd &amp; exu_queue.fencei_req)
+                            | wfi_run_start_ff
+                            | (exu_queue_vd &amp; jb_taken);</pre>
+
 <div class="box warn">
   <div class="box-title">MRET + MSTATUS 更新延迟</div>
-  当 MRET 指令修改 MSTATUS 时，EXU 不会在同一周期发出新 PC 请求：
-  <pre><span class="cm">// scr1_pipe_exu.sv:431</span>
+  当 MRET 指令修改 MSTATUS 时，EXU 不会在同一周期发出新 PC 请求（<code>scr1_pipe_exu.sv:725</code>）：
+  <pre><span class="cm">// scr1_pipe_exu.sv:725</span>
 (exu2csr_mret_instr_o &amp; ~csr2exu_mstatus_mie_up_i)</pre>
   这确保 mstatus 更新需要额外一周期生效后再跳转。
 </div>
@@ -487,7 +893,7 @@ e_irq : csr_mtval_next = <span class="num">'0</span>;</pre>
 <p>64 位计数器，每个时钟周期递增 1。当 <code>SCR1_CLKCTRL_EN</code> 定义时，使用非门控时钟 <code>clk_alw_on</code>，确保核心时钟门控时仍计数。</p>
 
 <pre>
-<span class="cm">// scr1_pipe_csr.sv -- MCYCLE 递增控制链</span>
+<span class="cm">// scr1_pipe_csr.sv:879-883 -- MCYCLE 递增控制链</span>
 csr_mcycle_lo_inc = <span class="num">1'b1</span> &amp; csr_mcounten_cy_ff;                <span class="cm">// 低 8 位每周期递增</span>
 csr_mcycle_hi_inc = csr_mcycle_lo_inc &amp; (&amp;csr_mcycle_lo_ff);    <span class="cm">// 低 8 位全 1 时递增高 56 位</span></pre>
 
@@ -501,13 +907,191 @@ csr_mcycle_hi_inc = csr_mcycle_lo_inc &amp; (&amp;csr_mcycle_lo_ff);    <span cl
 <p>每条无异常退休的指令递增 1，<strong>不是每条执行过的指令</strong>——被刷掉的指令不算。</p>
 
 <pre>
-<span class="cm">// scr1_pipe_csr.sv -- MINSTRET 递增控制链</span>
+<span class="cm">// scr1_pipe_csr.sv:920-925 -- MINSTRET 递增控制链</span>
 csr_minstret_lo_inc = exu2csr_instret_no_exc_i &amp; csr_mcounten_ir_ff;
 csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
 
 <h3>计数器写入支持</h3>
 
 <p>支持低 32 位和高 32 位独立写入（通过 <code>csr_mcycle_upd[1:0]</code> 标志），同时写入时原子更新全部 64 位。</p>
+
+<!-- ============================================================ -->
+<h2 id="ecall-mret-wfi">第十二课补充: ECALL/MRET/WFI 硬件流程</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">信号级: 三个关键特权指令的精确硬件流程</div>
+</div>
+
+<h3>ECALL 指令硬件流程 (scr1_pipe_exu.sv + scr1_pipe_csr.sv)</h3>
+
+<pre>
+<span class="cm">// 步骤1: IDU 解码 ECALL -> 放入 EXU 队列</span>
+exu_queue.exc_req  = <span class="num">1'b1</span>;                    <span class="cm">// 指令带有异常标志</span>
+exu_queue.exc_code = SCR1_EXC_CODE_ECALL_M;   <span class="cm">// = 4'd11</span>
+
+<span class="cm">// 步骤2: EXU 合并异常请求 (scr1_pipe_exu.sv:483)</span>
+exu_exc_req = exu_queue_vd &amp; (exu_queue.exc_req | ...) = <span class="num">1</span>;
+
+<span class="cm">// 步骤3: EXU 输出给 CSR (scr1_pipe_exu.sv:964-970)</span>
+exu2csr_take_exc_o = exu_exc_req;             <span class="cm">// = 1</span>
+exu2csr_exc_code_o = SCR1_EXC_CODE_ECALL_M;   <span class="cm">// = 4'd11</span>
+exu2csr_trap_val_o = <span class="num">'0</span>;                       <span class="cm">// ECALL 无附加值</span>
+
+<span class="cm">// 步骤4: CSR 检测 e_exc 事件 (scr1_pipe_csr.sv:282)</span>
+e_exc = exu2csr_take_exc_i = <span class="num">1</span>;
+
+<span class="cm">// 步骤5: CSR 保存上下文 + 更新 MSTATUS + 生成新 PC</span>
+csr_mepc_next    = exu2csr_pc_curr_i;         <span class="cm">// 保存当前 PC (可重试 ECALL)</span>
+csr_mcause_i_next  = <span class="num">1'b0</span>;                    <span class="cm">// I=0 异常</span>
+csr_mcause_ec_next = <span class="num">4'd11</span>;                   <span class="cm">// ECALL_M</span>
+csr_mtval_next   = <span class="num">'0</span>;                        <span class="cm">// ECALL 无附加值</span>
+csr_mstatus_mie_next  = <span class="num">1'b0</span>;                <span class="cm">// 关全局中断</span>
+csr_mstatus_mpie_next = csr_mstatus_mie_ff;  <span class="cm">// 保存旧 MIE</span>
+csr2exu_new_pc_o = {csr_mtvec_base, <span class="num">6'd0</span>};     <span class="cm">// 跳陷阱入口</span></pre>
+
+<h3>MRET 指令硬件流程 (scr1_pipe_exu.sv + scr1_pipe_csr.sv)</h3>
+
+<pre>
+<span class="cm">// 步骤1: EXU 检测 MRET 指令 (scr1_pipe_exu.sv:985-993)</span>
+exu2csr_mret_instr_o  = exu_queue_vd &amp; exu_queue.mret_req;
+exu2csr_mret_update_o = exu2csr_mret_instr_o &amp; csr_access_init;
+
+<span class="cm">// 步骤2: CSR 的 e_mret 事件 (scr1_pipe_csr.sv:292)</span>
+e_mret = exu2csr_mret_update_i = <span class="num">1</span>;
+
+<span class="cm">// 步骤3: CSR 恢复 MSTATUS (scr1_pipe_csr.sv:633-635)</span>
+csr_mstatus_mie_next  = csr_mstatus_mpie_ff;  <span class="cm">// 恢复旧 MIE</span>
+csr_mstatus_mpie_next = <span class="num">1'b1</span>;                 <span class="cm">// MPIE 复位</span>
+
+<span class="cm">// 步骤4: CSR 生成新 PC -> MEPC</span>
+csr2exu_new_pc_o = csr_mepc;                  <span class="cm">// 跳回 MEPC 地址</span>
+
+<span class="cm">// 步骤5: EXU mstatus 更新周期阻塞 (scr1_pipe_exu.sv:804)</span>
+<span class="cm">// MSTATUS 更新后, EXU ready=0, 阻止下条指令提交</span>
+csr2exu_mstatus_mie_up_i : exu_rdy = <span class="num">1'b0</span>;
+
+<span class="cm">// 步骤6: 下个周期 PC 跳转 (scr1_pipe_exu.sv:725)</span>
+exu2csr_mret_instr_o &amp; ~csr2exu_mstatus_mie_up_i
+    -> exu2ifu_pc_new_req_o = <span class="num">1</span>; exu2ifu_pc_new_o = csr_mepc;</pre>
+
+<h3>WFI 指令硬件流程 (scr1_pipe_exu.sv:577-649)</h3>
+
+<pre>
+<span class="cm">// WFI 暂停条件 (scr1_pipe_exu.sv:591-596)</span>
+wfi_halt_cond = ~csr2exu_ip_ie_i                              <span class="cm">// 无挂起使能中断</span>
+              &amp; ((exu_queue_vd &amp; exu_queue.wfi_req)           <span class="cm">// WFI 指令</span>
+                  | wfi_run_start_ff);                          <span class="cm">// 或刚从 WFI 醒来但无中断</span>
+wfi_halt_req  = ~wfi_halted_ff &amp; wfi_halt_cond;
+
+<span class="cm">// WFI 唤醒条件 (scr1_pipe_exu.sv:601-605)</span>
+wfi_run_req   = wfi_halted_ff &amp; csr2exu_ip_ie_i;              <span class="cm">// 挂起使能中断来了</span>
+
+<span class="cm">// WFI 唤醒首周期: 不取中断, 只唤醒流水线 (scr1_pipe_exu.sv:622)</span>
+wfi_run_start_next = wfi_halted_ff &amp; csr2exu_ip_ie_i &amp; ~exu2csr_take_irq_o;
+
+<span class="cm">// PC 处理: 从 WFI 唤醒时, PC 保持在 WFI 指令的地址 (scr1_pipe_exu.sv:716)</span>
+wfi_run_start_ff : exu2ifu_pc_new_o = pc_curr_ff;             <span class="cm">// 回到 WFI 指令 PC</span>
+
+<span class="cm">// WFI 暂停/唤醒 翻转寄存器 (scr1_pipe_exu.sv:627-641)</span>
+wfi_halted_ff  -> halt_req=1 时翻为 1, run_req=1 时翻为 0</pre>
+
+<div class="box tip">
+  <div class="box-title">WFI 的关键时序</div>
+  WFI 暂停流程: (1) WFI 指令进入 EXU &rarr; (2) 无挂起中断 &rarr; (3) wfi_halt_req=1 &rarr; (4) wfi_halted_ff=1, exu2pipe_wfi_run2halt_o=1 &rarr; (5) 流水线停止。<br>
+  唤醒流程: (1) 中断信号到达 csr2exu_ip_ie_i &rarr; (2) wfi_run_req=1 &rarr; (3) wfi_halted_ff=0 &rarr; (4) wfi_run_start_ff=1 一周期 &rarr; (5) PC=pc_curr_ff (WFI地址) &rarr; (6) 执行 WFI 指令 &rarr; (7) 下一条指令正常执行 (或立即被中断夺取)。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ipic-priority-tree">第十二课再补充: IPIC search_one_16 优先级树</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">16 路中断的硬件优先级编码器 (scr1_ipic.sv)</div>
+</div>
+
+<p>SCR1 的 IPIC 支持最多 16 路可编程中断。当多路中断同时挂起且使能时，需要从中选出优先级最高的那一路。这个选优逻辑通过 <code>search_one_16</code> 函数实现（<code>scr1_ipic.sv:100-143</code>）。</p>
+
+<h3>search_one_16 的 4 级树形结构</h3>
+
+<p>该函数分 4 级对 16 个输入位进行查找：</p>
+
+<pre>
+<span class="cm">// scr1_ipic.sv:113-142 -- search_one_16 优先级树</span>
+<span class="cm">// 输入: din[15:0] -- 16 位的中断请求向量 (irq_req_v = IPR &amp; IER)</span>
+<span class="cm">// 输出: result.vd -- 是否有有效请求; result.idx -- 优先级最高的中断号</span>
+
+<span class="cm">// Stage 1: 16 -> 8 (8 个 scr1_search_one_2)</span>
+<span class="kw">for</span> (int unsigned i=<span class="num">0</span>; i&lt;<span class="num">8</span>; ++i) <span class="kw">begin</span>
+    tmp = scr1_search_one_2(din[(i+<span class="num">1</span>)*<span class="num">2</span>-<span class="num">1</span>-:<span class="num">2</span>]);  <span class="cm">// 相邻 2 位一组</span>
+    stage1_vd[i]  = tmp.vd;                    <span class="cm">// 每组是否有请求</span>
+    stage1_idx[i] = tmp.idx;                   <span class="cm">// 每组中位0或位1被选中</span>
+<span class="kw">end</span>
+
+<span class="cm">// Stage 2: 8 -> 4</span>
+<span class="kw">for</span> (int unsigned i=<span class="num">0</span>; i&lt;<span class="num">4</span>; ++i) <span class="kw">begin</span>
+    tmp = scr1_search_one_2(stage1_vd[(i+<span class="num">1</span>)*<span class="num">2</span>-<span class="num">1</span>-:<span class="num">2</span>]);
+    stage2_idx[i] = (~tmp.idx) ? {tmp.idx, stage1_idx[<span class="num">2</span>*i]}
+                               : {tmp.idx, stage1_idx[<span class="num">2</span>*i+<span class="num">1</span>]};
+<span class="kw">end</span>
+
+<span class="cm">// Stage 3: 4 -> 2</span>
+<span class="kw">for</span> (int unsigned i=<span class="num">0</span>; i&lt;<span class="num">2</span>; ++i) <span class="kw">begin</span>
+    tmp = scr1_search_one_2(stage2_vd[(i+<span class="num">1</span>)*<span class="num">2</span>-<span class="num">1</span>-:<span class="num">2</span>]);
+    stage3_idx[i] = (~tmp.idx) ? {tmp.idx, stage2_idx[<span class="num">2</span>*i]}
+                               : {tmp.idx, stage2_idx[<span class="num">2</span>*i+<span class="num">1</span>]};
+<span class="kw">end</span>
+
+<span class="cm">// Stage 4: 2 -> 1 (最终选出优先级最高者)</span>
+result.vd = |stage3_vd;
+result.idx = (stage3_vd[<span class="num">0</span>]) ? {<span class="num">1'b0</span>, stage3_idx[<span class="num">0</span>]} : {<span class="num">1'b1</span>, stage3_idx[<span class="num">1</span>]};</pre>
+
+<h3>search_one_2 基本单元</h3>
+
+<pre>
+<span class="cm">// scr1_ipic.sv:89-98 -- 2 位查找基本单元</span>
+<span class="kw">function automatic</span> type_scr1_search_one_2_s scr1_search_one_2(
+    <span class="kw">input</span> logic [<span class="num">1</span>:<span class="num">0</span>] din
+);
+    tmp.vd  = |din;               <span class="cm">// 两位中任意一位为1 -> vd=1</span>
+    tmp.idx = ~din[<span class="num">0</span>];             <span class="cm">// din[0]=1 -> idx=0; din[0]=0,din[1]=1 -> idx=1</span>
+    <span class="kw">return</span> tmp;
+<span class="kw">endfunction</span></pre>
+
+<div class="box tip">
+  <div class="box-title">idx 的物理含义: 越低编号优先级越高</div>
+  search_one_2 中 <code>tmp.idx = ~din[0]</code>：如果 din[0]=1，idx=0（选低位）；如果 din[0]=0 但 din[1]=1，idx=1。这意味着中断线 0 优先级高于线 1, 线 2 高于线 3，以此类推 —— <strong>中断号越小，优先级越高</strong>。
+</div>
+
+<h3>优先级比较在 IPIC 中的应用 (scr1_ipic.sv:587-601)</h3>
+
+<pre>
+<span class="cm">// scr1_ipic.sv:587-601 -- 中断请求优先级链</span>
+<span class="kw">assign</span> irq_req_v = ipic_ipr_ff &amp; ipic_ier_ff;          <span class="cm">// 挂起 AND 使能的交集</span>
+
+<span class="kw">assign</span> irr_priority        = scr1_search_one_16(irq_req_v);  <span class="cm">// 从挂起使能中选出最高优先级</span>
+<span class="kw">assign</span> irq_req_vd          = irr_priority.vd;                <span class="cm">// 有有效请求?</span>
+<span class="kw">assign</span> irq_req_idx         = irr_priority.idx;               <span class="cm">// 最高优先级中断号</span>
+
+<span class="kw">assign</span> isvr_priority_eoi   = scr1_search_one_16(ipic_isvr_eoi);  <span class="cm">// EOI 时查找仍在服务中的中断</span>
+<span class="kw">assign</span> irq_eoi_req_vd      = isvr_priority_eoi.vd;
+<span class="kw">assign</span> irq_eoi_req_idx     = isvr_priority_eoi.idx;
+
+<span class="cm">// 抢占判断: 新请求的中断号 < 当前服务的中断号 -> 高优先级抢占</span>
+<span class="kw">assign</span> irq_hi_prior_pnd     = irq_req_idx &lt; irq_serv_idx;
+
+<span class="cm">// 最终中断请求: 有挂起请求 AND (无在服务中断 OR 新请求优先级更高)</span>
+<span class="kw">assign</span> ipic2csr_irq_m_req_o = irq_req_vd &amp; (~irq_serv_vd | irq_hi_prior_pnd);
+
+<span class="kw">assign</span> irq_start_vd         = ipic2csr_irq_m_req_o &amp; ipic_soi_req;</pre>
+
+<div class="box warn">
+  <div class="box-title">search_one_16 vs MCAUSE 优先级的不同</div>
+  注意有两个独立的优先级仲裁：
+  <ul>
+    <li><strong>search_one_16</strong> (IPIC 内部): 16 路中断中选优先级最高的中断号 (中断线 0 最高)</li>
+    <li><strong>MCAUSE 优先级仲裁</strong> (CSR 层): 三种中断类型中选一种存入 MCAUSE (外部 &gt; 软件 &gt; 定时器)</li>
+  </ul>
+  这两个不矛盾：search_one_16 从 16 路中选出编号最小的挂起中断；MCAUSE 层则根据中断类型（外部/软件/定时器）决定优先级。外部中断通过 IPIC 可选 16 路，而软件和定时器中断是 CSR 直接处理的。
+</div>
 
 <!-- ============================================================ -->
 <h2 id="non-std">第十三课: 非标准 CSR</h2>
@@ -574,13 +1158,14 @@ csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
 
 <fieldset>
   <legend>练习 1: 追踪一条 ECALL 指令</legend>
-  <p>假设 CPU 执行 <code>ecall</code> 指令时 PC=0x200，MTVEC=0x1C0（Direct 模式），MSTATUS.MIE=1。</p>
+  <p>假设 CPU 执行 <code>ecall</code> 指令时 PC=0x200，MTVEC=0x10100（Direct 模式），MSTATUS.MIE=1。</p>
   <ol>
     <li>进入陷阱后，MEPC 的值是多少？</li>
     <li>MCAUSE 的 I 位和 Exception Code 分别是什么？</li>
     <li>MSTATUS.MIE 和 MSTATUS.MPIE 分别变成什么？</li>
     <li>新的 PC 跳转到哪里？</li>
     <li>陷阱处理程序执行 <code>mret</code> 后，PC 回到哪里？MSTATUS.MIE 恢复为多少？</li>
+    <li>(新增) 如果 ECALL 的同时 soc2csr_irq_ext_i 变为 1，CPU 如何处理？（参考 <code>scr1_pipe_csr.sv:287</code>）</li>
   </ol>
 </fieldset>
 
@@ -607,6 +1192,10 @@ csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
     <li>第 305-312 行：中断优先级仲裁</li>
     <li>第 629-639 行：MSTATUS 事件更新</li>
     <li>第 778-779 行：MEPC 保存策略</li>
+    <li>(新增) 第 806-824 行：MCAUSE 异常编码设置</li>
+    <li>(新增) 第 840-846 行：MTVAL 更新逻辑</li>
+    <li>(新增) 第 998-1020 行：Vectored 模式新 PC 生成</li>
+    <li>(新增) 第 1116-1119 行：SVA onehot0 事件断言</li>
   </ol>
 </fieldset>
 
@@ -618,7 +1207,203 @@ csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
     <li>写入的值是什么</li>
     <li>新 PC 在哪个步骤被生成</li>
     <li>MRET 返回时哪些寄存器被恢复</li>
+    <li>(新增) 标出每个步骤的源码文件及行号</li>
   </ul>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: IPIC 优先级树分析</legend>
+  <p>假设 IPIC 的 16 路线中，线 3、线 7、线 12 均挂起且使能。</p>
+  <ol>
+    <li>search_one_16 会返回哪个 idx？为什么？</li>
+    <li>画出 Stage 1 到 Stage 4 的数据流（参考 <code>scr1_ipic.sv:113-142</code>）</li>
+    <li>如果此时 CISV=0x03（线 3 正在服务），ipic2csr_irq_m_req_o 的值是多少？（参考 <code>scr1_ipic.sv:587-601</code>）</li>
+  </ol>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="exercise-asm">第十五课补充: 汇编中断处理程序练习</h2>
+<!-- ============================================================ -->
+<div class="new">
+  <div class="box-title">实战: 编写 M-mode 陷阱处理程序</div>
+</div>
+
+<fieldset>
+  <legend>练习 7: 编写 Direct 模式的基本陷阱处理程序</legend>
+  <p>假设 MTVEC=0x100（Direct 模式），编写一段汇编代码实现以下功能：</p>
+  <ol>
+    <li>进入陷阱后保存 x1(ra), x5-x7, x10-x17 到栈上</li>
+    <li>使用 mscratch 保存栈指针</li>
+    <li>读取 mcause 判断是异常还是中断</li>
+    <li>如果是定时器中断（MIP.MTIP），增加一个全局计数器的值</li>
+    <li>如果是 ECALL，什么都不做</li>
+    <li>恢复寄存器并通过 MRET 返回</li>
+  </ol>
+  <pre><span class="cm"># 陷阱处理程序模板 (.section .text.trap)</span>
+trap_handler:
+    <span class="cm"># 交换 sp 和 mscratch (保存用户栈指针，切换到陷阱栈)</span>
+    csrrw   sp, mscratch, sp           <span class="cm"># sp=陷阱栈顶, mscratch=旧sp</span>
+
+    <span class="cm"># 保存调用者保存寄存器</span>
+    <span class="kw">addi</span>    sp, sp, -<span class="num">64</span>
+    sw      ra, <span class="num">0</span>(sp)
+    sw      t0, <span class="num">4</span>(sp)
+    sw      t1, <span class="num">8</span>(sp)
+    sw      t2, <span class="num">12</span>(sp)
+    sw      a0, <span class="num">16</span>(sp)
+    sw      a1, <span class="num">20</span>(sp)
+    <span class="cm"># ... 继续保存 a2-a7</span>
+
+    <span class="cm"># 读取 mcause</span>
+    csrr    t0, mcause
+    <span class="kw">srli</span>    t1, t0, <span class="num">31</span>                   <span class="cm"># t1 = I 位 (bit31)</span>
+    <span class="kw">andi</span>    t0, t0, <span class="num">0x7FF</span>               <span class="cm"># t0 = exception code</span>
+
+    <span class="kw">beqz</span>    t1, handle_exception        <span class="cm"># I=0: 异常</span>
+
+<span class="cm"># 中断处理</span>
+handle_interrupt:
+    <span class="kw">li</span>      t1, <span class="num">7</span>                        <span class="cm"># MTIP 编码=7</span>
+    <span class="kw">bne</span>     t0, t1, check_soft_irq      <span class="cm"># 不是定时器中断则继续判断</span>
+    <span class="cm"># 定时器中断处理:</span>
+    <span class="kw">la</span>      t1, timer_counter
+    lw      t2, <span class="num">0</span>(t1)
+    <span class="kw">addi</span>    t2, t2, <span class="num">1</span>
+    sw      t2, <span class="num">0</span>(t1)
+    j       trap_exit
+
+check_soft_irq:
+    <span class="kw">li</span>      t1, <span class="num">3</span>                        <span class="cm"># MSIP 编码=3</span>
+    <span class="kw">bne</span>     t0, t1, check_ext_irq
+    <span class="cm"># 软件中断处理: 清除 MSIP (向特定地址写入 0)</span>
+    <span class="kw">li</span>      t1, <span class="num">0x02000000</span>               <span class="cm"># CLINT MSIP 地址 (示例)</span>
+    sw      x0, <span class="num">0</span>(t1)
+    j       trap_exit
+
+check_ext_irq:
+    <span class="cm"># ... 外部中断处理</span>
+    j       trap_exit
+
+handle_exception:
+    <span class="kw">li</span>      t1, <span class="num">11</span>                       <span class="cm"># ECALL_M 编码=11</span>
+    <span class="kw">bne</span>     t0, t1, check_other_exc
+    <span class="cm"># ECALL 处理: 什么都不做 (或执行系统调用)</span>
+    j       trap_exit
+
+check_other_exc:
+    <span class="cm"># 非法指令等异常处理</span>
+    <span class="cm"># 可读取 mtval 获取非法指令编码</span>
+    j       trap_exit
+
+trap_exit:
+    <span class="cm"># 恢复寄存器</span>
+    lw      ra, <span class="num">0</span>(sp)
+    lw      t0, <span class="num">4</span>(sp)
+    lw      t1, <span class="num">8</span>(sp)
+    lw      t2, <span class="num">12</span>(sp)
+    lw      a0, <span class="num">16</span>(sp)
+    lw      a1, <span class="num">20</span>(sp)
+    <span class="kw">addi</span>    sp, sp, <span class="num">64</span>
+
+    <span class="cm"># 恢复 sp 并返回</span>
+    csrrw   sp, mscratch, sp           <span class="cm"># 恢复用户栈指针</span>
+    mret                                <span class="cm"># pc=mepc, mstatus.mie=mstatus.mpie</span></pre>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: 嵌套中断处理</legend>
+  <p>在执行陷阱处理程序期间，如果又来一个更高优先级的中断，需要支持嵌套。编写代码实现：</p>
+  <ol>
+    <li>进入陷阱处理程序后，<strong>重新打开 MSTATUS.MIE</strong>（允许嵌套）</li>
+    <li>在栈上按层次保存 MEPC 和 MSTATUS（每嵌套一层保存一对）</li>
+    <li>退出最内层陷阱时恢复对应的 MEPC 和 MSTATUS</li>
+  </ol>
+  <pre><span class="cm"># 嵌套中断处理程序模板</span>
+nested_trap_handler:
+    csrrw   sp, mscratch, sp
+
+    <span class="kw">addi</span>    sp, sp, -<span class="num">80</span>
+    sw      ra, <span class="num">0</span>(sp)
+    <span class="cm"># 保存 mepc (当前这是嵌套前一层保存的地址)</span>
+    csrr    t0, mepc
+    sw      t0, <span class="num">4</span>(sp)
+    <span class="cm"># 保存 mstatus</span>
+    csrr    t0, mstatus
+    sw      t0, <span class="num">8</span>(sp)
+    <span class="cm"># 保存其余寄存器...</span>
+
+    <span class="cm"># 关键: 重新打开 MIE 以允许更高优先级中断嵌套</span>
+    <span class="kw">li</span>      t0, <span class="num">0x8</span>                       <span class="cm"># MIE bit = 3</span>
+    csrs    mstatus, t0                 <span class="cm"># 设置 MIE=1</span>
+
+    <span class="cm"># 处理中断...</span>
+
+    <span class="cm"># 关中断 (准备恢复)</span>
+    <span class="kw">li</span>      t0, <span class="num">0x8</span>
+    csrc    mstatus, t0                 <span class="cm"># 清除 MIE=0</span>
+
+    <span class="cm"># 恢复寄存器</span>
+    lw      t0, <span class="num">8</span>(sp)
+    csrw    mstatus, t0
+    lw      t0, <span class="num">4</span>(sp)
+    csrw    mepc, t0
+    lw      ra, <span class="num">0</span>(sp)
+    <span class="kw">addi</span>    sp, sp, <span class="num">80</span>
+
+    csrrw   sp, mscratch, sp
+    mret</pre>
+
+  <div class="box warn">
+    <div class="box-title">SCR1 嵌套中断的注意事项</div>
+    重新打开 MIE 意味着处理程序运行期间可被更高优先级中断抢占。SCR1 中外部中断 &gt; 软件中断 &gt; 定时器中断，所以定时器处理程序中应允许被外部或软件中断抢占。但注意 IPIC 层还有 16 路中断编号优先级（编号越小越高），这与 MCAUSE 层的中断类型优先级（外部&gt;软件&gt;定时器）应配合使用。
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: Vectored 模式的多入口陷阱表</legend>
+  <p>假设 MTVEC=0x10000 且 MODE=1（Vectored），在汇编中初始化各中断入口的跳转指令：</p>
+  <ol>
+    <li>异常入口 (BASE+0x00): 放置跳转到 exception_handler 的指令</li>
+    <li>软件中断入口 (BASE+0x0C): 放置跳转到 sw_irq_handler 的指令</li>
+    <li>定时器中断入口 (BASE+0x1C): 放置跳转到 timer_irq_handler 的指令</li>
+    <li>外部中断入口 (BASE+0x2C): 放置跳转到 ext_irq_handler 的指令</li>
+    <li>注意: 每个入口只有 4 字节空间 (一个 32 位指令)，需要合理使用 JAL 或 J 指令跳转到实际处理程序</li>
+  </ol>
+  <pre><span class="cm"># Vectored 模式陷阱向量表 (BASE=0x10000)</span>
+.section .text.trap_table
+<span class="kw">.align</span> <span class="num">6</span>                              <span class="cm"># 64 字节对齐 (BASE[5:0]=0)</span>
+trap_table_base:
+    <span class="cm"># BASE+0x00: 异常入口</span>
+    j       exception_handler
+
+    <span class="cm"># BASE+0x04...0x08: 未使用/保留</span>
+    <span class="cm"># (此处填充 nop 或非法指令)</span>
+
+    <span class="cm"># BASE+0x0C: 软件中断入口</span>
+    j       sw_irq_handler
+
+    <span class="cm"># BASE+0x1C: 定时器中断入口</span>
+    j       timer_irq_handler
+
+    <span class="cm"># BASE+0x2C: 外部中断入口</span>
+    j       ext_irq_handler</pre>
+  <div class="box tip">
+    <div class="box-title">RISC-V JAL 指令的跳转范围</div>
+    JAL 指令有 20 位有符号偏移（&plusmn;1MB），如果处理程序代码超过 1MB 范围，需要用 AUIPC+JALR 两指令组合替代单条 J。但在 MCU 场景下通常处理程序代码量小，单条 J 够用。
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>练习 10: 综合--从异常触发到 Handler 返回的全流程跟踪</legend>
+  <p>假设 SCR1 配置为 RVC=OFF，MTVEC_MODE_EN=OFF（Direct），编写一段测试代码：</p>
+  <ol>
+    <li>初始化: 设置 MTVEC=0x200（Direct），MSTATUS.MIE=1，MIE.MTIE=1</li>
+    <li>在地址 0x700 执行 ECALL 指令</li>
+    <li>在 trap_handler 中读取所有 CSR 并存入内存数组</li>
+    <li>在 trap_handler 中执行 MRET 返回</li>
+    <li>手动跟踪每一步中下列信号的值：<code>e_exc, csr_mepc_next, csr_mcause_i_next, csr_mcause_ec_next, csr_mstatus_mie_next, csr_mstatus_mpie_next, csr2exu_new_pc_o</code></li>
+    <li>用文字时序图（参考上面的格式）画出完整的 4 周期时序</li>
+  </ol>
 </fieldset>
 
 <!-- ============================================================ -->
@@ -636,6 +1421,11 @@ csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
     <li>MTVEC 的 Direct 和 Vectored 模式对新 PC 的影响是什么？</li>
     <li>MCYCLE 和 MINSTRET 的递增条件有什么不同？</li>
     <li>HDU 调试暂停如何阻塞所有事件？（<code>hdu2csr_no_commit_i</code>）</li>
+    <li>(新增) 同步异常和异步中断在 SCR1 RTL 中分别由哪些信号触发？</li>
+    <li>(新增) SCR1 的 EXU 异常优先级编码器（case(1'b1)）中，哪些异常源优先级最高？</li>
+    <li>(新增) IPIC 的 search_one_16 分 4 级树，每一级有多少个 search_one_2 单元？</li>
+    <li>(新增) WFI 唤醒后 PC 如何设置？为什么先回到 WFI 地址再被中断夺取？</li>
+    <li>(新增) MRET+中断同时发生时，SCR1 如何保证 MEPC 不被覆盖？（参考 <code>e_irq_nmret</code>）</li>
   </ol>
 </div>
 
@@ -644,7 +1434,7 @@ csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
   第 5 周将进入第二阶段——SCR1 架构全景理解，包括三级配置（MIN/BASE/MAX）的差异、模块层次树、以及一条指令的完整流水线旅程。
 </div>
 
-<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | RISC-V 特权架构与 CSR 实战教程 | 第 4 周</p>
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | RISC-V 特权架构与 CSR 实战教程 | 第 4 周 (增强版)</p>
 
 </body>
 </html>

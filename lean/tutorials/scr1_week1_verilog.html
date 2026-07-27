@@ -22,6 +22,7 @@
   pre .cm { color: #6a9955; }
   pre .str { color: #ce9178; }
   pre .fu { color: #dcdcaa; }
+  pre .pp { color: #c586c0; }
   table { width: 100%; border-collapse: collapse; margin: 16px 0; }
   th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); vertical-align: top; }
   th { background: var(--blue-light); font-weight: 600; }
@@ -31,6 +32,7 @@
   .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
   .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
   .src { background: #fef3e0; border-color: var(--orange); } .src .box-title { color: #e37400; }
+  .ex { background: #e8d4f8; border-color: #8e44ad; } .ex .box-title { color: #6c3483; }
   .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
   .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
   .nav a:hover { color: #1a365d; }
@@ -54,15 +56,15 @@
 <nav class="nav">
   <div class="nav-title">课程导航</div>
   <a href="#L1">第1课: module 模块结构</a>
-  <a href="#L2">第2课: 数据类型 logic/enum/struct</a>
+  <a href="#L2">第2课: 数据类型 logic/enum/struct/array</a>
   <a href="#L3">第3课: 组合逻辑 assign/always_comb</a>
-  <a href="#L4">第4课: 时序逻辑 always_ff</a>
+  <a href="#L4">第4课: 时序逻辑 always_ff 与赋值对比</a>
   <a href="#L5">第5课: 有限状态机 FSM</a>
   <a href="#L6">第6课: 条件编译 ifdef/define</a>
   <a href="#L7">第7课: generate 代码生成</a>
   <a href="#L8">第8课: 信号命名规范</a>
   <a href="#L9">第9课: 高级语法一览</a>
-  <a href="#L10">第10课: 动手练习</a>
+  <a href="#L10">第10课: 动手练习 (新增 9 题)</a>
   <a href="#summary">总结: 语法速查表</a>
 </nav>
 
@@ -73,7 +75,7 @@
 <p>在 SystemVerilog 中，一切硬件设计都封装在 <code>module</code> 里。可以把 module 理解为一个"芯片"——它定义了这个硬件的输入输出接口（<code>input/output</code>）和内部实现逻辑。</p>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: scr1_pipe_lsu.sv (加载存储单元)</div>
+  <div class="box-title">SCR1 真实例子: scr1_pipe_lsu.sv (加载存储单元, 351行)</div>
 <pre>
 <span class="cm">// 模块声明: 名称 + 端口列表</span>
 <span class="kw">module</span> <span class="fu">scr1_pipe_lsu</span> (
@@ -81,7 +83,7 @@
     <span class="kw">input</span>   <span class="dt">logic</span>                    rst_n,           <span class="cm">// 复位 (低有效)</span>
     <span class="kw">input</span>   <span class="dt">logic</span>                    clk,             <span class="cm">// 时钟</span>
 
-    <span class="cm">// ---- EXU <-> LSU 接口 ----</span>
+    <span class="cm">// ---- EXU &lt;-&gt; LSU 接口 ----</span>
     <span class="kw">input</span>   <span class="dt">logic</span>                    exu2lsu_req_i,   <span class="cm">// 访存请求</span>
     <span class="kw">input</span>   type_scr1_lsu_cmd_sel_e  exu2lsu_cmd_i,   <span class="cm">// 访存命令 (枚举类型)</span>
     <span class="kw">output</span>  <span class="dt">logic</span>                    lsu2exu_rdy_o,   <span class="cm">// LSU 就绪</span>
@@ -97,6 +99,7 @@
 
 <span class="kw">endmodule</span> : scr1_pipe_lsu
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);margin-top:6px;">源文件: src/core/pipeline/scr1_pipe_lsu.sv:30-61 (端口声明) / 114 (assign 逻辑)</p>
 </div>
 
 <div class="box">
@@ -113,37 +116,120 @@
 
 <p>SystemVerilog 用统一的 <code>logic</code> 类型替代了 <code>wire</code>/<code>reg</code> 的双轨制，编译器会自动判断是组合还是时序。</p>
 
+<div class="box tip">
+  <div class="box-title">wire vs logic vs reg 对比 (以 SCR1 实际用法为准)</div>
+  <table>
+    <tr><th>类型</th><th>含义</th><th>能否被过程赋值 (always_ff/always_comb)</th><th>能否被连续赋值 (assign)</th><th>SCR1 中的实际用法</th></tr>
+    <tr>
+      <td><code>wire</code></td>
+      <td>传统 Verilog 网线类型</td>
+      <td>不能</td>
+      <td>能</td>
+      <td>SCR1 <strong>几乎不用</strong>，仅在 <code>scr1_pipe_hdu.sv</code> 的个别 <code>generate</code> 块中用于参数化连线</td>
+    </tr>
+    <tr>
+      <td><code>logic</code></td>
+      <td>SV 统一类型, 最常用</td>
+      <td>能</td>
+      <td>能</td>
+      <td><strong>SCR1 全部模块的默认选择</strong>: <code>logic rst_n</code>(lsu:32)、<code>logic [31:0] lsu2exu_ldata_o</code>(lsu:41)、所有内部信号</td>
+    </tr>
+    <tr>
+      <td><code>reg</code></td>
+      <td>传统 Verilog 寄存器类型</td>
+      <td>能</td>
+      <td>不能</td>
+      <td>SCR1 <strong>完全不用</strong>，全部被 <code>logic</code> 替代</td>
+    </tr>
+  </table>
+  <p><strong>关键结论</strong>: SCR1 采用 <code>logic</code> 一统天下，只需区分方向——<code>input logic</code> 和 <code>output logic</code> 是端口的主宰。即使内部信号需要被多个驱动源赋值，SCR1 也通过结构化设计避免了信号冲突，而非依赖 <code>wire</code> 的多驱动特性。</p>
+</div>
+
 <!-- ============================================================ -->
-<h2 id="L2">第2课: 数据类型 —— logic / enum / struct / array</h2>
+<h2 id="L2">第2课: 数据类型 —— logic / enum / struct / array / parameter &amp; localparam</h2>
 <!-- ============================================================ -->
 
 <h3>2.1 基础类型: logic 和位宽声明</h3>
 
 <table>
-  <tr><th>声明</th><th>含义</th></tr>
-  <tr><td><code>logic a;</code></td><td>1 位信号 (0 或 1)</td></tr>
-  <tr><td><code>logic [31:0] b;</code></td><td>32 位信号, bit31 是最高位</td></tr>
-  <tr><td><code>logic [7:0] c [0:15];</code></td><td>16 个 8 位元素的数组</td></tr>
-  <tr><td><code>logic ['SCR1_XLEN-1:0] d;</code></td><td>参数化位宽 (SCR1_XLEN=32)</td></tr>
+  <tr><th>声明</th><th>含义</th><th>SCR1 位置</th></tr>
+  <tr><td><code>logic a;</code></td><td>1 位信号 (0 或 1)</td><td>lsu.sv:95 <code>dmem_resp_ok</code></td></tr>
+  <tr><td><code>logic [31:0] b;</code></td><td>32 位信号, bit31 是最高位</td><td>lsu.sv:41 <code>lsu2exu_ldata_o</code></td></tr>
+  <tr><td><code>logic [7:0] c [0:15];</code></td><td>unpacked array: 16 个独立的 8 位元素</td><td>见下 2.5 节 MPRF 内存数组</td></tr>
+  <tr><td><code>logic ['SCR1_XLEN-1:0] d;</code></td><td>参数化位宽 (SCR1_XLEN=32)</td><td>lsu.sv:38-39</td></tr>
 </table>
+
+<h3>2.2 packed array (打包数组) vs unpacked array (非打包数组) —— SCR1 MPRF 中的关键区别</h3>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: MPRF 寄存器的两种数组形态 (scr1_pipe_mprf.sv:52-64)</div>
+<pre>
+<span class="cm">// ====== packed array (打包数组): 连续位存储 ======</span>
+<span class="dt">logic</span> [`SCR1_XLEN-1:0]    mprf_int   [1:`SCR1_MPRF_SIZE-1];
+<span class="cm">// 类型 = logic [31:0] mprf_int [1:31] —— 即 31 个 32 位寄存器</span>
+<span class="cm">// 每个元素是 32 位宽，整体是一个存储器阵列</span>
+
+<span class="cm">// mprf_int 的每次索引访问返回 32 位数据:</span>
+<span class="kw">assign</span> mprf2exu_rs1_data_o = mprf_int[exu2mprf_rs1_addr_i];  <span class="cm">// 读操作 (133行)</span>
+<span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+    mprf_int[exu2mprf_rd_addr_i] &lt;= exu2mprf_rd_data_i;        <span class="cm">// 写操作 (142行)</span>
+<span class="kw">end</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_mprf.sv:52-64, 133-142</p>
+</div>
+
+<p>packed/unpacked 的核心区别:</p>
+<table>
+  <tr><th>特性</th><th><code>logic [31:0] a;</code> (packed)</th><th><code>logic a [0:31];</code> (unpacked)</th></tr>
+  <tr><td>存储</td><td>连续 32 位, 可整体按位操作</td><td>32 个独立位, 不可整体按位操作</td></tr>
+  <tr><td>位选择</td><td><code>a[5:3]</code> 取出 3 位</td><td><code>a[5]</code> 只能取 1 位, 不能取多位</td></tr>
+  <tr><td>SCR1 用法</td><td>所有总线、寄存器的默认方式</td><td>几乎不用; MPRF 的 RAM 阵列是 <code>logic [31:0] arr[1:31]</code>——元素是 packed, 整体是 unpacked</td></tr>
+  <tr><td>综合</td><td>综合为连续位向量</td><td>综合为独立寄存器/存储器</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">MPRF RAM 双副本设计: 写优先的经典实现</div>
+  <p>MPRF 在 RAM 模式下使用 <strong>两份 RAM 副本</strong> (<code>mprf_int</code> 和 <code>mprf_int2</code>, mprf.sv:53-60), 因为需要同时支持 3 个独立操作:</p>
+  <ul>
+    <li><code>rs1_data_ff &lt;= mprf_int[rs1_addr]</code> — 同步读 rs1 (116行)</li>
+    <li><code>rs2_data_ff &lt;= mprf_int2[rs2_addr]</code> — 同步读 rs2 (117行)</li>
+    <li><code>mprf_int[rd_addr] &lt;= rd_data</code> — 写入 rd (123行, 同时写入 int 和 int2)</li>
+  </ul>
+  <p>写优先逻辑 (mprf.sv:100-106): 检测到读写地址冲突时, 旁路输出刚写入的数据 <code>rd_data_ff</code>, 而不是从 RAM 中读出的旧值。</p>
+</div>
+
+<h3>2.3 位宽陷阱: [MSB:LSB] vs [LSB:MSB]</h3>
 
 <div class="box warn">
   <div class="box-title">位宽陷阱: [MSB:LSB] vs [LSB:MSB]</div>
   <code>logic [31:0]</code> 和 <code>logic [0:31]</code> 都是 32 位，但 bit 编号方向相反。SCR1 统一使用 <code>[MSB:0]</code> 风格。<br>
-  例: <code>logic [31:0] a;</code> → <code>a[31]</code> 是最高位, <code>a[0]</code> 是最低位。
+  例: <code>logic [31:0] a;</code> → <code>a[31]</code> 是最高位, <code>a[0]</code> 是最低位。<br>
+  使用 <code>+: / -:</code> 变址选择 (mprf.sv:71-72, 缩减操作符 <code>|exu2mprf_rs1_addr_i</code>) 可以避免固定位宽硬编码。
 </div>
 
-<h3>2.2 枚举类型 enum —— 给数字取名字</h3>
+<h3>2.4 枚举类型 enum —— 给数字取名字</h3>
 
 <div class="box src">
   <div class="box-title">SCR1 真实例子: IFU 状态机状态 (scr1_pipe_ifu.sv:91-94)</div>
 <pre>
-<span class="cm">// 定义一个只有两个值的枚举</span>
 <span class="kw">typedef</span> <span class="kw">enum</span> <span class="dt">logic</span> {
     SCR1_IFU_FSM_IDLE,       <span class="cm">// 逻辑值 = 0</span>
     SCR1_IFU_FSM_FETCH       <span class="cm">// 逻辑值 = 1</span>
 } type_scr1_ifu_fsm_e;       <span class="cm">// _e 后缀表示枚举类型</span>
 </pre>
+</div>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: IFU 队列读写操作枚举 (scr1_pipe_ifu.sv:96-106)</div>
+<pre>
+<span class="cm">// 2位宽的枚举 —— 4 种取值</span>
+<span class="kw">typedef</span> <span class="kw">enum</span> <span class="dt">logic</span>[1:0] {
+    SCR1_IFU_QUEUE_WR_NONE,  <span class="cm">// = 2'b00: 不写队列</span>
+    SCR1_IFU_QUEUE_WR_FULL,  <span class="cm">// = 2'b01: 写 32 位到队列</span>
+    SCR1_IFU_QUEUE_WR_HI     <span class="cm">// = 2'b10: 写高 16 位到队列</span>
+} type_scr1_ifu_queue_wr_e;
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_ifu.sv:91-106</p>
 </div>
 
 <p>枚举的好处: 写 <code>ifu_fsm_curr == SCR1_IFU_FSM_IDLE</code> 比写 <code>ifu_fsm_curr == 1'b0</code> 清晰得多。SCR1 全程使用枚举，代码可读性极高。</p>
@@ -161,99 +247,180 @@
     SCR1_OPCODE_JAL      = <span class="num">5'b11011</span>    <span class="cm">// 无条件跳转</span>
 } type_scr1_rvi_opcode_e;
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/includes/scr1_riscv_isa_decoding.svh:25-37</p>
 </div>
 
-<h3>2.3 结构体 struct —— 把一组信号打包</h3>
+<h3>2.5 结构体 struct packed —— 把一组信号打包为位向量</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: EXU 命令结构体 (scr1_riscv_isa_decoding.svh)</div>
+  <div class="box-title">SCR1 真实例子: EXU 命令结构体 (scr1_riscv_isa_decoding.svh:161-182)</div>
 <pre>
-<span class="kw">typedef</span> <span class="kw">struct</span> <span class="kw">packed</span> {           <span class="cm">// packed = 紧密排列为位向量</span>
-    <span class="dt">logic</span>                   instr_rvc;    <span class="cm">// 1位: 是否压缩指令</span>
-    <span class="dt">logic</span> [4:0]             ialu_cmd;     <span class="cm">// 5位: ALU 操作码</span>
-    <span class="dt">logic</span> [4:0]             rs1_addr;     <span class="cm">// 5位: 源寄存器1地址</span>
-    <span class="dt">logic</span> [4:0]             rs2_addr;     <span class="cm">// 5位: 源寄存器2地址</span>
-    <span class="dt">logic</span> [4:0]             rd_addr;      <span class="cm">// 5位: 目标寄存器地址</span>
-    <span class="dt">logic</span> [31:0]            imm;          <span class="cm">// 32位: 立即数</span>
+<span class="kw">typedef</span> <span class="kw">struct</span> <span class="kw">packed</span> {           <span class="cm">// packed = 紧密排列为位向量, 总面积 = 各字段位宽之和</span>
+    <span class="dt">logic</span>                               instr_rvc;      <span class="cm">// 1位: 是否压缩指令</span>
+    type_scr1_ialu_op_sel_e             ialu_op;        <span class="cm">// 1位: ALU 操作数选择</span>
+    type_scr1_ialu_cmd_sel_e            ialu_cmd;       <span class="cm">// 4位: ALU 操作码</span>
+    type_scr1_ialu_sum2_op_sel_e        sum2_op;        <span class="cm">// 1位: 第二加法器操作数</span>
+    type_scr1_lsu_cmd_sel_e             lsu_cmd;        <span class="cm">// 4位: LSU 命令</span>
+    type_scr1_csr_op_sel_e              csr_op;         <span class="cm">// 1位: CSR 操作数</span>
+    type_scr1_csr_cmd_sel_e             csr_cmd;        <span class="cm">// 2位: CSR 命令</span>
+    type_scr1_rd_wb_sel_e               rd_wb_sel;      <span class="cm">// 3位: 写回源选择</span>
+    <span class="dt">logic</span>                               jump_req;       <span class="cm">// 1位: 跳转</span>
+    <span class="dt">logic</span>                               branch_req;     <span class="cm">// 1位: 分支</span>
+    <span class="dt">logic</span>                               mret_req;       <span class="cm">// 1位: MRET</span>
+    <span class="dt">logic</span>                               fencei_req;     <span class="cm">// 1位: FENCE.I</span>
+    <span class="dt">logic</span>                               wfi_req;        <span class="cm">// 1位: WFI</span>
+    <span class="dt">logic</span> [SCR1_GPR_FIELD_WIDTH-1:0]    rs1_addr;       <span class="cm">// 5位: 源寄存器1</span>
+    <span class="dt">logic</span> [SCR1_GPR_FIELD_WIDTH-1:0]    rs2_addr;       <span class="cm">// 5位: 源寄存器2</span>
+    <span class="dt">logic</span> [SCR1_GPR_FIELD_WIDTH-1:0]    rd_addr;        <span class="cm">// 5位: 目标寄存器</span>
+    <span class="dt">logic</span> [`SCR1_XLEN-1:0]              imm;            <span class="cm">// 32位: 立即数</span>
+    <span class="dt">logic</span>                               exc_req;        <span class="cm">// 1位: 异常请求</span>
+    type_scr1_exc_code_e                exc_code;       <span class="cm">// 4位: 异常码</span>
 } type_scr1_exu_cmd_s;                    <span class="cm">// _s 后缀表示结构体类型</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/includes/scr1_riscv_isa_decoding.svh:161-182</p>
 </div>
 
-<p><code>packed struct</code> 就像一个 C 语言的 <code>struct</code>，所有字段紧密排列成一个位向量。在 SCR1 中, IDU 译码后把一个 packed struct 原样传给 EXU，而不是传几十根独立信号线——这就是结构化设计的优势。</p>
+<p><code>packed struct</code> 的关键优势: 在 SCR1 中, IDU 译码后将整个 <code>type_scr1_exu_cmd_s</code> 结构体原样传给 EXU——一条 <code>idu2exu_cmd_o</code> 信号 (<code>scr1_pipe_idu.sv:39</code>) 就承载了几十条独立的控制信息。字段通过 <code>idu2exu_cmd_o.instr_rvc</code> (idu.sv:97) / <code>idu2exu_cmd_o.ialu_cmd</code> (idu.sv:99) 等点分语法访问。</p>
 
-<h3>2.4 localparam —— 模块内部的常量</h3>
+<div class="box tip">
+  <div class="box-title">struct 在 SCR1 中的广泛使用场景</div>
+  <ul>
+    <li><strong>EXU 命令传递</strong>: <code>type_scr1_exu_cmd_s idu2exu_cmd_o</code> (idu.sv:39) —— 19 个字段打包为一根总线</li>
+    <li><strong>TDU 数据监控</strong>: <code>type_scr1_brkm_lsu_mon_s lsu2tdu_dmon_o</code> (lsu.sv:47) —— 4 个字段: vd, addr, load, store</li>
+    <li><strong>HART 状态</strong>: <code>type_scr1_hdu_hartstatus_s hdu2dm_hart_status_o</code> (hdu.sv:63) —— 调试状态结构体</li>
+  </ul>
+</div>
+
+<h3>2.6 parameter 与 localparam —— 编译期常量</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: IFU 队列参数 (scr1_pipe_ifu.sv:77-85)</div>
+  <div class="box-title">SCR1 真实例子: localparam 的三种用法</div>
 <pre>
-<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_WORD  = <span class="num">2</span>;              <span class="cm">// 队列深度: 2个字</span>
-<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_HALF  = SCR1_IFU_Q_SIZE_WORD * <span class="num">2</span>;  <span class="cm">// = 4个半字</span>
-<span class="kw">localparam</span> SCR1_IFU_QUEUE_ADR_W  = $clog2(SCR1_IFU_Q_SIZE_HALF); <span class="cm">// 地址位宽 = ceil(log2(4)) = 2</span>
+<span class="cm">// ====== 用法1: 简单整数常量 ====== (ifu.sv:77-79)</span>
+<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_WORD  = <span class="num">2</span>;
+<span class="kw">localparam</span> SCR1_IFU_Q_SIZE_HALF  = SCR1_IFU_Q_SIZE_WORD * <span class="num">2</span>;  <span class="cm">// = 4</span>
+
+<span class="cm">// ====== 用法2: $clog2 计算地址位宽 ====== (ifu.sv:81)</span>
+<span class="kw">localparam</span> SCR1_IFU_QUEUE_ADR_W  = $clog2(SCR1_IFU_Q_SIZE_HALF); <span class="cm">// ceil(log2(4)) = 2</span>
+
+<span class="cm">// ====== 用法3: 带类型约束的 localparam ====== (idu.sv:53-55)</span>
+<span class="kw">localparam</span> [SCR1_GPR_FIELD_WIDTH-1:0] SCR1_MPRF_ZERO_ADDR = <span class="num">5'd0</span>;
+<span class="kw">localparam</span> [SCR1_GPR_FIELD_WIDTH-1:0] SCR1_MPRF_RA_ADDR   = <span class="num">5'd1</span>;
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_ifu.sv:77-85 / src/core/pipeline/scr1_pipe_idu.sv:53-55</p>
 </div>
 
 <p><code>localparam</code> 在模块内部有效 (外部不可见)，<code>$clog2()</code> 是 SystemVerilog 内置函数，计算以 2 为底的对数向上取整。</p>
 
+<table>
+  <tr><th></th><th>parameter</th><th>localparam</th></tr>
+  <tr><td>可见范围</td><td>模块外部可通过实例化覆盖</td><td>模块内部私用, 外部不可见</td></tr>
+  <tr><td>SCR1 用法</td><td><code>scr1_pipe_hdu.sv:38</code>: <code>#(parameter HART_PBUF_INSTR_REGOUT_EN = 1'b1)</code> — 顶层可覆盖</td><td><code>ifu.sv:77-85</code>: 队列深度、地址位宽 — 内部常量</td></tr>
+  <tr><td>顶层定义</td><td><code>scr1_arch_description.svh:74,81,124...</code> 大量 parameter 定义</td><td>scr1_arch_description.svh:210-213 <code>localparam</code> 仿真地址</td></tr>
+</table>
+
 <!-- ============================================================ -->
-<h2 id="L3">第3课: 组合逻辑 —— assign 和 always_comb</h2>
+<h2 id="L3">第3课: 组合逻辑 —— assign 和 always_comb 的深度对比</h2>
 <!-- ============================================================ -->
 
-<p>组合逻辑的特征: <strong>输出只取决于当前输入，没有记忆</strong>。就像纯数学函数 f(a,b)=a+b，输入变了输出马上变。</p>
+<p>组合逻辑的特征: <strong>输出只取决于当前输入，没有记忆</strong>。综合为纯门电路，不含触发器。</p>
 
-<h3>3.1 assign: 最简单的连续赋值</h3>
+<h3>3.1 assign: 简单的连续赋值</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: LSU 的响应判断 (scr1_pipe_lsu.sv:114-117)</div>
+  <div class="box-title">SCR1 真实例子: LSU 响应判断 (scr1_pipe_lsu.sv:114-118)</div>
 <pre>
-<span class="cm">// 用 assign 做简单的组合逻辑判断</span>
 <span class="kw">assign</span> dmem_resp_ok       = (dmem2lsu_resp_i == SCR1_MEM_RESP_RDY_OK);
 <span class="kw">assign</span> dmem_resp_er       = (dmem2lsu_resp_i == SCR1_MEM_RESP_RDY_ER);
 <span class="kw">assign</span> dmem_resp_received = dmem_resp_ok | dmem_resp_er;
-
-<span class="cm">// 等价于: 任何时刻，如果输入响应 == OK，dmem_resp_ok 就 = 1</span>
-<span class="cm">//         如果输入响应 == ER，dmem_resp_er 就 = 1</span>
+<span class="kw">assign</span> dmem_req_vd        = exu2lsu_req_i &amp; dmem2lsu_req_ack_i &amp; ~lsu_exc_req;
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:114-118</p>
+</div>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: LSU DMEM 接口 (scr1_pipe_lsu.sv:254-260)</div>
+<pre>
+<span class="kw">assign</span> lsu2dmem_req_o   = exu2lsu_req_i &amp; ~lsu_exc_req &amp; lsu_fsm_idle;
+<span class="kw">assign</span> lsu2dmem_addr_o  = exu2lsu_addr_i;
+<span class="kw">assign</span> lsu2dmem_wdata_o = exu2lsu_sdata_i;
+<span class="kw">assign</span> lsu2dmem_cmd_o   = dmem_cmd_store  ? SCR1_MEM_CMD_WR : SCR1_MEM_CMD_RD;
+<span class="kw">assign</span> lsu2dmem_width_o = dmem_wdth_byte  ? SCR1_MEM_WIDTH_BYTE
+                        : dmem_wdth_hword ? SCR1_MEM_WIDTH_HWORD
+                                          : SCR1_MEM_WIDTH_WORD;  <span class="cm">// 嵌套 ?: 链</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:254-260</p>
 </div>
 
 <h3>3.2 always_comb: 复杂组合逻辑</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: LSU 的三路并行判断 (scr1_pipe_lsu.sv:120-137)</div>
+  <div class="box-title">SCR1 真实例子: LSU 异常编码的 1'b1 case 技巧 (scr1_pipe_lsu.sv:212-224)</div>
 <pre>
-<span class="cm">// always_comb 块 = "当任何输入变化时，重新计算输出"</span>
+<span class="cm">// 巧用 case(1'b1) 实现优先级编码器: 只有一个条件成立时输出对应值</span>
 <span class="kw">always_comb</span> <span class="kw">begin</span>
-    <span class="cm">// 默认值: 全部清零</span>
-    dmem_cmd_load  = <span class="num">1'b0</span>;
-    dmem_cmd_store = <span class="num">1'b0</span>;
-
-    <span class="kw">case</span> (exu2lsu_cmd_i)
-        SCR1_LSU_CMD_LB, SCR1_LSU_CMD_LBU,
-        SCR1_LSU_CMD_LH, SCR1_LSU_CMD_LHU,
-        SCR1_LSU_CMD_LW:          dmem_cmd_load  = <span class="num">1'b1</span>;  <span class="cm">// 加载指令</span>
-
-        SCR1_LSU_CMD_SB,
-        SCR1_LSU_CMD_SH,
-        SCR1_LSU_CMD_SW:          dmem_cmd_store = <span class="num">1'b1</span>;  <span class="cm">// 存储指令</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)  <span class="cm">// case(1'b1) = 优先级编码器模式</span>
+        dmem_resp_er     : lsu2exu_exc_code_o = lsu_cmd_ff_load  ? SCR1_EXC_CODE_LD_ACCESS_FAULT
+                                              : lsu_cmd_ff_store ? SCR1_EXC_CODE_ST_ACCESS_FAULT
+                                                                 : SCR1_EXC_CODE_INSTR_MISALIGN;
+        dmem_addr_mslgn_l: lsu2exu_exc_code_o = SCR1_EXC_CODE_LD_ADDR_MISALIGN;
+        dmem_addr_mslgn_s: lsu2exu_exc_code_o = SCR1_EXC_CODE_ST_ADDR_MISALIGN;
+        default          : lsu2exu_exc_code_o = SCR1_EXC_CODE_INSTR_MISALIGN;
     <span class="kw">endcase</span>
 <span class="kw">end</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:212-224</p>
 </div>
 
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: LSU 加载数据符号/零扩展 (scr1_pipe_lsu.sv:240-248)</div>
+<pre>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">case</span> (lsu_cmd_ff)
+        SCR1_LSU_CMD_LH : lsu2exu_ldata_o = {{<span class="num">16</span>{dmem2lsu_rdata_i[<span class="num">15</span>]}}, dmem2lsu_rdata_i[<span class="num">15:0</span>]}; <span class="cm">// 符号扩展到32位</span>
+        SCR1_LSU_CMD_LHU: lsu2exu_ldata_o = { <span class="num">16'b0</span>,                    dmem2lsu_rdata_i[<span class="num">15:0</span>]}; <span class="cm">// 零扩展到32位</span>
+        SCR1_LSU_CMD_LB : lsu2exu_ldata_o = {{<span class="num">24</span>{dmem2lsu_rdata_i[<span class="num">7</span>]}},  dmem2lsu_rdata_i[<span class="num">7:0</span>]};
+        SCR1_LSU_CMD_LBU: lsu2exu_ldata_o = { <span class="num">24'b0</span>,                    dmem2lsu_rdata_i[<span class="num">7:0</span>]};
+        default         : lsu2exu_ldata_o = dmem2lsu_rdata_i;
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:240-248</p>
+</div>
+
+<h3>3.3 assign vs always_comb: 什么时候用哪个</h3>
+
+<table>
+  <tr><th>assign</th><th>always_comb</th></tr>
+  <tr>
+    <td>一行能写完的逻辑</td>
+    <td>需要多行或 case 的逻辑</td>
+  </tr>
+  <tr><td><code>assign lsu_fsm_idle = (lsu_fsm_curr == SCR1_LSU_FSM_IDLE);</code> (lsu.sv:191)</td>
+    <td>例外: 直接比较赋值优先用 <code>assign</code></td>
+  </tr>
+  <tr><td><code>assign dmem_resp_received = dmem_resp_ok | dmem_resp_er;</code> (lsu.sv:116)</td>
+    <td><code>always_comb case(fsm_curr) ... endcase</code> (lsu.sv:178-189)</td>
+  </tr>
+  <tr><td>赋值左侧的网线信号是组合的连续驱动</td>
+    <td>必须给所有输出赋默认值, 否则综合出 latch</td>
+  </tr>
+</table>
+
 <div class="box warn">
-  <div class="box-title">always_comb 的金科玉律</div>
-  <strong>必须在块开头给所有输出赋默认值</strong>，否则会生成锁存器 (latch)。<br>
-  SCR1 的习惯: 在 <code>always_comb begin</code> 后第一件事就是把所有输出信号清零。看不到这个习惯的代码几乎一定有 bug。
+  <div class="box-title">always_comb 必须避免 latch</div>
+  <strong>必须在块开头给所有输出赋默认值</strong>。SCR1 的习惯: 在 <code>always_comb begin</code> 后第一件事就是把所有输出信号清零 (如 idu.sv:96-100 对 <code>idu2exu_cmd_o</code> 所有字段设默认值)。看不到这个习惯的代码几乎一定有 latch bug。
 </div>
 
 <div class="compare">
-  <div class="bad"><div class="lbl">错误的写法 (会产生 latch)</div>
+  <div class="bad"><div class="lbl">错误写法 (产生 latch)</div>
 <pre>
 <span class="kw">always_comb</span>
   <span class="kw">if</span>(en) y = a;
   <span class="cm">// 缺少 else!</span>
   <span class="cm">// en=0 时 y 保持原值 = latch</span>
 </pre></div>
-  <div class="good"><div class="lbl">正确的写法 (纯组合)</div>
+  <div class="good"><div class="lbl">正确写法 (纯组合, SCR1 风格)</div>
 <pre>
 <span class="kw">always_comb</span> <span class="kw">begin</span>
   y = <span class="num">'0</span>;     <span class="cm">// 先设默认值</span>
@@ -263,47 +430,87 @@
 </div>
 
 <!-- ============================================================ -->
-<h2 id="L4">第4课: 时序逻辑 —— always_ff 与非阻塞赋值</h2>
+<h2 id="L4">第4课: 时序逻辑 —— always_ff 与非阻塞赋值 (深度解析)</h2>
 <!-- ============================================================ -->
 
-<p>时序逻辑的特征: <strong>有记忆，输出取决于当前输入 + 历史状态</strong>。信号只在时钟上升沿 (<code>posedge clk</code>) 更新，就像 D 触发器的行为。</p>
+<p>时序逻辑的特征: <strong>有记忆，输出取决于当前输入 + 历史状态</strong>。信号只在时钟边缘更新，对应硬件 D 触发器。</p>
 
-<h3>4.1 always_ff: 时序逻辑的标准写法</h3>
+<h3>4.1 always_ff @(posedge clk, negedge rst_n): 标准时序模板</h3>
 
 <div class="box src">
   <div class="box-title">SCR1 真实例子: LSU 命令寄存器 (scr1_pipe_lsu.sv:142-148)</div>
 <pre>
-<span class="cm">// always_ff @(posedge clk, negedge rst_n) = 带异步复位的寄存器</span>
 <span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk, <span class="kw">negedge</span> rst_n) <span class="kw">begin</span>
-    <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>                        <span class="cm">// 复位 (低有效)</span>
-        lsu_cmd_ff <= SCR1_LSU_CMD_NONE;        <span class="cm">// 复位值</span>
-    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">if</span> (lsu_cmd_upd) <span class="kw">begin</span>          <span class="cm">// 更新使能</span>
-        lsu_cmd_ff <= exu2lsu_cmd_i;            <span class="cm">// 锁存新值</span>
+    <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>
+        lsu_cmd_ff &lt;= SCR1_LSU_CMD_NONE;        <span class="cm">// 复位值</span>
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">if</span> (lsu_cmd_upd) <span class="kw">begin</span>
+        lsu_cmd_ff &lt;= exu2lsu_cmd_i;            <span class="cm">// 锁存新值</span>
     <span class="kw">end</span>
 <span class="kw">end</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:142-148</p>
 </div>
+
+<h3>4.2 always_comb vs always_ff 时序行为对照</h3>
+
+<div class="box tip">
+  <div class="box-title">组合 vs 时序: 同一信号的两面视角</div>
+  <p>同一个 <code>logic</code> 信号, 在 <code>always_comb</code> 和 <code>always_ff</code> 中的行为完全不同:</p>
+<pre>
+<span class="cm">// 组合逻辑: dmem_cmd_load 随输入即时变化</span>
+<span class="kw">assign</span> dmem_cmd_load = (exu2lsu_cmd_i == SCR1_LSU_CMD_LB) | ...;  <span class="cm">// lsu.sv:120-124</span>
+
+<span class="cm">// 时序逻辑: lsu_cmd_ff 仅在时钟沿更新</span>
+<span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk, <span class="kw">negedge</span> rst_n) <span class="kw">begin</span>                    <span class="cm">// lsu.sv:142-148</span>
+    <span class="kw">if</span> (~rst_n) lsu_cmd_ff &lt;= SCR1_LSU_CMD_NONE;
+    <span class="kw">else</span> <span class="kw">if</span> (lsu_cmd_upd) lsu_cmd_ff &lt;= exu2lsu_cmd_i;
+<span class="kw">end</span>
+</pre>
+  <table>
+    <tr><th>信号</th><th>类型</th><th>与 excu2lsu_cmd_i 的关系</th><th>更新时机</th></tr>
+    <tr><td><code>dmem_cmd_load</code></td><td>组合</td><td>始终等于 decode(exu2lsu_cmd_i)</td><td>输入变化后 delta 时间</td></tr>
+    <tr><td><code>lsu_cmd_ff</code></td><td>时序</td><td>等于上一拍 <code>exu2lsu_cmd_i</code> (当 upd=1 时)</td><td>仅在 <code>posedge clk</code></td></tr>
+  </table>
+</div>
+
+<h3>4.3 always_ff 敏感信号格式速查</h3>
 
 <div class="box">
   <div class="box-title">always_ff 必须使用的敏感信号格式</div>
   <table>
-    <tr><th>写法</th><th>含义</th><th>适用场景</th></tr>
-    <tr><td><code>@(posedge clk)</code></td><td>仅上升沿触发，无复位</td><td>FPGA RAM、简单计数器</td></tr>
-    <tr><td><code>@(posedge clk, negedge rst_n)</code></td><td>上升沿 + 异步复位 (低有效)</td><td>绝大多数 SCR1 寄存器</td></tr>
-    <tr><td><code>@(posedge clk)</code> + <code>if(rst)</code></td><td>同步复位 (复位只在时钟沿生效)</td><td>FPGA 推荐 (SCR1 未使用)</td></tr>
+    <tr><th>写法</th><th>含义</th><th>适用场景</th><th>SCR1 实例</th></tr>
+    <tr><td><code>@(posedge clk)</code></td><td>仅上升沿, 无复位</td><td>FPGA RAM、简单计数器</td><td>mprf.sv:115-118 (RAM 同步读)</td></tr>
+    <tr><td><code>@(posedge clk, negedge rst_n)</code></td><td>上升沿 + 异步复位 (低有效)</td><td>绝大多数 SCR1 寄存器</td><td>lsu.sv:142, lsu.sv:169</td></tr>
+    <tr><td><code>@(negedge rst_n, posedge clk)</code></td><td>同上的另一种排序</td><td>部分模块使用</td><td>tdu.sv:410, csr.sv:694</td></tr>
   </table>
 </div>
 
-<h3>4.2 阻塞赋值 (=) vs 非阻塞赋值 (<=)</h3>
-
-<p>这是初学者最容易出错的地方:</p>
+<h3>4.4 阻塞赋值 (=) vs 非阻塞赋值 (&lt;=) —— 深挖信号传递链</h3>
 
 <table>
-  <tr><th></th><th>= (阻塞赋值)</th><th><= (非阻塞赋值)</th></tr>
+  <tr><th></th><th>= (阻塞赋值)</th><th>&lt;= (非阻塞赋值)</th></tr>
   <tr><td>用于</td><td>组合逻辑 (<code>always_comb</code>)</td><td>时序逻辑 (<code>always_ff</code>)</td></tr>
   <tr><td>执行顺序</td><td>立即执行，一行完后才执行下一行</td><td>所有右侧先采样，时钟沿后统一更新左侧</td></tr>
-  <tr><td>类比</td><td>串联: A更新 → B 立刻看到 A 的新值</td><td>并联: A更新 和 B更新 同时发生</td></tr>
+  <tr><td>硬件对应</td><td>纯门电路, 无触发器</td><td>每个 &lt;= 至少 1 个 D 触发器</td></tr>
 </table>
+
+<div class="box tip">
+  <div class="box-title">SCR1 跨模块信号传递链: 非阻塞赋值在流水线中的作用</div>
+  <p>SCR1 的流水级通过 <code>always_ff</code> 寄存器分隔, 形成 <strong>组合→时序→组合→时序</strong> 的信号链:</p>
+<pre>
+<span class="cm">// IDU stage (组合): 译码生成 exu_cmd_s</span>
+<span class="kw">always_comb</span> <span class="kw">begin</span>   <span class="cm">// idu.sv:95</span>
+    idu2exu_cmd_o.ialu_op  = SCR1_IALU_OP_REG_REG;   <span class="cm">// = 阻塞赋值</span>
+    idu2exu_cmd_o.ialu_cmd = SCR1_IALU_CMD_NONE;      <span class="cm">// = 阻塞赋值</span>
+<span class="kw">end</span>
+
+<span class="cm">// EXU stage (时序): 锁存命令</span>
+<span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk, <span class="kw">negedge</span> rst_n) <span class="kw">begin</span>   <span class="cm">// exu.sv (内部)</span>
+    exu_cmd_ff &lt;= idu2exu_cmd_i;                      <span class="cm">// &lt;= 非阻塞: 这拍的组合结果, 下拍才生效</span>
+<span class="kw">end</span>
+</pre>
+  <p>如果 EXU 中误用 <code>=</code>: <code>exu_cmd_ff = idu2exu_cmd_i</code> —— 仿真中 exu_cmd_ff 会立刻更新, 导致本拍就执行错误指令。</p>
+</div>
 
 <div class="compare">
   <div class="bad"><div class="lbl">混用错误 (always_ff 中用 =)</div>
@@ -312,80 +519,100 @@
     a = b;       <span class="cm">// 阻塞赋值!</span>
     c = a;       <span class="cm">// a 已经是新值 = b!</span>
 <span class="kw">end</span>
-<span class="cm">// 结果: a=b, c=b (c 拿到了本周期的新 a)</span>
 </pre></div>
-  <div class="good"><div class="lbl">正确写法 (always_ff 中用 <=)</div>
+  <div class="good"><div class="lbl">正确写法 (always_ff 中用 &lt;=)</div>
 <pre>
 <span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
-    a <= b;      <span class="cm">// 非阻塞赋值</span>
-    c <= a;      <span class="cm">// a 还是旧值!</span>
+    a &lt;= b;      <span class="cm">// 非阻塞赋值</span>
+    c &lt;= a;      <span class="cm">// a 还是旧值!</span>
 <span class="kw">end</span>
-<span class="cm">// 结果: a=b, c=上一拍的a (正确!)</span>
 </pre></div>
 </div>
 
 <div class="box tip">
   <div class="box-title">记忆口诀</div>
-  <strong>组合用 = ，时序用 <= 。永远不要混用。</strong><br>
+  <strong>组合用 = ，时序用 &lt;= 。永远不要混用。</strong><br>
   every always_comb → <code>=</code> ; every always_ff → <code>&lt;=</code>
+</div>
+
+<h3>4.5 $signed / signed 比较 —— 有符号运算的坑</h3>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: IALU 比较指令 (scr1_riscv_isa_decoding.svh:60-86)</div>
+<pre>
+<span class="cm">// 有符号比较: op1 &lt; op2 → SCR1_IALU_CMD_SUB_LT</span>
+<span class="cm">// 无符号比较: op1 u&lt; op2 → SCR1_IALU_CMD_SUB_LTU</span>
+
+<span class="cm">// 在 IALU 内部: 比较时需要明确 signed 语义</span>
+<span class="kw">assign</span> ge = ~slt;                                          <span class="cm">// &gt;= 等价于 ~(&lt;)</span>
+<span class="kw">assign</span> ltu = ~($unsigned(op1) &gt;= $unsigned(op2));         <span class="cm">// 无符号比较</span>
+</pre>
 </div>
 
 <!-- ============================================================ -->
 <h2 id="L5">第5课: 有限状态机 FSM —— SCR1 中最经典的模式</h2>
 <!-- ============================================================ -->
 
-<p>FSM 是数字设计的核心。SCR1 中几乎每个控制模块都使用了 FSM。我们以 IFU 和 LSU 为例，学习 SCR1 的标准三段式写法。</p>
+<p>FSM 是数字设计的核心。SCR1 中几乎每个控制模块都使用了 FSM。我们以 IFU 和 LSU 为例，学习 SCR1 的标准三(二)段式写法。</p>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: LSU 的 2 状态 FSM (scr1_pipe_lsu.sv)</div>
+  <div class="box-title">SCR1 真实例子: LSU 的 2 状态 FSM 完整代码 (scr1_pipe_lsu.sv:67-70, 169-191)</div>
 <pre>
-<span class="cm">// ====== 第1段: 状态寄存器 (时序逻辑) ======</span>
+<span class="cm">// ====== 枚举定义 ====== (lsu.sv:67-70)</span>
+<span class="kw">typedef</span> <span class="kw">enum</span> <span class="dt">logic</span> {
+    SCR1_LSU_FSM_IDLE,
+    SCR1_LSU_FSM_BUSY
+} type_scr1_lsu_fsm_e;
+
+<span class="cm">// ====== 第1段: 状态寄存器 (时序逻辑) ====== (lsu.sv:169-175)</span>
 <span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk, <span class="kw">negedge</span> rst_n) <span class="kw">begin</span>
     <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>
-        lsu_fsm_curr <= SCR1_LSU_FSM_IDLE;       <span class="cm">// 复位 → IDLE</span>
+        lsu_fsm_curr &lt;= SCR1_LSU_FSM_IDLE;
     <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span>
-        lsu_fsm_curr <= lsu_fsm_next;             <span class="cm">// 下一状态 → 当前状态</span>
+        lsu_fsm_curr &lt;= lsu_fsm_next;
     <span class="kw">end</span>
 <span class="kw">end</span>
 
-<span class="cm">// ====== 第2段: 次态逻辑 (组合逻辑) ======</span>
+<span class="cm">// ====== 第2段: 次态逻辑 (组合逻辑) ====== (lsu.sv:178-189)</span>
+<span class="cm">// 注意: 在 always_comb 中使用 = 赋值!</span>
 <span class="kw">always_comb</span> <span class="kw">begin</span>
     <span class="kw">case</span> (lsu_fsm_curr)
         SCR1_LSU_FSM_IDLE: <span class="kw">begin</span>
-            <span class="kw">if</span> (dmem_req_vd)                          <span class="cm">// 收到访存请求</span>
-                lsu_fsm_next = SCR1_LSU_FSM_BUSY;      <span class="cm">// → BUSY</span>
-            <span class="kw">else</span>
-                lsu_fsm_next = SCR1_LSU_FSM_IDLE;       <span class="cm">// → 保持 IDLE</span>
+            lsu_fsm_next = dmem_req_vd        ? SCR1_LSU_FSM_BUSY
+                                              : SCR1_LSU_FSM_IDLE;
         <span class="kw">end</span>
         SCR1_LSU_FSM_BUSY: <span class="kw">begin</span>
-            <span class="kw">if</span> (dmem_resp_received)                   <span class="cm">// 收到存储器响应</span>
-                lsu_fsm_next = SCR1_LSU_FSM_IDLE;       <span class="cm">// → IDLE</span>
-            <span class="kw">else</span>
-                lsu_fsm_next = SCR1_LSU_FSM_BUSY;       <span class="cm">// → 保持 BUSY</span>
+            lsu_fsm_next = dmem_resp_received ? SCR1_LSU_FSM_IDLE
+                                              : SCR1_LSU_FSM_BUSY;
         <span class="kw">end</span>
     <span class="kw">endcase</span>
 <span class="kw">end</span>
 
-<span class="cm">// ====== 第3段: 输出逻辑 或者 并行的 assign ======</span>
+<span class="cm">// ====== 第3段: 输出 ====== (lsu.sv:191)</span>
 <span class="kw">assign</span> lsu_fsm_idle = (lsu_fsm_curr == SCR1_LSU_FSM_IDLE);
-<span class="cm">// 在 always_comb 中根据 lsu_fsm_curr 生成控制信号...</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:67-70, 77-79, 169-191</p>
 </div>
 
 <div class="box">
-  <div class="box-title">SCR1 FSM 三段式标准模板</div>
-  <div class="step"><span class="step-num">1</span> <strong>状态寄存器</strong>: <code>always_ff</code> → <code>fsm_curr <= fsm_next</code> (时序)</div>
-  <div class="step"><span class="step-num">2</span> <strong>次态逻辑</strong>: <code>always_comb</code> → <code>case(fsm_curr)</code> → 计算 <code>fsm_next</code> (组合)</div>
-  <div class="step"><span class="step-num">3</span> <strong>输出逻辑</strong>: <code>always_comb</code> 或 <code>assign</code> → 根据当前状态生成控制信号 (组合)</div>
+  <div class="box-title">SCR1 FSM 标准模板 (二段式 / 三段式)</div>
+  <div class="step"><span class="step-num">1</span> <strong>状态寄存器</strong>: <code>always_ff</code> → <code>fsm_curr &lt;= fsm_next</code> (时序, 用 &lt;=)</div>
+  <div class="step"><span class="step-num">2</span> <strong>次态逻辑</strong>: <code>always_comb</code> → <code>case(fsm_curr)</code> → 计算 <code>fsm_next</code> (组合, 用 =)</div>
+  <div class="step"><span class="step-num">3</span> <strong>输出逻辑</strong> (可选独立): <code>always_comb</code> 或 <code>assign</code> → 根据当前状态生成控制信号</div>
+</div>
+
+<div class="box tip">
+  <div class="box-title">SCR1 FSM 的核心设计思想: 第1段 always_ff 用 &lt;= , 第2段 always_comb 用 =</div>
+  这个模式贯穿整个 SCR1 设计: LSU FSM (lsu.sv:169-189)、IFU FSM、HDU FSM 都遵循这一铁律。掌握了这个模式, 你就掌握了 SCR1 代码的阅读钥匙。
 </div>
 
 <div class="box">
   <div class="box-title">SCR1 FSM 信号命名约定</div>
   <table>
-    <tr><th>信号后缀</th><th>含义</th><th>示例</th></tr>
-    <tr><td><code>_curr</code></td><td>当前状态 (寄存器输出)</td><td><code>ifu_fsm_curr</code></td></tr>
-    <tr><td><code>_next</code></td><td>下一状态 (组合逻辑输出)</td><td><code>ifu_fsm_next</code></td></tr>
-    <tr><td><code>_ff</code></td><td>寄存器输出 (flip-flop)</td><td><code>lsu_cmd_ff</code></td></tr>
+    <tr><th>信号后缀</th><th>含义</th><th>示例</th><th>SCR1 位置</th></tr>
+    <tr><td><code>_curr</code></td><td>当前状态 (always_ff 输出)</td><td><code>ifu_fsm_curr</code>, <code>lsu_fsm_curr</code></td><td>lsu.sv:77, ifu.sv 内部</td></tr>
+    <tr><td><code>_next</code></td><td>下一状态 (always_comb 输出)</td><td><code>ifu_fsm_next</code>, <code>lsu_fsm_next</code></td><td>lsu.sv:78</td></tr>
+    <tr><td><code>_ff</code></td><td>寄存器输出 (flip-flop)</td><td><code>lsu_cmd_ff</code>, <code>rs1_data_ff</code></td><td>lsu.sv:83, mprf.sv:47</td></tr>
   </table>
 </div>
 
@@ -393,78 +620,212 @@
 <h2 id="L6">第6课: 条件编译 —— 一套代码适配多种配置</h2>
 <!-- ============================================================ -->
 
-<p>SCR1 支持 MAX/BASE/MIN 三种配置，且可选 AHB/AXI 总线、FPGA/ASIC 目标平台。这一切都通过条件编译宏实现，而不需要维护多套代码。</p>
+<p>SCR1 支持 MAX/BASE/MIN 三种配置(arch_description.svh:62-101)，且可选 AHB/AXI 总线、FPGA/ASIC 目标平台。这一切都通过条件编译宏实现，而不需要维护多套代码。</p>
 
 <div class="box src">
   <div class="box-title">SCR1 真实例子: 条件编译的三种用法 (scr1_pipe_ifu.sv)</div>
 <pre>
-<span class="cm">// 用法1: `ifdef 控制端口存在与否</span>
+<span class="cm">// 用法1: `ifdef 控制端口存在与否 (ifu.sv:52-59)</span>
 <span class="kw">`ifdef</span> SCR1_DBG_EN
-    <span class="kw">input</span>  <span class="dt">logic</span>   hdu2ifu_pbuf_fetch_i,   <span class="cm">// 只有调试使能时才有这个端口</span>
+    <span class="kw">input</span>  <span class="dt">logic</span>   hdu2ifu_pbuf_fetch_i,   <span class="cm">// 只在调试使能时才有</span>
     <span class="kw">output</span> <span class="dt">logic</span>   ifu2hdu_pbuf_rdy_o,
 <span class="kw">`endif</span> <span class="cm">// SCR1_DBG_EN</span>
 
-<span class="cm">// 用法2: `ifdef 控制内部信号</span>
+<span class="cm">// 用法2: `ifdef 控制内部类型定义 (ifu.sv:108-115)</span>
 <span class="kw">`ifdef</span> SCR1_NO_DEC_STAGE
-    type_scr1_bypass_e   instr_bypass_type;      <span class="cm">// 无译码级才需要的信号</span>
+<span class="kw">typedef</span> <span class="kw">enum</span> <span class="dt">logic</span>[1:0] {
+    SCR1_BYPASS_NONE,
+    SCR1_BYPASS_RVC,
+    SCR1_BYPASS_RVI_RDATA_QUEUE,
+    SCR1_BYPASS_RVI_RDATA
+} type_scr1_bypass_e;
 <span class="kw">`endif</span>
 
-<span class="cm">// 用法3: 配置宏定义在头文件中 (scr1_arch_description.svh)</span>
-<span class="kw">`define</span> SCR1_DBG_EN          <span class="cm">// 使能调试子系统</span>
-<span class="kw">`define</span> SCR1_RVM_EXT         <span class="cm">// 使能乘除法扩展</span>
-<span class="kw">`define</span> SCR1_IPIC_EN         <span class="cm">// 使能中断控制器</span>
-<span class="cm">// `define SCR1_TCM_EN         // 禁用 TCM (注释掉即禁用)</span>
+<span class="cm">// 用法3: MPRF 双路实现切换 (mprf.sv:35-64, 90-152)</span>
+<span class="kw">`ifdef</span>  SCR1_MPRF_RAM       <span class="cm">// FPGA 目标: 用嵌入式 RAM</span>
+    <span class="dt">logic</span> [`SCR1_XLEN-1:0] mprf_int [1:`SCR1_MPRF_SIZE-1];
+    <span class="cm">// ... 同步读 + 写优先旁路 ...</span>
+<span class="kw">`else</span>                        <span class="cm">// ASIC/仿真: 用分布式逻辑</span>
+    type_scr1_mprf_v [1:`SCR1_MPRF_SIZE-1] mprf_int;
+    <span class="cm">// ... 异步读 ...</span>
+<span class="kw">`endif</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_ifu.sv:52-59, 108-115 / src/core/pipeline/scr1_pipe_mprf.sv:35-152 / src/includes/scr1_arch_description.svh:62-151</p>
+</div>
+
+<div class="box">
+  <div class="box-title">SCR1 配置层级: 从顶层宏到底层硬件</div>
+<pre style="background:#fef3e0;color:#333;">
+ scr1_arch_description.svh                 ← 定义 `SCR1_DBG_EN, `SCR1_RVM_EXT 等
+        │
+        ├── `ifdef SCR1_DBG_EN            ← 条件编译入口
+        │       ├── scr1_pipe_ifu.sv       ← 条件端口 (hdu2ifu_pbuf_fetch_i)
+        │       ├── scr1_pipe_hdu.sv       ← 整个 HDU 模块
+        │       ├── scr1_pipe_tdu.sv       ← 整个 TDU 模块
+        │       └── scr1_pipe_lsu.sv       ← 条件端口 (tdu2lsu_ibrkpt_exc_req_i)
+        │
+        ├── `ifdef SCR1_IPIC_EN           ← 中断控制器
+        ├── `ifdef SCR1_TCM_EN            ← 紧耦合存储器
+        └── `ifdef SCR1_MPRF_RAM          ← FPGA RAM 模式
 </pre>
 </div>
+
+<p>这种设计的精髓: <strong>一套源码, 编译期切换</strong>。不用维护 MAX/BASE/MIN 三套独立代码, 所有差异通过 `define 宏集中在 <code>scr1_arch_description.svh</code> 中管控。</p>
 
 <div class="box">
   <div class="box-title">三个编译指令的职责</div>
   <table>
-    <tr><th>指令</th><th>作用</th><th>SCR1 中的例子</th></tr>
-    <tr><td><code>`define MACRO</code></td><td>定义一个宏 (开关)</td><td><code>`define SCR1_RVM_EXT</code></td></tr>
-    <tr><td><code>`ifdef MACRO ... `endif</code></td><td>如果宏已定义，包含这段代码</td><td><code>`ifdef SCR1_DBG_EN</code></td></tr>
-    <tr><td><code>`include "file.svh"</code></td><td>包含另一个文件 (类似 C 的 #include)</td><td><code>`include "scr1_memif.svh"</code></td></tr>
+    <tr><th>指令</th><th>作用</th><th>SCR1 中的例子</th><th>SCR1 位置</th></tr>
+    <tr><td><code>`define MACRO</code></td><td>定义一个宏 (开关)</td><td><code>`define SCR1_RVM_EXT</code></td><td>arch_description.svh:122</td></tr>
+    <tr><td><code>`ifdef MACRO ... `endif</code></td><td>如果宏已定义，包含这段代码</td><td><code>`ifdef SCR1_DBG_EN</code></td><td>ifu.sv:29,52</td></tr>
+    <tr><td><code>`ifndef MACRO ... `endif</code></td><td>如果宏未定义</td><td><code>`ifndef SCR1_ARCH_DESCRIPTION_SVH</code></td><td>arch_description.svh:6</td></tr>
+    <tr><td><code>`undef MACRO</code></td><td>撤销宏定义 (优先级覆盖)</td><td><code>`undef SCR1_NO_EXE_STAGE</code></td><td>arch_description.svh:196</td></tr>
+    <tr><td><code>`include "file.svh"</code></td><td>包含另一个文件</td><td><code>`include "scr1_memif.svh"</code></td><td>lsu.sv:24</td></tr>
+    <tr><td><code>`elsif MACRO</code></td><td>多分支条件</td><td><code>`elsif SCR1_CFG_RV32IC_BASE</code></td><td>arch_description.svh:86</td></tr>
   </table>
-  <p><strong>注意</strong>: 宏之间的依赖顺序很重要。比如 <code>SCR1_IPIC_EN</code> 依赖于 <code>SCR1_RVI_EXT</code>，SCR1 在 <code>scr1_arch_description.svh</code> 中集中管理这些依赖。</p>
 </div>
 
 <!-- ============================================================ -->
-<h2 id="L7">第7课: generate —— 用代码生成硬件</h2>
+<h2 id="L7">第7课: generate —— 用代码生成硬件 (含 genvar for 循环)</h2>
 <!-- ============================================================ -->
 
-<p>当需要根据参数重复生成相似的硬件结构时，<code>generate</code> 是关键工具。SCR1 在 MPRF 中用它来适配 RAM 和分布式逻辑两种实现。</p>
+<p>当需要根据参数重复生成相似的硬件结构时，<code>generate</code> 是关键工具。SCR1 在复位同步单元、TDU 触发器和 CSR 模块中广泛使用了 generate。</p>
+
+<h3>7.1 generate if: 参数化二选一 (SCR1 复位同步单元)</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: MPRF 的双路实现选择 (scr1_pipe_mprf.sv:90-152)</div>
+  <div class="box-title">SCR1 真实例子: 复位同步单元的 generate if/else (scr1_reset_cells.sv:46-96)</div>
 <pre>
-<span class="kw">`ifdef</span> SCR1_MPRF_RAM
-<span class="cm">// ====== 路径A: 用 FPGA 内嵌 RAM 块实现 (带写优先逻辑) ======</span>
-<span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
-    rs1_data_ff <= mprf_int[exu2mprf_rs1_addr_i];   <span class="cm">// 同步读出</span>
-<span class="kw">end</span>
-<span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
-    <span class="kw">if</span> (wr_req_vd) <span class="kw">begin</span>
-        mprf_int[exu2mprf_rd_addr_i] <= exu2mprf_rd_data_i; <span class="cm">// 写操作</span>
-    <span class="kw">end</span>
-<span class="kw">end</span>
+<span class="kw">module</span> scr1_reset_sync_cell #(
+    <span class="kw">parameter</span> <span class="dt">int</span> <span class="dt">unsigned</span> STAGES_AMOUNT = <span class="num">2</span>    <span class="cm">// 可配置的级数</span>
+) (
+    <span class="kw">input</span> <span class="dt">logic</span> rst_n, clk, test_rst_n, test_mode, rst_n_in,
+    <span class="kw">output</span> <span class="dt">logic</span> rst_n_out
+);
 
-<span class="kw">`else</span>  <span class="cm">// 路径B: 用分布式逻辑实现 (异步读出)</span>
-<span class="kw">assign</span> mprf2exu_rs1_data_o = rs1_addr_vd ? mprf_int[exu2mprf_rs1_addr_i] : <span class="num">'0</span>;
-<span class="kw">`endif</span>
+<span class="dt">logic</span> [STAGES_AMOUNT-1:0] rst_n_dff;
+
+<span class="kw">generate</span>
+    <span class="kw">if</span> (STAGES_AMOUNT == <span class="num">1</span>) <span class="kw">begin</span> : gen_reset_sync_cell_single
+        <span class="cm">// 单级同步: 1 个 DFF</span>
+        <span class="kw">always_ff</span> @(<span class="kw">negedge</span> local_rst_n_in, <span class="kw">posedge</span> clk)
+            <span class="kw">if</span> (~local_rst_n_in) rst_n_dff &lt;= <span class="num">1'b0</span>;
+            <span class="kw">else</span> rst_n_dff &lt;= rst_n_in;
+    <span class="kw">end</span> : gen_reset_sync_cell_single
+    <span class="kw">else</span> <span class="kw">begin</span> : gen_reset_sync_cell_multi      <span class="cm">// STAGES_AMOUNT &gt; 1</span>
+        <span class="cm">// 多级同步: 移位寄存器链</span>
+        <span class="kw">always_ff</span> @(<span class="kw">negedge</span> local_rst_n_in, <span class="kw">posedge</span> clk)
+            <span class="kw">if</span> (~local_rst_n_in) rst_n_dff &lt;= <span class="num">'0</span>;
+            <span class="kw">else</span> rst_n_dff &lt;= {rst_n_dff[STAGES_AMOUNT-2:0], rst_n_in};
+    <span class="kw">end</span> : gen_reset_sync_cell_multi
+<span class="kw">endgenerate</span>
+
+<span class="kw">assign</span> rst_n_out = ... rst_n_dff[STAGES_AMOUNT-1];
+<span class="kw">endmodule</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/primitives/scr1_reset_cells.sv:49-96</p>
 </div>
 
-<p>这段代码的精妙之处: 同一个寄存器文件 (<code>mprf_int</code>)，根据 <code>SCR1_MPRF_RAM</code> 宏，自动选择:</p>
-<ul>
-  <li><strong>FPGA 上</strong>: 使用内嵌 RAM 块 (面积小、速度快)，但需要同步读出 + 写优先旁路逻辑</li>
-  <li><strong>ASIC/仿真</strong>: 使用分布式寄存器 (代码最简单)，异步读出无需额外逻辑</li>
-</ul>
+<h3>7.2 generate for: genvar 循环 —— TDU 触发器的批量生成</h3>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: TDU MCONTROL 触发器 (scr1_pipe_tdu.sv:399-467)</div>
+<pre>
+<span class="cm">// MTRIG_NUM 是 TDU 中硬件触发器的数量 (parameter, 从 hdu/tdu 配置传入)</span>
+<span class="cm">// 每个触发器有一组 MCONTROL CSR 寄存器: dmode, m, exec, load, store, action, hit</span>
+
+<span class="kw">genvar</span> trig;
+<span class="kw">generate</span>
+    <span class="kw">for</span> (trig = <span class="num">0</span>; $unsigned(trig) &lt; MTRIG_NUM; ++trig) <span class="kw">begin</span> : gblock_mtrig
+
+        <span class="kw">assign</span> csr_mcontrol_wr_req[trig] = csr_addr_mcontrol[trig] &amp; csr_wr_req;
+        <span class="kw">assign</span> csr_mcontrol_upd[trig]    = ~csr_mcontrol_dmode_ff[trig]
+                                        ? csr_mcontrol_wr_req[trig]
+                                        : tdu_dsbl_i &amp; csr_mcontrol_wr_req[trig];
+
+        <span class="kw">always_ff</span> @(<span class="kw">negedge</span> rst_n, <span class="kw">posedge</span> clk) <span class="kw">begin</span>
+            <span class="kw">if</span>(~rst_n) <span class="kw">begin</span>
+                csr_mcontrol_dmode_ff [trig] &lt;= <span class="num">1'b0</span>;
+                csr_mcontrol_exec_ff  [trig] &lt;= <span class="num">1'b0</span>;
+                csr_mcontrol_load_ff  [trig] &lt;= <span class="num">1'b0</span>;
+                <span class="cm">// ... 其余字段类似 ...</span>
+            <span class="kw">end</span> <span class="kw">else</span> <span class="kw">if</span>(csr_mcontrol_clk_en[trig]) <span class="kw">begin</span>
+                csr_mcontrol_dmode_ff [trig] &lt;= csr_mcontrol_dmode_next[trig];
+                csr_mcontrol_exec_ff  [trig] &lt;= csr_mcontrol_exec_next[trig];
+                <span class="cm">// ...</span>
+            <span class="kw">end</span>
+        <span class="kw">end</span>
+
+    <span class="kw">end</span>
+<span class="kw">endgenerate</span> <span class="cm">// gblock_mtrig</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_tdu.sv:399-467</p>
+</div>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: TDU 硬件断点匹配 (scr1_pipe_tdu.sv:492-500)</div>
+<pre>
+<span class="kw">genvar</span> trig;
+<span class="kw">generate</span>
+    <span class="kw">for</span> (trig = <span class="num">0</span>; $unsigned(trig) &lt; MTRIG_NUM; ++trig) <span class="kw">begin</span> : gblock_break_trig
+        <span class="kw">assign</span> csr_mcontrol_exec_hit[trig] = ~tdu_dsbl_i
+                                           &amp; csr_mcontrol_m_ff[trig]
+                                           &amp; csr_mcontrol_exec_ff[trig]
+                                           &amp; exu2tdu_imon_i.vd
+                                           &amp; exu2tdu_imon_i.addr == csr_tdata2_ff[trig];
+    <span class="kw">end</span>
+<span class="kw">endgenerate</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_tdu.sv:492-500 (断点匹配) / 511-520 (观察点匹配)</p>
+</div>
+
+<h3>7.3 generate if: CSR mtvec 基地址的三路实现选择</h3>
+
+<div class="box src">
+  <div class="box-title">SCR1 真实例子: MTVEC BASE 生成 (scr1_pipe_csr.sv:685-717)</div>
+<pre>
+<span class="kw">generate</span>
+    <span class="cm">// 情况1: 所有位都是只读硬连线 → 纯组合赋值</span>
+    <span class="kw">if</span> (SCR1_MTVEC_BASE_WR_BITS == <span class="num">0</span>) <span class="kw">begin</span> : mtvec_base_ro
+        <span class="kw">assign</span> csr_mtvec_base = SCR1_CSR_MTVEC_BASE_RST_VAL;
+
+    <span class="cm">// 情况2: 所有位都可读写 → always_ff 寄存器</span>
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">if</span> (SCR1_MTVEC_BASE_WR_BITS == SCR1_CSR_MTVEC_BASE_VAL_BITS) <span class="kw">begin</span> : mtvec_base_rw
+        <span class="kw">always_ff</span> @(<span class="kw">negedge</span> rst_n, <span class="kw">posedge</span> clk) <span class="kw">begin</span>
+            <span class="kw">if</span> (~rst_n) csr_mtvec_base &lt;= SCR1_CSR_MTVEC_BASE_RST_VAL;
+            <span class="kw">else</span> <span class="kw">if</span> (csr_mtvec_upd) csr_mtvec_base &lt;= csr_w_data[`SCR1_XLEN-1:...];
+        <span class="kw">end</span>
+
+    <span class="cm">// 情况3: 高 N 位可写, 低 M 位只读 → 拼接实现</span>
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span> : mtvec_base_ro_rw
+        <span class="kw">always_ff</span> @(<span class="kw">negedge</span> rst_n, <span class="kw">posedge</span> clk) ...  <span class="cm">// 只寄存可写位</span>
+        <span class="kw">assign</span> csr_mtvec_base = {可写部分, 只读部分};  <span class="cm">// 拼接输出</span>
+    <span class="kw">end</span>
+<span class="kw">endgenerate</span>
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_csr.sv:685-717</p>
+</div>
 
 <div class="box tip">
-  <div class="box-title">generate vs ifdef</div>
-  <code>generate</code> 用于需要参数化生成多个实例的场景 (如 genvar 循环)，SCR1 中较少使用。<br>
-  <code>`ifdef/`else</code> 用于编译期二选一，SCR1 大量使用这种方式切换实现路径。<br>
-  MPRF 示例中的 <code>`ifdef SCR1_MPRF_RAM</code> 就属于 <code>`ifdef</code> 用法，不是真正的 generate。
+  <div class="box-title">generate 三种用法总结</div>
+  <table>
+    <tr><th>用法</th><th>语法</th><th>SCR1 实例</th><th>说明</th></tr>
+    <tr><td><strong>if/else</strong></td><td><code>generate if(cond) begin : label ... end else begin : label2 ... end endgenerate</code></td><td>reset_cells.sv:65-92, csr.sv:685-717, hdu.sv:611-621</td><td>根据参数选择不同的硬件结构。每个分支必须有唯一的 label</td></tr>
+    <tr><td><strong>for</strong></td><td><code>genvar i; generate for(i=0; i&lt;N; i++) begin : label ... end endgenerate</code></td><td>tdu.sv:399-467 (MCONTROL for), 492-500 (断点 for), 511-520 (观察点 for)</td><td>复制 N 份相同的硬件。genvar 变量在 generate 块外不可见</td></tr>
+    <tr><td><strong>case</strong></td><td><code>generate case(expr) value: begin : label ... end ... endgenerate</code></td><td>SCR1 中<strong>未使用</strong>, 但语法支持</td><td>多路选择, 类似 if/else 但有更好的可读性</td></tr>
+  </table>
+</div>
+
+<div class="box warn">
+  <div class="box-title">generate vs `ifdef: 本质区别</div>
+  <table>
+    <tr><th></th><th>generate for/if</th><th>`ifdef/`elsif/`endif</th></tr>
+    <tr><td>处理阶段</td><td>综合阶段 (elaboration)</td><td>预处理阶段 (preprocessor)</td></tr>
+    <tr><td>变量可见性</td><td>genvar / parameter 在综合时可追踪</td><td>纯文本替换, 综合工具看不到原始代码</td></tr>
+    <tr><td>循环复制</td><td>支持 genvar for 循环</td><td>不支持循环</td></tr>
+    <tr><td>SCR1 偏好</td><td>TDU 触发器 (多个同构硬件), 复位单元 (参数化级数)</td><td>模块级开关 (DBG_EN, TCM_EN), 总线类型 (AHB/AXI)</td></tr>
+  </table>
+  <p>SCR1 大量使用 <code>`ifdef</code> 做模块级配置切换, 用 <code>generate for</code> 做同构硬件的参数化复制。两者各司其职, 互不替代。</p>
 </div>
 
 <!-- ============================================================ -->
@@ -491,11 +852,13 @@
 <div class="box src">
   <div class="box-title">实战解读: 看信号名就能还原拓扑</div>
   <table>
-    <tr><th>信号名</th><th>自动解读</th></tr>
-    <tr><td><code>exu2ifu_pc_new_req_o</code></td><td>在 EXU 模块的输出端口，通知 IFU 有新的 PC 请求</td></tr>
-    <tr><td><code>mprf2exu_rs1_data_o</code></td><td>在 MPRF 模块的输出端口，给 EXU 的 rs1 数据</td></tr>
-    <tr><td><code>hdu2exu_dbg_halted_o</code></td><td>在 HDU 模块的输出端口，告诉 EXU 调试暂停了</td></tr>
-    <tr><td><code>dmem2lsu_rdata_i</code></td><td>在 LSU 模块的输入端口，来自 DMEM 的读数据</td></tr>
+    <tr><th>信号名</th><th>自动解读</th><th>SCR1 位置</th></tr>
+    <tr><td><code>exu2ifu_pc_new_req_o</code></td><td>在 EXU 模块的输出端口，通知 IFU 有新的 PC 请求</td><td>exu.sv (输出端口)</td></tr>
+    <tr><td><code>mprf2exu_rs1_data_o</code></td><td>在 MPRF 模块的输出端口，给 EXU 的 rs1 数据</td><td>mprf.sv:18</td></tr>
+    <tr><td><code>hdu2exu_dbg_halted_o</code></td><td>在 HDU 模块的输出端口，告诉 EXU 调试暂停了</td><td>hdu.sv 输出端口</td></tr>
+    <tr><td><code>dmem2lsu_rdata_i</code></td><td>在 LSU 模块的输入端口，来自 DMEM 的读数据</td><td>lsu.sv:59</td></tr>
+    <tr><td><code>idu2exu_cmd_o</code></td><td>在 IDU 的输出端口，译码命令打包后传给 EXU</td><td>idu.sv:39</td></tr>
+    <tr><td><code>lsu2dmem_cmd_o</code></td><td>在 LSU 的输出端口，读写命令发往数据存储器</td><td>lsu.sv:54</td></tr>
   </table>
 </div>
 
@@ -505,37 +868,43 @@
 <h2 id="L9">第9课: 高级语法速览 —— SCR1 中用到的其他 SystemVerilog 特性</h2>
 <!-- ============================================================ -->
 
-<h3>9.1 位拼接 { } 与位选择 [ ]</h3>
+<h3>9.1 位拼接 { } 与位选择 {N{}} 复制</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 用法</div>
+  <div class="box-title">SCR1 用法 (贯穿 LSU、IDU、IALU)</div>
 <pre>
 <span class="dt">logic</span> [31:0] word;
-<span class="dt">logic</span> [15:0] lo = word[15:0];        <span class="cm">// 位选择: 取低16位</span>
-<span class="dt">logic</span> [31:0] merged = {hi, lo};       <span class="cm">// 位拼接: {16bits, 16bits} = 32bits</span>
-<span class="dt">logic</span> [31:0]  replicated = {<span class="num">4</span>{byte}};  <span class="cm">// 位复制: byte 重复4次 = 32位</span>
+<span class="dt">logic</span> [15:0] lo = word[15:0];         <span class="cm">// 位选择: 取低16位</span>
+<span class="dt">logic</span> [31:0] merged = {hi, lo};        <span class="cm">// 位拼接: {16bits, 16bits} = 32bits</span>
+
+<span class="cm">// SCR1 LSU 符号扩展的实际用法 (lsu.sv:242-245)</span>
+SCRI_LSU_CMD_LH:  lsu2exu_ldata_o = {{<span class="num">16</span>{dmem2lsu_rdata_i[<span class="num">15</span>]}}, dmem2lsu_rdata_i[<span class="num">15:0</span>]};
+                  <span class="cm">//  {16{符号位}} + 低16位 = 符号扩展到 32 位</span>
+SCRI_LSU_CMD_LHU: lsu2exu_ldata_o = { <span class="num">16'b0</span>,                    dmem2lsu_rdata_i[<span class="num">15:0</span>]};
+                  <span class="cm">//  16个零 + 低16位 = 零扩展到 32 位</span>
 </pre>
 </div>
 
 <h3>9.2 缩减运算符 (Reduction Operators)</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: MPRF 的地址有效性判断 (scr1_pipe_mprf.sv:71)</div>
+  <div class="box-title">SCR1 真实例子: MPRF 的地址有效性判断 (scr1_pipe_mprf.sv:71-74)</div>
 <pre>
-<span class="kw">assign</span>  rs1_addr_vd = |exu2mprf_rs1_addr_i;     <span class="cm">// | = 按位 OR 缩减</span>
+<span class="kw">assign</span> rs1_addr_vd = |exu2mprf_rs1_addr_i;     <span class="cm">// | = 按位 OR 缩减</span>
 <span class="cm">// 等价于: rs1_addr_vd = (addr != 5'b00000)</span>
 <span class="cm">// 如果 addr 的任意位=1，结果=1; 全零则=0</span>
 
-<span class="kw">assign</span>  wr_req_vd   = exu2mprf_w_req_i & |exu2mprf_rd_addr_i;
-<span class="cm">// 写请求 & rd地址非零 → 有效的写请求 (rd=x0 时不写)</span>
+<span class="kw">assign</span> wr_req_vd  = exu2mprf_w_req_i &amp; |exu2mprf_rd_addr_i;
+<span class="cm">// 写请求 &amp; rd地址非零 → 有效的写请求 (rd=x0 时不写)</span>
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_mprf.sv:71-74</p>
 </div>
 
 <table>
-  <tr><th>运算符</th><th>含义</th><th>示例</th></tr>
-  <tr><td><code>&amp;a</code></td><td>所有位按位与</td><td><code>&amp;4'b1101 = 0</code></td></tr>
-  <tr><td><code>|a</code></td><td>所有位按位或</td><td><code>|4'b0000 = 0</code></td></tr>
-  <tr><td><code>^a</code></td><td>所有位按位异或 (奇偶)</td><td><code>^4'b1101 = 1</code></td></tr>
+  <tr><th>运算符</th><th>含义</th><th>示例</th><th>SCR1 实际用法</th></tr>
+  <tr><td><code>&amp;a</code></td><td>所有位按位与</td><td><code>&amp;4'b1101 = 0</code></td><td>scr1_reset_cells.sv:204: <code>(&amp;rst_n_in)</code> — 多路复位信号与</td></tr>
+  <tr><td><code>|a</code></td><td>所有位按位或 (是否非零)</td><td><code>|4'b0000 = 0</code></td><td>mprf.sv:71-74 — 地址有效性检测</td></tr>
+  <tr><td><code>^a</code></td><td>所有位按位异或 (奇偶)</td><td><code>^4'b1101 = 1</code></td><td>SCR1 中较少使用</td></tr>
 </table>
 
 <h3>9.3 signed (有符号) 处理</h3>
@@ -548,38 +917,56 @@
 <span class="kw">$unsigned</span>(signed_val);        <span class="cm">// 强制类型转换为无符号</span>
 
 <span class="cm">// SCR1 IALU 中比较指令的核心逻辑</span>
-<span class="kw">assign</span> ge = ~slt;                       <span class="cm">// >=  等价于 ~(<)</span>
-<span class="kw">assign</span> ltu = ~($unsigned(op1) >= $unsigned(op2));  <span class="cm">// 无符号比较</span>
+<span class="kw">assign</span> ge = ~slt;                       <span class="cm">// &gt;=  等价于 ~(&lt;)</span>
+<span class="kw">assign</span> ltu = ~($unsigned(op1) &gt;= $unsigned(op2));  <span class="cm">// 无符号比较</span>
 </pre>
 </div>
 
 <h3>9.4 SystemVerilog 断言 (SVA)</h3>
 
 <div class="box src">
-  <div class="box-title">SCR1 真实例子: MPRF 写操作检查 (scr1_pipe_mprf.sv:159-162)</div>
+  <div class="box-title">SCR1 真实例子: MPRF 写操作检查 (scr1_pipe_mprf.sv:159-163)</div>
 <pre>
-<span class="cm">// 仿真时检查写数据不能有未知态 (X 或 Z)</span>
 SCR1_SVA_MPRF_WRITEX : <span class="kw">assert property</span> (
     @(<span class="kw">negedge</span> clk) <span class="kw">disable iff</span> (~rst_n)
-    exu2mprf_w_req_i |-> !$isunknown({exu2mprf_rd_addr_i, exu2mprf_rd_data_i})
+    exu2mprf_w_req_i |-&gt; !$isunknown({exu2mprf_rd_addr_i, exu2mprf_rd_data_i})
 ) <span class="kw">else</span> $error(<span class="str">"MPRF error: unknown values"</span>);
 </pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_mprf.sv:159-163</p>
 </div>
 
 <p>这段断言的含义: 每当写请求有效 (<code>exu2mprf_w_req_i</code>)，必须确保写地址和写数据中没有 X 态。如果有，仿真器报错。<code>|-></code> 读作 "如果前件成立，则后件必须在同一周期成立"。</p>
 
+<div class="box src">
+  <div class="box-title">SCR1 更多 SVA 例子: LSU 的全套检查 (scr1_pipe_lsu.sv:284-347)</div>
+<pre>
+<span class="cm">// 1. 互斥检查: 同时只能有 1 个异常</span>
+SCR1_SVA_LSU_EXC_ONEHOT : <span class="kw">assert property</span> (
+    @(<span class="kw">negedge</span> clk) <span class="kw">disable iff</span> (~rst_n)
+    $onehot0({dmem_resp_er, dmem_addr_mslgn_l, dmem_addr_mslgn_s})
+) <span class="kw">else</span> $error(<span class="str">"LSU Error: more than one exception"</span>);
+
+<span class="cm">// 2. 行为检查: IDLE 时不应收到 DMEM 响应</span>
+SCR1_SVA_LSU_UNEXPECTED_DMEM_RESP : <span class="kw">assert property</span> (
+    @(<span class="kw">negedge</span> clk) <span class="kw">disable iff</span> (~rst_n)
+    lsu_fsm_idle |-&gt; ~dmem_resp_received
+) <span class="kw">else</span> $error(<span class="str">"LSU Error: not expecting memory response"</span>);
+</pre>
+  <p style="font-size:0.85em;color:var(--orange);">源文件: src/core/pipeline/scr1_pipe_lsu.sv:326-334</p>
+</div>
+
 <!-- ============================================================ -->
-<h2 id="L10">第10课: 动手练习 —— 用 SCR1 代码检验你的理解</h2>
+<h2 id="L10">第10课: 动手练习 (9 题) —— 用 SCR1 代码检验你的理解</h2>
 <!-- ============================================================ -->
 
 <div class="box">
   <div class="box-title">练习 1: 读懂一个最简单的模块 (20 分钟)</div>
-  <p>打开 <code>src/core/primitives/scr1_cg.sv</code> (时钟门控，约 30 行)，回答以下问题:</p>
+  <p>打开 <code>src/core/primitives/scr1_cg.sv</code> (时钟门控，32 行)，回答以下问题:</p>
   <ol>
     <li>这个模块有几个输入端口？几个输出端口？</li>
-    <li><code>assign clk_out = clk & en;</code> 这行是组合逻辑还是时序逻辑？</li>
-    <li>如果 <code>en=0</code>，<code>clk_out</code> 的值是什么？</li>
-    <li>用你自己的话解释这个模块的功能 (一句话)。</li>
+    <li><code>assign clk_out = latch_en &amp; clk;</code> (第28行) 是组合逻辑还是时序逻辑？</li>
+    <li>这个模块中唯一的过程块是 <code>always_latch</code> (第22行)，它生成了什么硬件？</li>
+    <li>为什么使用 <code>always_latch</code> 而不是 <code>always_ff</code>？(提示: 看第23行敏感信号 <code>~clk</code> 而非 <code>posedge</code>)</li>
   </ol>
 </div>
 
@@ -612,10 +999,61 @@ SCR1_SVA_MPRF_WRITEX : <span class="kw">assert property</span> (
   <p>在 SCR1 源码中完成以下追踪 (不要求完全理解逻辑，重点是识别语法结构):</p>
   <ol>
     <li>打开 <code>scr1_pipe_ifu.sv</code>: 找到 FSM 的 always_ff 和 always_comb —— 验证三段式模式</li>
-    <li>打开 <code>scr1_pipe_idu.sv</code>: 找到最大 always_comb 块 —— 观察默认值赋值风格</li>
-    <li>打开 <code>scr1_pipe_lsu.sv</code>: 找到所有 <code>assign</code> 语句 —— 理解组合逻辑的宣告式</li>
+    <li>打开 <code>scr1_pipe_idu.sv</code>: 找到最大 always_comb 块 (从 ~95行开始) —— 观察默认值赋值风格</li>
+    <li>打开 <code>scr1_pipe_lsu.sv</code>: 找到所有 <code>assign</code> 语句 —— 理解组合逻辑分步写法</li>
     <li>打开 <code>scr1_pipe_mprf.sv</code>: 找到 <code>`ifdef SCR1_MPRF_RAM</code> 的条件编译分支</li>
   </ol>
+</div>
+
+<div class="box ex">
+  <div class="box-title">练习 5: 阻塞 vs 非阻塞仿真行为对比 (20 分钟)</div>
+  <p>打开 <code>scr1_pipe_lsu.sv</code>，找到第2段 FSM 次态逻辑 (178-189行):</p>
+  <ol>
+    <li>为什么 <code>lsu_fsm_next = ...</code> 用 <code>=</code> 而不是 <code>&lt;=</code>？</li>
+    <li>如果误写成 <code>lsu_fsm_next &lt;= ...</code>，仿真行为会怎样？</li>
+    <li>再找到第1段状态寄存器 (169-175行): 为什么这里必须用 <code>&lt;=</code>？</li>
+  </ol>
+  <p>提示: 试想第2段 always_comb 在第1段 always_ff 之前/同时/之后执行的区别。</p>
+</div>
+
+<div class="box ex">
+  <div class="box-title">练习 6: generate for 的实际输出 (25 分钟)</div>
+  <p>打开 <code>scr1_pipe_tdu.sv</code>，阅读第 399-467 行的 generate for 块:</p>
+  <ol>
+    <li><code>genvar trig</code> 在这个块外还能使用吗？为什么？</li>
+    <li>如果 <code>MTRIG_NUM = 4</code>，这段 generate 会生成多少份 <code>csr_mcontrol_dmode_ff</code> 寄存器？</li>
+    <li>把第 399-467 行的代码手动展开成 <code>MTRIG_NUM=2</code> 的版本 (不写代码, 口头描述会产生几行 always_ff)</li>
+  </ol>
+</div>
+
+<div class="box ex">
+  <div class="box-title">练习 7: 区分 generate 与 `ifdef 的使用场景 (15 分钟)</div>
+  <ol>
+    <li>打开 <code>scr1_pipe_mprf.sv</code>，找到 <code>`ifdef SCR1_MPRF_RAM</code>。这是 generate 还是 ifdef？为什么 SCR1 选择 ifdef 而不是 generate if？</li>
+    <li>打开 <code>scr1_pipe_tdu.sv</code>，找到第 399 行的 <code>genvar trig</code>。这里能用 <code>`define</code> 宏替代吗？为什么不能？</li>
+    <li>打开 <code>scr1_pipe_csr.sv</code>，第 685 行的 <code>generate if</code> (MTVEC BASE)。能用 <code>`ifdef</code> 替代吗？</li>
+  </ol>
+</div>
+
+<div class="box ex">
+  <div class="box-title">练习 8: struct packed 字段宽度计算 (15 分钟)</div>
+  <p>打开 <code>src/includes/scr1_riscv_isa_decoding.svh</code>，阅读第 161-182 行的 <code>type_scr1_exu_cmd_s</code>:</p>
+  <ol>
+    <li>逐一计算每个字段的位宽 (注意: 枚举字段的位宽由 <code>logic [N-1:0]</code> 基类型决定)</li>
+    <li>这个 struct 打包后的总位宽是多少？</li>
+    <li>如果去掉 <code>packed</code> 关键字会怎样？同一信号还能用 <code>logic</code> 类型传递吗？</li>
+  </ol>
+</div>
+
+<div class="box ex">
+  <div class="box-title">练习 9: 手写 generate for 分数分频器 (30 分钟)</div>
+  <p>参照 <code>scr1_pipe_tdu.sv:399-467</code> 的 generate for 模式，设计一个 <strong>N 级移位寄存器</strong>:</p>
+  <ul>
+    <li><strong>输入</strong>: <code>clk</code>, <code>rst_n</code>, <code>din</code> (1位)</li>
+    <li><strong>输出</strong>: <code>dout [0:N-1]</code> (N位, 每位是 din 的 N 个历史值)</li>
+    <li><strong>要求</strong>: 用 <code>parameter N = 4</code>, 用 <code>generate for</code> 生成 N 级移位链</li>
+    <li><strong>附加题</strong>: 用 <code>`ifdef</code> 在 <code>N=1</code> 的情况下做 bypass (直通 din → dout[0])</li>
+  </ul>
 </div>
 
 <!-- ============================================================ -->
@@ -627,32 +1065,51 @@ SCR1_SVA_MPRF_WRITEX : <span class="kw">assert property</span> (
   <tr><td><code>module name (...); ... endmodule</code></td><td>定义硬件模块</td><td>所有的 .sv 文件</td></tr>
   <tr><td><code>input/output logic</code></td><td>端口方向声明</td><td>每个 module 的前 30 行</td></tr>
   <tr><td><code>logic [WIDTH-1:0]</code></td><td>声明位宽信号</td><td>全部信号声明</td></tr>
-  <tr><td><code>localparam X = value;</code></td><td>模块内部常量</td><td>IFU 的队列参数</td></tr>
-  <tr><td><code>typedef enum logic {...} type_e;</code></td><td>定义枚举</td><td>状态机状态、操作码、命令</td></tr>
-  <tr><td><code>typedef struct packed {...} type_s;</code></td><td>定义结构体</td><td>EXU 命令结构体</td></tr>
-  <tr><td><code>assign signal = expression;</code></td><td>简单组合逻辑</td><td>LSU 响应判断</td></tr>
-  <tr><td><code>always_comb begin ... end</code></td><td>复杂组合逻辑</td><td>IDU 译码、EXU 仲裁</td></tr>
-  <tr><td><code>always_ff @(posedge clk, negedge rst_n)</code></td><td>带异步复位的时序逻辑</td><td>绝大多数寄存器</td></tr>
-  <tr><td><code>=</code> (阻塞赋值)</td><td>组合逻辑赋值</td><td>always_comb 内部</td></tr>
-  <tr><td><code>&lt;=</code> (非阻塞赋值)</td><td>时序逻辑赋值</td><td>always_ff 内部</td></tr>
-  <tr><td><code>{a, b}</code></td><td>位拼接</td><td>指令拼接、数据拼接</td></tr>
-  <tr><td><code>|signal</code></td><td>缩减 OR (任意位=1?)</td><td>MPRF 地址有效性判断</td></tr>
-  <tr><td><code>`define MACRO</code></td><td>定义编译宏</td><td>scr1_arch_description.svh</td></tr>
-  <tr><td><code>`ifdef MACRO ... `endif</code></td><td>条件编译</td><td>IFU、LSU 的调试/配置开关</td></tr>
+  <tr><td><code>localparam X = value;</code></td><td>模块内部常量</td><td>ifu.sv:77-85 队列参数</td></tr>
+  <tr><td><code>parameter X = value;</code></td><td>可被实例化覆盖的常量</td><td>hdu.sv:38 HART_PBUF_INSTR_REGOUT_EN</td></tr>
+  <tr><td><code>typedef enum logic {...} type_e;</code></td><td>定义枚举</td><td>lsu.sv:67-70 状态机状态; dec.svh:25-37 操作码</td></tr>
+  <tr><td><code>typedef struct packed {...} type_s;</code></td><td>定义打包结构体</td><td>dec.svh:161-182 EXU 命令结构体</td></tr>
+  <tr><td><code>assign signal = expression;</code></td><td>简单组合逻辑 (连续赋值)</td><td>lsu.sv:114-118 响应判断</td></tr>
+  <tr><td><code>always_comb begin ... end</code></td><td>复杂组合逻辑 (过程赋值, 用 =)</td><td>lsu.sv:178-189 FSM 次态; lsu.sv:212-224 异常编码</td></tr>
+  <tr><td><code>always_ff @(posedge clk, negedge rst_n)</code></td><td>带异步复位的时序逻辑</td><td>绝大多数寄存器: lsu.sv:142-148, lsu.sv:169-175</td></tr>
+  <tr><td><code>always_ff @(posedge clk)</code></td><td>无复位时序逻辑</td><td>mprf.sv:115-118 RAM 同步读</td></tr>
+  <tr><td><code>=</code> (阻塞赋值)</td><td>组合逻辑 (always_comb 内)</td><td>lsu.sv:181-186: lsu_fsm_next = ...</td></tr>
+  <tr><td><code>&lt;=</code> (非阻塞赋值)</td><td>时序逻辑 (always_ff 内)</td><td>lsu.sv:170-173: lsu_fsm_curr &lt;= ...</td></tr>
+  <tr><td><code>{a, b}</code></td><td>位拼接</td><td>lsu.sv:242-245: 符号扩展</td></tr>
+  <tr><td><code>{N{bit}}</code></td><td>位复制</td><td>lsu.sv:242: <code>{16{dmem2lsu_rdata_i[15]}}</code></td></tr>
+  <tr><td><code>|signal</code> (缩减OR)</td><td>任意位=1? (非零检测)</td><td>mprf.sv:71-74: 地址有效性判断</td></tr>
+  <tr><td><code>&amp;signal</code> (缩减AND)</td><td>所有位=1?</td><td>reset_cells.sv:204: 复位信号与</td></tr>
+  <tr><td><code>`define MACRO</code></td><td>定义编译宏</td><td>arch_description.svh:122-149</td></tr>
+  <tr><td><code>`ifdef MACRO ... `endif</code></td><td>条件编译</td><td>ifu.sv:52-59; mprf.sv:35-152</td></tr>
+  <tr><td><code>`undef MACRO</code></td><td>撤销宏定义 (优先级覆盖)</td><td>arch_description.svh:196-197</td></tr>
   <tr><td><code>`include "file.svh"</code></td><td>包含头文件</td><td>每个模块文件的开头</td></tr>
-  <tr><td><code>case (expr) ... endcase</code></td><td>多路选择</td><td>FSM 次态逻辑、译码逻辑</td></tr>
-  <tr><td><code>assert property (...)</code></td><td>仿真断言</td><td>MPRF 写操作检查</td></tr>
-  <tr><td><code>$clog2(N)</code></td><td>ceil(log2(N))</td><td>队列地址位宽计算</td></tr>
+  <tr><td><code>case (expr) ... endcase</code></td><td>多路选择 / 优先级编码</td><td>lsu.sv:179-188 FSM 次态; lsu.sv:212-224 异常编码</td></tr>
+  <tr><td><code>generate if(cond) begin ... end</code></td><td>参数化硬件二选一</td><td>reset_cells.sv:65-92; csr.sv:685-717</td></tr>
+  <tr><td><code>genvar i; generate for(...)</code></td><td>参数化硬件复制 N 份</td><td>tdu.sv:399-467 MCONTROL 触发器; tdu.sv:492-520 断点/观察点</td></tr>
+  <tr><td><code>assert property (...)</code></td><td>仿真断言 (FORMAL 验证)</td><td>mprf.sv:159-163; lsu.sv:284-347 (全套 12 个断言)</td></tr>
+  <tr><td><code>$isunknown(expr)</code></td><td>检查是否有 X/Z 态</td><td>mprf.sv:161; lsu.sv:286-321</td></tr>
+  <tr><td><code>$onehot0(expr)</code></td><td>检查是否全零/独热</td><td>lsu.sv:328</td></tr>
+  <tr><td><code>$clog2(N)</code></td><td>ceil(log2(N))</td><td>ifu.sv:81 队列地址位宽计算</td></tr>
+  <tr><td><code>always_latch</code></td><td>锁存器 (电平敏感)</td><td>cg.sv:22-26 时钟门控锁存器</td></tr>
 </table>
 
 <div class="box tip">
   <div class="box-title">下一步学什么</div>
-  掌握了 SystemVerilog 语法基础后，建议回到学习计划的 <strong>第 3 周: RISC-V 指令集基础</strong>，然后用 <strong>第 5 周: SCR1 整体架构初探</strong> 的知识，实际打开 SCR1 源码，用本节学到的语法知识去阅读和理解每个模块。
+  掌握了 SystemVerilog 语法基础后，建议回到学习计划的 <strong>第 3 周: RISC-V 指令集基础</strong>，然后用 <strong>第 5 周: SCR1 整体架构初探</strong> 的知识，实际打开 SCR1 源码，用本节学到的语法知识去阅读和理解每个模块。建议按以下顺序阅读 SCR1 模块:
+  <ol>
+    <li><code>scr1_cg.sv</code> (32行) → 最简单, 含 always_latch</li>
+    <li><code>scr1_pipe_lsu.sv</code> (351行) → FSM + SVA + 条件编译 完美示例</li>
+    <li><code>scr1_pipe_mprf.sv</code> (167行) → 条件编译 + RAM/逻辑双实现</li>
+    <li><code>scr1_pipe_tdu.sv</code> (610行) → generate for 的最佳案例</li>
+    <li><code>scr1_pipe_idu.sv</code> (940行) → always_comb 大规模译码</li>
+    <li><code>scr1_pipe_ifu.sv</code> (826行) → 复杂队列 + FSM</li>
+  </ol>
 </div>
 
 <p style="text-align:center;color:var(--gray);margin-top:40px;">
-  课程共 10 课，预计总学习时间 4-5 小时 (分 3-4 天完成)<br>
-  每课末尾的 SCR1 源码片段都可以在 <code>/workspace/src/</code> 中找到原始文件<br>
+  课程共 10 课 (含 9 道练习)，预计总学习时间 5-7 小时 (分 4-5 天完成)<br>
+  每课末尾的 SCR1 源码片段都可以在 <code>src/</code> 目录中找到原始文件<br>
+  新增练习 5-9 对应本版本新增的深度内容: 阻塞/非阻塞仿真对比、generate for、ifdef vs generate、struct 字段宽度、手写 generate<br>
   遇到不认识的缩写，查 <code>SCR1_abbreviations.txt</code>
 </p>
 

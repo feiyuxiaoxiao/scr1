@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>控制流 -- 跳转、分支和异常处理 | SCR1 第 7 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.7; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 40px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.85em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fsm { background: #f8f9fa; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'Fira Code', monospace; font-size: 0.85em; white-space: pre; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>控制流 -- 跳转、分支和异常处理 | SCR1 第 7 周 (增强版)</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#new-pc">NEW_PC 6 路多路器详解</a>
+  <a href="#jal">JAL/JALR 目标地址</a>
+  <a href="#branch">分支预测与判定</a>
+  <a href="#stall">流水线暂停 (Stall)</a>
+  <a href="#flush">流水线清空 (Flush)</a>
+  <a href="#flush-scenarios">Flush 触发条件全集</a>
+  <a href="#wfi">WFI 状态机详解</a>
+  <a href="#ecall-mret">ECALL/MRET 进出流程</a>
+  <a href="#exc-priority">异常优先级仲裁器</a>
+  <a href="#irq-exc-interact">中断与异常的交互</a>
+  <a href="#control-summary">控制流全景图</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#exercise-advanced">进阶练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周内容</div>
+  正常程序流中 PC 按顺序递增 (+4 或 +2)。以下事件会改变程序流: JAL/JALR 跳转、BEQ/BNE 等分支、ECALL/MRET 陷阱、异常、中断、WFI 等待、调试暂停、复位。本周深入理解每种事件的 <strong>PC 生成机制</strong>、<strong>流水线暂停/清空</strong>、以及它们之间的<strong>优先级仲裁</strong>。
+</div>
+
+<h2 id="new-pc">第二课: NEW_PC 6 路多路器 -- 深度剖析</h2>
+
+<h3>6 路 NEW_PC 的精确信号名与数据来源</h3>
+
+<p>在 <code>scr1_pipe_exu.sv:707-720</code> 中，<code>exu2ifu_pc_new_o</code> 经过一个 6 选 1 的 <code>case(1'b1)</code> 优先级多路器。下表列出每路的触发条件信号和输出值:</p>
+
+<table>
+<tr><th>优先级</th><th>触发条件 (gate 信号)</th><th>新 PC 值</th><th>数据来源</th><th colspan="2">典型场景</th></tr>
+<tr>
+  <td><strong>P1</strong></td>
+  <td><code>init_pc</code></td>
+  <td><code>SCR1_RST_VECTOR</code></td>
+  <td>复位向量地址常量</td>
+  <td colspan="2">上电/外部复位</td>
+</tr>
+<tr>
+  <td><strong>P2</strong></td>
+  <td><code>exu2csr_take_exc_o</code><br><code>exu2csr_take_irq_o</code><br><code>exu2csr_mret_instr_o</code></td>
+  <td><code>csr2exu_new_pc_i</code></td>
+  <td>CSR 模块 (MTVEC/MEPC)</td>
+  <td colspan="2">异常/中断陷阱入口<br>MRET 返回地址</td>
+</tr>
+<tr>
+  <td><strong>P3</strong></td>
+  <td><code>dbg_run_start_npbuf</code></td>
+  <td><code>hdu2exu_dbg_new_pc_i</code></td>
+  <td>HDU 调试单元</td>
+  <td colspan="2">调试暂停恢复</td>
+</tr>
+<tr>
+  <td><strong>P4</strong></td>
+  <td><code>wfi_run_start_ff</code></td>
+  <td><code>pc_curr_ff</code></td>
+  <td>当前 PC 寄存器</td>
+  <td colspan="2">WFI 退出 (PC 不变)</td>
+</tr>
+<tr>
+  <td><strong>P5</strong></td>
+  <td><code>exu_queue.fencei_req</code></td>
+  <td><code>inc_pc</code></td>
+  <td>PC 增量 (当前 PC+4/+2)</td>
+  <td colspan="2">FENCE.I 指令</td>
+</tr>
+<tr>
+  <td><strong>P6</strong></td>
+  <td><code>default</code> (fall-through)</td>
+  <td><code>ialu_addr_res &amp; SCR1_JUMP_MASK</code></td>
+  <td>地址加法器 (SUM2) 输出</td>
+  <td colspan="2">JAL/JALR/分支采用</td>
+</tr>
+</table>
+
+<h3>每条 NEW_PC 来源的详细信号路径</h3>
+
+<div class="step">
+  <span class="step-num">P1</span> <strong>init_pc -- 上电复位向量</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:664-674</span>
+<span class="cm">// 4 位移位寄存器: init_pc_v[3:0] 复位时为 4'b0000</span>
+<span class="cm">// 每个周期左移 1: 0000 → 0001 → 0011 → 0111 → 1111</span>
+<span class="kw">if</span> (~&amp;init_pc_v) init_pc_v &lt;= {init_pc_v[<span class="num">2</span>:<span class="num">0</span>], <span class="num">1'b1</span>};
+<span class="kw">assign</span> init_pc = ~init_pc_v[<span class="num">3</span>] &amp; init_pc_v[<span class="num">2</span>];  <span class="cm">// 第 4 个周期: 0011 → 0111 时 init_pc=1</span></pre>
+  <code>init_pc</code> 仅在复位后的第 4 个 clk 上升沿有效 (单周期脉冲)。这是因为 CSR 需要几个周期来完成初始化。输出 <code>SCR1_RST_VECTOR</code> (默认为 0x200)。
+</div>
+
+<div class="step">
+  <span class="step-num">P2</span> <strong>陷阱 (异常/中断/MRET) -- CSR 提供新 PC</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:707-712</span>
+<span class="kw">case</span> (<span class="num">1'b1</span>)
+    exu2csr_take_exc_o,    <span class="cm">// 来自异常逻辑: exu_exc_req & ~hdu2exu_dbg_halted_i</span>
+    exu2csr_take_irq_o,    <span class="cm">// 来自中断逻辑: csr2exu_irq_i & ~exu2pipe_exu_busy_o & ...</span>
+    exu2csr_mret_instr_o  :<span class="cm">// 来自 MRET: exu_queue_vd & exu_queue.mret_req & ...</span>
+    exu2ifu_pc_new_o = csr2exu_new_pc_i;  <span class="cm">// 该值来自 CSR 模块</span></pre>
+  <code>csr2exu_new_pc_i</code> 在 CSR 内部由事件类型决定: 异常取 <code>MTVEC.BASE</code>，中断取 <code>MTVEC.BASE</code> (Direct) 或 <code>MTVEC.BASE + 4*cause</code> (Vectored)，MRET 取 <code>MEPC</code>。
+</div>
+
+<div class="step">
+  <span class="step-num">P3</span> <strong>调试恢复 -- HDU 提供</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:303</span>
+<span class="kw">assign</span> dbg_run_start_npbuf = hdu2exu_dbg_run_start_i &amp; ~hdu2exu_pbuf_fetch_i;</pre>
+  仅在调试使能 (<code>SCR1_DBG_EN</code>) 时存在。排除 Program Buffer 取指场景，使用 HDU 提供的恢复 PC。
+</div>
+
+<div class="step">
+  <span class="step-num">P4</span> <strong>WFI 退出 -- PC 保持不变</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:716</span>
+wfi_run_start_ff    : exu2ifu_pc_new_o = pc_curr_ff;  <span class="cm">// WFI 后继续执行下一条</span></pre>
+  <code>wfi_run_start_ff</code> 指示 HART 刚从中断等待状态恢复。新 PC 设为当前 PC (<code>pc_curr_ff</code>)，即 WFI 下一条指令的地址。
+</div>
+
+<div class="step">
+  <span class="step-num">P5</span> <strong>FENCE.I -- 指令缓存同步</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:717</span>
+exu_queue.fencei_req : exu2ifu_pc_new_o = inc_pc;  <span class="cm">// inc_pc = pc_curr_ff + 2(AVG)/4</span></pre>
+  FENCE.I 策略是继续执行下一条指令，同时通知 IFU 冲刷队列以确保 I/D 一致性。
+</div>
+
+<div class="step">
+  <span class="step-num">P6</span> <strong>默认 -- 跳转/分支地址</strong>
+  <pre><span class="cm">// scr1_pipe_exu.sv:718</span>
+<span class="kw">default</span> : exu2ifu_pc_new_o = ialu_addr_res &amp; SCR1_JUMP_MASK;
+<span class="cm">// SCR1_JUMP_MASK = 32'hFFFF_FFFE: 清除 bit[0] 保证半字对齐</span>
+<span class="cm">// ialu_addr_res 来自于地址加法器 SUM2 的输出</span></pre>
+  当 <code>jb_taken = exu_queue.jump_req | branch_taken</code> 时，使用地址加法器的计算结果。JAL + BRANCH 使用 <code>pc_curr_ff + imm</code>，JALR 使用 <code>rs1 + imm</code>。
+</div>
+
+<h3>NEW_PC 请求信号 (<code>exu2ifu_pc_new_req_o</code>) 完整展开</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:722-735 -- 每一行代表一个触发源</span>
+<span class="kw">assign</span> exu2ifu_pc_new_req_o =
+    init_pc                                        <span class="cm">// [1] 复位后第 4 周期</span>
+  | exu2csr_take_irq_o                             <span class="cm">// [2] 中断被受理: csr2exu_irq_i & ~exu_busy & allowed</span>
+  | exu2csr_take_exc_o                             <span class="cm">// [3] 异常被受理: exu_exc_req & ~dbg_halted</span>
+  | (exu2csr_mret_instr_o &amp; ~csr2exu_mstatus_mie_up_i)   <span class="cm">// [4] MRET (等 MSTATUS 更新完)</span>
+  | (exu_queue_vd &amp; exu_queue.fencei_req)               <span class="cm">// [5] FENCE.I</span>
+  | (wfi_run_start_ff &amp; clk_pipe_en)                    <span class="cm">// [6] WFI 恢复</span>
+  | dbg_run_start_npbuf                                <span class="cm">// [7] 调试恢复 (仅 SCR1_DBG_EN)</span>
+  | (exu_queue_vd &amp; jb_taken);                         <span class="cm">// [8] 跳转/分支采用</span></pre>
+
+<div class="box warn">
+  <div class="box-title">MRET 的 MSTATUS 同步问题</div>
+  MRET 的 new_pc_req 条件中多了 <code>&amp; ~csr2exu_mstatus_mie_up_i</code>。这是因为 MRET 需要先更新 MSTATUS (MIE&larr;MPIE, MPIE&larr;1)，如果 MSTATUS 同周期也在更新 (<code>mie_up=1</code>)，则延迟一个周期发送 new_pc_req。这导致了 MRET 的额外 1 周期延迟。
+</div>
+
+<div class="box warn">
+  <div class="box-title">为什么 P2 中三个信号共享一个分支？</div>
+  <code>exu2csr_take_exc_o</code>、<code>exu2csr_take_irq_o</code>、<code>exu2csr_mret_instr_o</code> 三者不会同时为 1，因为: (1) 异常和中断由硬件互斥；(2) MRET 和异常/中断不可能在同周期产生异常 (MRET 不触发异常，它只更新 CSR)。但 case(1'b1) 的语法确保了任意情况下只有一个生效。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="jal">第三课: JAL/JALR 跳转目标地址计算</h2>
+
+<pre><span class="cm">// JAL:  目标 = PC + imm(J-type),  返回地址 = PC+4 写入 rd</span>
+<span class="cm">// JALR: 目标 = (rs1 + imm) & ~1,  返回地址 = PC+4 写入 rd</span></pre>
+
+<h3>地址加法器 (SUM2) 的操作数选择</h3>
+
+<table>
+<tr><th>指令</th><th>sum2_op</th><th>op1</th><th>op2</th></tr>
+<tr><td>JAL / BRANCH / AUIPC</td><td><code>SCR1_SUM2_OP_PC_IMM</code></td><td><code>pc_curr_ff</code></td><td><code>exu_queue.imm</code></td></tr>
+<tr><td>JALR / LOAD / STORE</td><td><code>SCR1_SUM2_OP_REG_IMM</code></td><td><code>mprf2exu_rs1_data_i</code></td><td><code>exu_queue.imm</code></td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">SUM2 操作数路由源码</div>
+  <pre><span class="cm">// scr1_pipe_exu.sv:432-440</span>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">if</span> (exu_queue.sum2_op == SCR1_SUM2_OP_REG_IMM) <span class="kw">begin</span>
+        ialu_addr_op1 = mprf2exu_rs1_data_i;   <span class="cm">// 寄存器 + 立即数</span>
+        ialu_addr_op2 = exu_queue.imm;
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span>
+        ialu_addr_op1 = pc_curr_ff;            <span class="cm">// PC + 立即数</span>
+        ialu_addr_op2 = exu_queue.imm;
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+</div>
+
+<div class="box tip">
+  <div class="box-title">JALR 的地址对齐</div>
+  JALR 在 RISC-V 规范中要求目标地址最低位清零 (<code>&amp; ~1</code>)。在 SCR1 中通过 <code>ialu_addr_res &amp; SCR1_JUMP_MASK</code> 实现，<code>SCR1_JUMP_MASK</code> 在有 RVC 时为 <code>32'hFFFF_FFFE</code> (清除 bit[0])，无 RVC 时清除 bit[1:0]。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="branch">第四课: 分支预测与判定的完整时序</h2>
+
+<h3>SCR1 的分支预测策略: 静态预测不跳转 (Static Predict-Not-Taken)</h3>
+
+<p>SCR1 实现的是最朴素的分支预测: <strong>总是假设分支不跳转</strong>。当分支条件在 EXU 阶段被评估为"条件成立 (taken)"时，IFU 已经按照"不跳转"的假设取回了错误路径上的指令。此时需要:</p>
+
+<ol>
+  <li><strong>Flush IFU 指令队列</strong>: 丢弃已取指但未执行的错误路径指令</li>
+  <li><strong>从新 PC 地址重新取指</strong>: IFU FSM 转到 IDLE，然后重新发 FETCH</li>
+</ol>
+
+<h3>分支未采用 (Not Taken) 与采用 (Taken) 的完整时序对比</h3>
+
+<table>
+<tr><th>周期</th><th colspan="2">未采用 (Not Taken) -- 无惩罚</th><th colspan="2">采用 (Taken) -- 1 周期惩罚</th></tr>
+<tr>
+  <td>T0</td>
+  <td colspan="2">IFU 顺序取 0x200 (beq x1,x2,0x20)</td>
+  <td colspan="2">IFU 顺序取 0x200 (beq x1,x2,0x20)</td>
+</tr>
+<tr>
+  <td>T1</td>
+  <td colspan="2">IFU 取 0x204 (beq 下一条), IDU 译码 0x200</td>
+  <td colspan="2">IFU 取 0x204 (beq 下一条), IDU 译码 0x200</td>
+</tr>
+<tr>
+  <td>T2</td>
+  <td colspan="2">IFU 取 0x208, IDU 译码 0x204, EXU 空</td>
+  <td colspan="2">IFU 取 0x208, IDU 译码 0x204, EXU 空</td>
+</tr>
+<tr>
+  <td>T3</td>
+  <td>EXU 执行 beq: <code>ialu_cmp=0</code> (条件不成立)</td>
+  <td><code>jb_taken=0</code>, 无 new_pc_req</td>
+  <td>EXU 执行 beq: <code>ialu_cmp=1</code></td>
+  <td><code>jb_taken=1</code> &rarr; new_pc_req=1, q_flush_req=1</td>
+</tr>
+<tr>
+  <td>T4</td>
+  <td>IDU 译码 0x208, EXU 执行 0x204</td>
+  <td>一切正常继续</td>
+  <td>IFU 队列清空 (rptr=wptr=0), <code>ifu2idu_vd=0</code></td>
+  <td>IDU 收到无效数据, EXU 空闲</td>
+</tr>
+<tr>
+  <td>T5</td>
+  <td>继续流水</td>
+  <td>---</td>
+  <td>IFU FSM IDLE &rarr; FETCH: 从新地址 (0x220) 取指</td>
+  <td>IDU/EXU 空闲</td>
+</tr>
+<tr>
+  <td>T6</td>
+  <td>继续流水</td>
+  <td>---</td>
+  <td>IMEM 返回新指令, IDU 译码新指令</td>
+  <td>Bubble 结束</td>
+</tr>
+</table>
+
+<h3>Flush 的 IFU 内部时序 -- 从 <code>q_flush_req</code> 到 <code>q_is_empty</code></h3>
+
+<pre><span class="cm">// scr1_pipe_ifu.sv:381, 388-395</span>
+<span class="kw">assign</span> q_flush_req = exu2ifu_pc_new_req_i | pipe2ifu_stop_fetch_i;
+
+<span class="cm">// 写指针复位: q_wptr &lt;= 0 (下一个上升沿)</span>
+<span class="kw">assign</span> q_wptr_next = q_flush_req ? '0
+                   : ~q_wr_none  ? q_wptr + (q_wr_full ? 'b010 : 'b001) : q_wptr;
+
+<span class="cm">// 读指针复位: q_rptr &lt;= 0 (下一个上升沿)</span>
+<span class="kw">assign</span> q_rptr_next = q_flush_req ? '0
+                   : ~q_rd_none  ? q_rptr + (q_rd_hword ? 'b001 : 'b010) : q_rptr;
+
+<span class="cm">// 队列空判断: q_is_empty = (q_rptr == q_wptr)</span>
+
+<span class="cm">// scratch_pipe_ifu.sv:465</span>
+<span class="kw">assign</span> ifu_fetch_req = exu2ifu_pc_new_req_i &amp; ~pipe2ifu_stop_fetch_i;</pre>
+
+<p>关键: <code>q_flush_req=1</code> 时，下一时钟周期 <code>q_rptr=q_wptr=0</code>，队列瞬间变"空"。同时 <code>ifu_fetch_req=1</code> 触发 IFU FSM 从 IDLE 转到 FETCH，开始从新 PC 取指。</p>
+
+<div class="box warn">
+  <div class="box-title">为什么 Taken 分支有 1 周期 Bubble 惩罚？</div>
+  因为 T3 才确定分支要跳转，IFU 在 T0-T2 已取回 0x204 和 0x208 两条错误指令。T3 发出 flush 后，T4 队列被清空，IDU 无指令可译码，EXU 无指令可执行 = Bubble。T5 才能重新取指。这 1 个周期也称为 <strong>分支误预测惩罚</strong>。
+</div>
+
+<h3>分支判定三步走</h3>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>地址加法器</strong> 计算跳转目标: <code>addr_res = pc_curr + imm(B-type)</code>，使用 <code>SCR1_SUM2_OP_PC_IMM</code>
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>主 ALU</strong> 做比较: rs1 vs rs2，通过减法得出标志位 <code>z, s, o, c</code>
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>EXU 判定</strong>: <code>branch_taken = exu_queue.branch_req &amp; ialu_cmp</code>，然后 <code>jb_taken = jump_req | branch_taken</code>
+</div>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:738-740</span>
+<span class="kw">assign</span> branch_taken = exu_queue.branch_req &amp; ialu_cmp;
+<span class="kw">assign</span> jb_taken     = exu_queue.jump_req | branch_taken;
+<span class="kw">assign</span> jb_new_pc    = ialu_addr_res &amp; SCR1_JUMP_MASK;
+
+<span class="cm">// 各种分支的 ialu_cmp 判定</span>
+<span class="cm">// CMD_SUB_EQ:  z == 1   → BEQ  : 相等时跳转</span>
+<span class="cm">// CMD_SUB_NE:  z == 0   → BNE  : 不等时跳转</span>
+<span class="cm">// CMD_SUB_LT:  s ^ o    → BLT  : 有符号小于</span>
+<span class="cm">// CMD_SUB_GE:  ~(s ^ o) → BGE  : 有符号大于等于</span>
+<span class="cm">// CMD_SUB_LTU: ~c       → BLTU : 无符号小于</span>
+<span class="cm">// CMD_SUB_GEU: c        → BGEU : 无符号大于等于</span></pre>
+
+<!-- ============================================================ -->
+<h2 id="stall">第五课: 流水线暂停 (Stall) -- LSU Stall 的完整传播</h2>
+
+<h3>EXU Ready 判断: 谁决定 <code>exu_rdy</code>？</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:797-807</span>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        lsu_req                 : exu_rdy = lsu_rdy | lsu_exc_req;  <span class="cm">// LSU 忙时等待</span>
+        ialu_vd                 : exu_rdy = ialu_rdy;               <span class="cm">// IALU 多周期 (MUL/DIV)</span>
+        csr2exu_mstatus_mie_up_i: exu_rdy = <span class="num">1'b0</span>;               <span class="cm">// CSR 忙 (MSTATUS 更新中)</span>
+        <span class="kw">default</span>                 : exu_rdy = <span class="num">1'b1</span>;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>LSU Stall 如何冻结全流水线: 端到端传播路径</h3>
+
+<pre>
+<span class="cm">// [阶段 1] LSU 内部 FSM 进入 BUSY 状态</span>
+<span class="cm">// scr1_pipe_lsu.sv:169-191</span>
+lsu_fsm_curr: IDLE → BUSY (当 dmem_req_vd=1)
+lsu2exu_rdy_o = dmem_resp_received;  <span class="cm">// 仅当 DMEM 响应到达才变高</span>
+
+<span class="cm">// [阶段 2] EXU ready 计算</span>
+<span class="cm">// scr1_pipe_exu.sv:800</span>
+lsu_req ? exu_rdy = lsu_rdy | lsu_exc_req  <span class="cm">// lsu_rdy=0 时 exu_rdy=0</span>
+
+<span class="cm">// [阶段 3] EXU 通知 IDU</span>
+<span class="cm">// scr1_pipe_exu.sv:810</span>
+exu2idu_rdy_o = exu_rdy &amp; ~exu_queue_barrier;  <span class="cm">// exu_rdy=0 → exu2idu_rdy=0</span>
+
+<span class="cm">// [阶段 4] IDU 传递 Ready 信号</span>
+<span class="cm">// scr1_pipe_idu.sv:80</span>
+idu2ifu_rdy_o = exu2idu_rdy_i;  <span class="cm">// exu2idu_rdy=0 → idu2ifu_rdy=0</span>
+
+<span class="cm">// [阶段 5] IFU 响应</span>
+<span class="cm">// IFU 内部: idu2ifu_rdy_i=0 意味着 IDU 无法接受新指令</span>
+<span class="cm">// 队列不读出 (q_rd_vd=0), pipe2ifu_stop_fetch_i 来自 top 模块</span>
+<span class="cm">// ifu2imem_req_o 的条件之一: ~pipe2ifu_stop_fetch_i</span>
+
+<span class="cm">// [阶段 6] IFU FSM</span>
+<span class="kw">assign</span> ifu_stop_req  = pipe2ifu_stop_fetch_i
+                     | (imem_resp_er_discard_pnd &amp; ~exu2ifu_pc_new_req_i);
+<span class="cm">// FSM FETCH → IDLE 当 ifu_stop_req=1</span></pre>
+
+<h3>Stall 的触发源总表</h3>
+
+<table>
+<tr><th>触发条件</th><th>原始信号</th><th>传播链</th><th>影响模块</th></tr>
+<tr><td>LSU 访存未完成</td><td><code>lsu_rdy=0</code> (LSU FSM=BUSY)</td><td>lsu_rdy &rarr; exu_rdy=0 &rarr; exu2idu_rdy=0 &rarr; idu2ifu_rdy=0 &rarr; IFU 停取指</td><td>IFU, IDU, EXU (冻结)</td></tr>
+<tr><td>多周期乘除法 (RVM)</td><td><code>ialu_rdy=0</code></td><td>ialu_rdy &rarr; exu_rdy=0 &rarr; 同上</td><td>IFU, IDU, EXU</td></tr>
+<tr><td>CSR MSTATUS/MIE 更新</td><td><code>csr2exu_mstatus_mie_up_i=1</code></td><td>exu_rdy=1'b0 &rarr; 同上</td><td>IFU, IDU, EXU</td></tr>
+<tr><td>WFI 暂停</td><td><code>wfi_halted_ff=1</code></td><td>exu_queue_barrier=1 &rarr; exu2idu_rdy=0 (屏障)</td><td>IFU, IDU, EXU</td></tr>
+<tr><td>调试暂停</td><td><code>hdu2exu_dbg_halted_i=1</code></td><td>exu_queue_barrier=1 &rarr; 同上</td><td>FIU, IDU, EXU</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">exu_queue_barrier 与 exu_rdy 的区别</div>
+  <pre><span class="cm">// scr1_pipe_exu.sv:810</span>
+exu2idu_rdy_o = exu_rdy &amp; ~exu_queue_barrier;
+
+<span class="cm">// exu_rdy=0 的反压: IDU 不能发送新命令，但已进入 EXU 队列的指令仍可完成</span>
+<span class="cm">// barrier=1 的屏障: 连 EXU 队列也不允许新指令进入 (exu_queue_vd_next=0)</span>
+<span class="cm">// scr1_pipe_exu.sv:333</span>
+exu_queue_vd_next = ~exu_queue_barrier &amp; idu2exu_req_i &amp; ~exu2ifu_pc_new_req_o;</pre>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="flush">第六课: 流水线清空 (Flush) 的完整时序</h2>
+
+<h3>Flush 触发链 -- T3 同周期 flush</h3>
+
+<pre><span class="cm">// T3: EXU 判定跳转/分支/陷阱</span>
+exu2ifu_pc_new_req_o = <span class="num">1'b1</span>;     <span class="cm">// 请求新 PC (exu2pipe_exu.sv:722)</span>
+exu2ifu_pc_new_o     = target;  <span class="cm">// 目标地址</span>
+
+<span class="cm">// T3: IFU 收到 New PC 请求 (同周期)</span>
+<span class="kw">assign</span> q_flush_req = exu2ifu_pc_new_req_i | pipe2ifu_stop_fetch_i;  <span class="cm">// ifu.sv:381</span>
+
+<span class="cm">// T3: FSM 转 IDLE (如果 jump 不被 stop_fetch 屏蔽)</span>
+<span class="kw">assign</span> ifu_fetch_req = exu2ifu_pc_new_req_i &amp; ~pipe2ifu_stop_fetch_i;  <span class="cm">// ifu.sv:465</span>
+
+<span class="cm">// T4: 队列清空完成 (下一个上升沿: rptr=wptr=0)</span>
+<span class="kw">assign</span> q_wptr_next = q_flush_req ? '0 : ...;  <span class="cm">// ifu.sv:394</span>
+<span class="kw">assign</span> q_rptr_next = q_flush_req ? '0 : ...;  <span class="cm">// ifu.sv:409</span>
+
+<span class="cm">// T4: IDU 收到清空后的无效数据</span>
+<span class="cm">// ifu2idu_vd_o: 数据有效信号变为 0(因为队列空)</span>
+
+<span class="cm">// T4: FSM 转 FETCH，从新 PC 重新取指</span></pre>
+
+<h3>Flush 过程中各模块状态</h3>
+
+<table>
+<tr><th>周期</th><th>IFU 队列</th><th>IDU</th><th>EXU</th></tr>
+<tr><td>T3</td><td>flush_req=1，清空中</td><td>译码前一条 (将 invalid)</td><td>产生 new_pc_req</td></tr>
+<tr><td>T4</td><td>队列空 (wptr=rptr=0), <code>q_is_empty=1</code></td><td><code>ifu2idu_vd=0</code> (无效)</td><td>空闲或新 PC 未生效</td></tr>
+<tr><td>T5</td><td>收到新指令(新 PC)</td><td>空闲或开始译码</td><td>-</td></tr>
+<tr><td>T6</td><td>下一指令</td><td>译码新指令</td><td>-</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="flush-scenarios">第六课续: Flush 触发条件全集</h2>
+
+<p>以下列出所有能触发 IFU 指令队列 flush 的条件，以及对应的信号路径:</p>
+
+<table>
+<tr><th>#</th><th>场景</th><th>触发信号 (来源模块)</th><th>q_flush_req 路径</th><th>新 PC 指向</th><th>清空对象</th></tr>
+<tr>
+  <td>1</td>
+  <td><strong>复位</strong></td>
+  <td><code>init_pc</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>SCR1_RST_VECTOR</code></td>
+  <td>队列 + 未完成 IMEM 事务</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><strong>中断</strong></td>
+  <td><code>exu2csr_take_irq_o</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>MTVEC.BASE</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><strong>异常</strong></td>
+  <td><code>exu2csr_take_exc_o</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>MTVEC.BASE</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><strong>MRET</strong></td>
+  <td><code>exu2csr_mret_instr_o</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>MEPC</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><strong>调试恢复</strong></td>
+  <td><code>dbg_run_start_npbuf</code> (EXU/HDU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>hdu2exu_dbg_new_pc_i</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><strong>WFI 退出</strong></td>
+  <td><code>wfi_run_start_ff</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>pc_curr_ff</code> (不变)</td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><strong>FENCE.I</strong></td>
+  <td><code>exu_queue.fencei_req</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>inc_pc</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><strong>JAL/JALR/分支</strong></td>
+  <td><code>jb_taken</code> (EXU)</td>
+  <td><code>exu2ifu_pc_new_req_i=1</code></td>
+  <td><code>ialu_addr_res</code></td>
+  <td>队列 + IMEM 事务</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><strong>停止取指</strong></td>
+  <td><code>pipe2ifu_stop_fetch_i</code> (TOP)</td>
+  <td><code>pipe2ifu_stop_fetch_i=1</code></td>
+  <td>无 (仅清空队列)</td>
+  <td>仅队列</td>
+</tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">IMEM 事务丢弃 (Discard)</div>
+  当 <code>exu2ifu_pc_new_req_i=1</code> 时，IFU 不仅要清空队列，还要丢弃所有<strong>已发出但未完成的 IMEM 读事务</strong>。这由 <code>imem_resp_discard_cnt</code> 计数器跟踪:
+  <pre><span class="cm">// scr1_pipe_ifu.sv:580-582</span>
+<span class="kw">assign</span> imem_resp_discard_cnt_next = exu2ifu_pc_new_req_i
+                                  ? imem_pnd_txns_cnt_next - imem_handshake_done
+                                  : ...;
+<span class="kw">assign</span> imem_resp_discard_req = |imem_resp_discard_cnt;</pre>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="wfi">第七课: WFI 等待中断指令的状态机 -- 详解</h2>
+
+<h3>WFI 信号关系总览</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:230-249</span>
+
+<span class="cm">// ---- WFI 核心信号 ----</span>
+wfi_halt_cond  <span class="cm">// 暂停条件: 无 IP && (WFI指令 || 刚启动) && HDU 允许</span>
+wfi_halt_req   <span class="cm">// 暂停请求: ~wfi_halted_ff & wfi_halt_cond</span>
+wfi_run_req    <span class="cm">// 恢复请求: wfi_halted_ff & (ip_ie || dbg_halt2run)</span>
+
+wfi_halted_ff  <span class="cm">// WFI 状态标志: 1=暂停中, 0=运行中</span>
+wfi_halted_next = wfi_halt_req | ~wfi_run_req;
+
+wfi_run_start_ff  <span class="cm">// 单周期脉冲: 从 HALTED → RUNNING 的第一个周期</span>
+wfi_run_start_next = wfi_halted_ff & csr2exu_ip_ie_i & ~exu2csr_take_irq_o;</pre>
+
+<h3>WFI FSM 状态转换图 (带详细 gate 条件)</h3>
+
+<div class="fsm">                              wfi_halt_cond = 1
+                              ============================
+   ┌────────────────┐        // (ALL of the following)     ┌────────────────┐
+   │   RUNNING       │        1. ~csr2exu_ip_ie_i          │   HALTED       │
+   │                 │ ─────► 2. (exu_queue.wfi_req        │                │
+   │ wfi_halted_ff=0 │           | wfi_run_start_ff)       │ wfi_halted_ff=1│
+   │                 │        3. ~hdu2exu_no_commit_i      │                │
+   │                 │ ◄───── 4. ~hdu2exu_dmode_sstep_en_i │                │
+   └────────────────┘        5. ~hdu2exu_dbg_run2halt_i    └────────────────┘
+                              =============================        │
+                                                                   │
+      wfi_run_req = 1                                              │
+      ==========================================                   │
+      // wfi_halted_ff AND (AT LEAST ONE of:)                      │
+      1. csr2exu_ip_ie_i  (任意挂起中断 + 局部使能)  ◄─────────────┘
+      2. hdu2exu_dbg_halt2run_i  (调试恢复)
+      ==========================================
+
+                              中断到来但不被受理 (exu_busy):
+                              ┌─────────────────────────────────┐
+                              │ wfi_run_start_ff = 1            │
+                              │ (脉冲输出, wfi 退出 PC 不变)     │
+                              │ wfi_run_start_next:              │
+                              │   wfi_halted_ff & ip_ie          │
+                              │   & ~exu2csr_take_irq_o          │
+                              └─────────────────────────────────┘
+
+                              中断被受理 (exu2csr_take_irq_o=1):
+                              exu2ifu_pc_new_o = csr2exu_new_pc_i  (MTVEC)
+                              而非 pc_curr_ff !</pre>
+
+<h3>WFI 各阶段的流水线行为</h3>
+
+<table>
+<tr><th>阶段</th><th>wfi_halted_ff</th><th>exu_queue_barrier</th><th>exu2idu_rdy_o</th><th>流水线状态</th></tr>
+<tr>
+  <td>WFI 译码 (T2)</td>
+  <td>0</td>
+  <td>0</td>
+  <td>1</td>
+  <td>IDU 置 <code>wfi_req=1</code></td>
+</tr>
+<tr>
+  <td>WFI 执行 (T3)</td>
+  <td>0</td>
+  <td>0</td>
+  <td>1</td>
+  <td>EXU 评估 <code>wfi_halt_cond</code></td>
+</tr>
+<tr>
+  <td>进入 HALT (T4+)</td>
+  <td>0→1</td>
+  <td>1</td>
+  <td>0</td>
+  <td><code>exu_queue_vd_next=0</code>, 全流水冻结</td>
+</tr>
+<tr>
+  <td>中断到达</td>
+  <td>1</td>
+  <td>1</td>
+  <td>0</td>
+  <td><code>wfi_run_req=1</code>, <code>wfi_halted_ff→0</code></td>
+</tr>
+<tr>
+  <td>退出 RUN_START</td>
+  <td>0</td>
+  <td>1→0 (run_start脉冲)</td>
+  <td>0→1</td>
+  <td>PC 不变, 执行 WFI 下一条</td>
+</tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">WFI 退出时为什么不改变 PC？</div>
+  WFI 退出时 PC 不变 (<code>wfi_run_start_ff: pc_curr_ff</code>)，下一条执行的指令是 WFI 后面的指令。但如果中断被<strong>受理</strong> (exu2csr_take_irq_o=1)，则会使用 <code>csr2exu_new_pc_i</code> 而非 <code>pc_curr_ff</code>，进入陷阱处理程序。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ecall-mret">第八课: ECALL/MRET 进出流程 -- 带精确 CSR 信号时序</h2>
+
+<h3>ECALL 进入陷阱的 6 步完整流程</h3>
+
+<table>
+<tr><th>步骤</th><th>周期</th><th>模块</th><th>信号变化</th><th>说明</th></tr>
+<tr>
+  <td>1</td>
+  <td>T2</td>
+  <td>IDU</td>
+  <td><code>exu_queue.exc_req=1</code><br><code>exu_queue.exc_code=SCR1_EXC_CODE_ECALL_M</code></td>
+  <td>IDU 译码 ECALL 指令，设置异常请求和异常编码 (11)</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>T3</td>
+  <td>EXU</td>
+  <td><code>exu_exc_req = exu_queue.exc_req | ... = 1</code><br><code>exc_code = SCR1_EXC_CODE_ECALL_M</code><br><code>exc_trap_val = '0</code></td>
+  <td>异常编码通过优先级仲裁器; ECALL 的 mtval=0</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>T3</td>
+  <td>EXU&rarr;CSR</td>
+  <td><code>exu2csr_take_exc_o = exu_exc_req &amp; ~dbg_halted</code><br><code>exu2csr_exc_code_o = exc_code</code><br><code>exu2csr_trap_val_o = '0</code></td>
+  <td>异常请求发送到 CSR</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>T3</td>
+  <td>CSR</td>
+  <td><code>e_exc=1</code> → CSR 内部逻辑:<br><code>MEPC &larr; pc_curr_ff</code><br><code>MCAUSE &larr; {1'b0, exc_code}</code><br><code>MTVAL &larr; trap_val</code><br><code>MSTATUS.MPIE &larr; MSTATUS.MIE</code><br><code>MSTATUS.MIE &larr; 0</code><br><code>csr2exu_new_pc_i = MTVEC.BASE</code></td>
+  <td>CSR 保存上下文并生成新 PC</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td>T3</td>
+  <td>EXU PC MUX</td>
+  <td><code>exu2ifu_pc_new_o = csr2exu_new_pc_i</code> (P2)</td>
+  <td>PC 多路器选中陷阱目标地址</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td>T3-T4</td>
+  <td>IFU</td>
+  <td><code>exu2ifu_pc_new_req_o=1</code> &rarr; <code>q_flush_req=1</code><br>T4: 队列空, 从 MTVEC.BASE 重新取指</td>
+  <td>IFU 清空队列并切换指令流</td>
+</tr>
+</table>
+
+<h3>MRET 返回的 6 步完整流程</h3>
+
+<table>
+<tr><th>步骤</th><th>周期</th><th>模块</th><th>信号变化</th><th>说明</th></tr>
+<tr>
+  <td>1</td>
+  <td>T2</td>
+  <td>IDU</td>
+  <td><code>exu_queue.mret_req=1</code></td>
+  <td>IDU 译码 MRET 指令</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>T3</td>
+  <td>EXU</td>
+  <td><code>exu2csr_mret_instr_o = exu_queue.mret_req</code><br><code>exu2csr_mret_update_o = exu2csr_mret_instr_o &amp; csr_access_init</code></td>
+  <td>MRET 指令提交 (TDU 断点未触发前提下)</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>T3</td>
+  <td>CSR</td>
+  <td><code>e_mret=1</code> → CSR 内部逻辑:<br><code>MSTATUS.MIE &larr; MSTATUS.MPIE</code><br><code>MSTATUS.MPIE &larr; 1</code><br><code>csr2exu_new_pc_i = MEPC</code></td>
+  <td>CSR 恢复上下文并生成返回 PC</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>T3 或 T4</td>
+  <td>EXU</td>
+  <td><code>exu2csr_mret_instr_o &amp; ~csr2exu_mstatus_mie_up_i</code><br>若 MSTATUS 更新同周期 (mie_up=1)，等 1 周期</td>
+  <td>MSTATUS 同步检查 -- MRET 共 2 周期</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td>T3/T4</td>
+  <td>EXU PC MUX</td>
+  <td><code>exu2ifu_pc_new_o = csr2exu_new_pc_i</code> (P2)</td>
+  <td>PC 多路器选中 MEPC</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td>T4/T5</td>
+  <td>IFU</td>
+  <td><code>exu2ifu_pc_new_req_o=1</code> &rarr; flush 队列, 从 MEPC 重新取指</td>
+  <td>IFU 返回原程序流</td>
+</tr>
+</table>
+
+<h3>MRET 的 CSR 访问 FSM 与 2 周期延迟机制</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:946-958 -- CSR 访问 FSM</span>
+<span class="kw">typedef</span> <span class="kw">enum</span> logic { SCR1_CSR_INIT, SCR1_CSR_RDY } scr1_csr_access_e;
+
+<span class="kw">always_ff</span> @(posedge clk, negedge rst_n) <span class="kw">begin</span>
+    csr_access_ff &lt;= csr_access_next;  <span class="cm">// INIT (0) 或 RDY (1)</span>
+<span class="kw">end</span>
+
+<span class="kw">assign</span> csr_access_next = (csr_access_init &amp; csr2exu_mstatus_mie_up_i)
+                       ? SCR1_CSR_RDY     <span class="cm">// 如果同周期 MSTATUS 更新，需再等一拍</span>
+                       : SCR1_CSR_INIT;
+
+<span class="kw">assign</span> csr_access_init = (csr_access_ff == SCR1_CSR_INIT);
+
+<span class="cm">// 关键: MRET update 仅在 csr_access_init=1 时生效</span>
+<span class="kw">assign</span> exu2csr_mret_update_o = exu2csr_mret_instr_o &amp; csr_access_init;</pre>
+
+<div class="box warn">
+  <div class="box-title">MRET 的 2 周期延迟场景分析</div>
+  <strong>正常情况 (无 MSTATUS 冲突):</strong> T3 MRET 提交 &rarr; T3 CSR 处理 &rarr; T3 pc_new_req &rarr; T4 IFU flush &rarr; T5 新取指。总计: <strong>5 周期</strong> (4 级流水 + 1 额外)。
+
+  <strong>MSTATUS 冲突情况:</strong> T3 MRET 提交但 csr2exu_mstatus_mie_up_i=1 &rarr; T3 csr_access_next=RDI, csr_access_init=0, mret_update=0 &rarr; T4 csr_access_ff=RDI, csr_access_init=1, mret_update=1 (MRET 生效) &rarr; T4 pc_new_req &rarr; T5 flush &rarr; T6 新取指。总计: <strong>6 周期</strong>。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="exc-priority">第九课: EXU 异常优先级仲裁器 -- 源文件精确分析</h2>
+
+<h3>异常请求信号 <code>exu_exc_req</code> 的完整 OR 逻辑</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:482-493</span>
+<span class="kw">assign</span> exu_exc_req  = exu_queue_vd &amp; (exu_queue.exc_req    <span class="cm">// IDU 异常 (ECALL/非法指令/取指错)</span>
+                                     | lsu_exc_req          <span class="cm">// LSU 异常 (地址未对齐/访存错)</span>
+                                     | csr2exu_rw_exc_i     <span class="cm">// CSR 非法访问</span>
+`<span class="kw">ifndef</span> SCR1_RVC_EXT
+                                     | jb_misalign         <span class="cm">// 跳转目标未对齐 (仅无 RVC)</span>
+`<span class="kw">endif</span>
+`<span class="kw">ifdef</span> SCR1_TDU_EN
+`<span class="kw">ifdef</span> SCR1_DBG_EN
+                                     | exu2hdu_ibrkpt_hw_o <span class="cm">// 硬件断点 (TDU)</span>
+`<span class="kw">endif</span>
+`<span class="kw">endif</span>
+                                                          );</pre>
+
+<h3>异常编码优先级仲裁器 (scr1_pipe_exu.sv:514-529)</h3>
+
+<pre><span class="cm">// 仲裁原则: case(1'b1) 唯一有效，最高优先级在前</span>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+`<span class="kw">ifdef</span> SCR1_TDU_EN
+  `<span class="kw">ifdef</span> SCR1_DBG_EN
+        exu2hdu_ibrkpt_hw_o: exc_code = SCR1_EXC_CODE_BREAKPOINT;      <span class="cm">// P1: 3</span>
+  `<span class="kw">endif</span>
+`<span class="kw">endif</span>
+        exu_queue.exc_req  : exc_code = exu_queue.exc_code;            <span class="cm">// P2: IDU 提供的编码</span>
+        lsu_exc_req        : exc_code = lsu_exc_code;                  <span class="cm">// P3: LSU 提供的编码</span>
+        csr2exu_rw_exc_i   : exc_code = SCR1_EXC_CODE_ILLEGAL_INSTR;   <span class="cm">// P4: 2</span>
+`<span class="kw">ifndef</span> SCR1_RVC_EXT
+        jb_misalign        : exc_code = SCR1_EXC_CODE_INSTR_MISALIGN;  <span class="cm">// P5: 0</span>
+`<span class="kw">endif</span>
+        <span class="kw">default</span>            : exc_code = SCR1_EXC_CODE_ECALL_M;      <span class="cm">// 仅当无任何异常源时不会到达</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<h3>异常来源与编码对照表 (带精确信号名)</h3>
+
+<table>
+<tr><th>优先级</th><th>仲裁信号</th><th>模块来源</th><th>异常编码</th><th>编码值</th><th>触发条件</th><th>MTVAL</th></tr>
+<tr>
+  <td><strong>P1</strong></td>
+  <td><code>exu2hdu_ibrkpt_hw_o</code></td>
+  <td>TDU</td>
+  <td><code>SCR1_EXC_CODE_BREAKPOINT</code></td>
+  <td>3</td>
+  <td><code>tdu2exu_ibrkpt_exc_req_i | tdu2lsu_dbrkpt_exc_req_i</code></td>
+  <td>pc_curr_ff (指令) / ialu_addr_res (数据)</td>
+</tr>
+<tr>
+  <td><strong>P2</strong></td>
+  <td><code>exu_queue.exc_req</code></td>
+  <td>IDU</td>
+  <td><code>exu_queue.exc_code</code></td>
+  <td>变化</td>
+  <td>ECALL (11), 非法指令 (2), 取指错误 (1)</td>
+  <td>pc_curr_ff / '0</td>
+</tr>
+<tr>
+  <td><strong>P3</strong></td>
+  <td><code>lsu_exc_req</code></td>
+  <td>LSU</td>
+  <td><code>lsu_exc_code</code></td>
+  <td>变化</td>
+  <td>LD/ST_ADDR_MISALIGN (4/6), LD/ST_ACCESS_FAULT (5/7)</td>
+  <td>ialu_addr_res</td>
+</tr>
+<tr>
+  <td><strong>P4</strong></td>
+  <td><code>csr2exu_rw_exc_i</code></td>
+  <td>CSR</td>
+  <td><code>SCR1_EXC_CODE_ILLEGAL_INSTR</code></td>
+  <td>2</td>
+  <td>非法 CSR 地址访问</td>
+  <td>非法指令编码 / '0</td>
+</tr>
+<tr>
+  <td><strong>P5</strong></td>
+  <td><code>jb_misalign</code></td>
+  <td>EXU</td>
+  <td><code>SCR1_EXC_CODE_INSTR_MISALIGN</code></td>
+  <td>0</td>
+  <td>跳转目标 bit[1:0]!=00 (仅无 RVC)</td>
+  <td>jb_new_pc</td>
+</tr>
+</table>
+
+<h3>LSU 异常编码子仲裁器 (scr1_pipe_lsu.sv:212-224)</h3>
+
+<pre><span class="cm">// LSU 内部的异常编码优先级仲裁</span>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">case</span> (<span class="num">1'b1</span>)
+        dmem_resp_er     : lsu2exu_exc_code_o = lsu_cmd_ff_load  ? SCR1_EXC_CODE_LD_ACCESS_FAULT
+                                               : lsu_cmd_ff_store ? SCR1_EXC_CODE_ST_ACCESS_FAULT
+                                                                  : SCR1_EXC_CODE_INSTR_MISALIGN;
+        lsu_exc_hwbrk    : lsu2exu_exc_code_o = SCR1_EXC_CODE_BREAKPOINT;          <span class="cm">// P2</span>
+        dmem_addr_mslgn_l: lsu2exu_exc_code_o = SCR1_EXC_CODE_LD_ADDR_MISALIGN;    <span class="cm">// P3</span>
+        dmem_addr_mslgn_s: lsu2exu_exc_code_o = SCR1_EXC_CODE_ST_ADDR_MISALIGN;    <span class="cm">// P4</span>
+        <span class="kw">default</span>          : lsu2exu_exc_code_o = SCR1_EXC_CODE_INSTR_MISALIGN;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+
+<!-- ============================================================ -->
+<h2 id="irq-exc-interact">第九课续: 中断与异常的交互</h2>
+
+<h3>中断受理条件: 严格的准入控制</h3>
+
+<pre><span class="cm">// scr1_pipe_exu.sv:973-981</span>
+<span class="kw">assign</span> exu2csr_take_irq_o = csr2exu_irq_i           <span class="cm">// CSR 模块发出中断请求</span>
+                          &amp; ~exu2pipe_exu_busy_o     <span class="cm">// EXU 不能正在忙 (等待 LSU/MUL)</span>
+`<span class="kw">ifdef</span> SCR1_DBG_EN
+                          &amp; ~hdu2exu_irq_dsbl_i      <span class="cm">// 中断未被调试器禁用</span>
+                          &amp; ~hdu2exu_dbg_halted_i    <span class="cm">// 不在调试暂停状态</span>
+`<span class="kw">endif</span>
+`<span class="kw">ifdef</span> SCR1_CLKCTRL_EN
+                          &amp; clk_pipe_en              <span class="cm">// 流水线时钟使能</span>
+`<span class="kw">endif</span>
+                          ;</pre>
+
+<div class="box warn">
+  <div class="box-title">为什么需要 ~exu2pipe_exu_busy_o？</div>
+  <code>exu2pipe_exu_busy_o = exu_queue_vd &amp; ~exu_rdy</code>。如果 EXU 正在等 LSU 完成或 MUL/DIV 完成，此时取中断会: (1) 无法正确保存当前指令的 PC 到 MEPC; (2) 导致复杂的数据一致性问题。因此 SCR1 简单地在 busy 期间屏蔽中断。
+</div>
+
+<h3>异常与中断的优先级关系: 同周期竞争裁决</h3>
+
+<table>
+<tr><th>场景</th><th>同周期的异常</th><th>同周期的中断</th><th>实际响应</th><th>逻辑</th></tr>
+<tr>
+  <td>1</td>
+  <td>有异常 (exu_exc_req=1)</td>
+  <td>无中断</td>
+  <td>进入异常陷阱</td>
+  <td><code>take_exc</code> 生效, <code>take_irq=0</code></td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>无异常</td>
+  <td>有中断 (csr2exu_irq_i=1)</td>
+  <td>进入中断陷阱</td>
+  <td><code>take_irq</code> 生效如果 busy=0</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>有异常 (来自当前指令)</td>
+  <td>有中断 (外部异步)</td>
+  <td><strong>进入异常陷阱</strong> (异常优先)</td>
+  <td><code>take_exc=1</code> 时 <code>busy=0</code>，但 <code>take_irq</code> 的 <code>csr2exu_irq_i</code> 被 CSR 设为 0 直到异常提交完成</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>EXU busy (等待 LSU)</td>
+  <td>有中断</td>
+  <td>中断排队等待</td>
+  <td><code>take_irq</code> 被 <code>~exu2pipe_exu_busy_o</code>屏蔽</td>
+</tr>
+</table>
+
+<h3>SCR1 的中断嵌套与委托</h3>
+
+<div class="box">
+  <div class="box-title">M 模式下的简单中断模型</div>
+  SCR1 仅支持 M 模式 (Machine Mode)，因此<strong>没有中断委托 (delegation)</strong> 的概念。所有中断和异常都由 M 模式处理。进入陷阱时 MIE 清 0，因此默认情况下<strong>不支持中断嵌套</strong>。如果需要嵌套，陷阱处理程序必须:
+  <ol>
+    <li>在进入后尽快保存 <code>MEPC</code> 到栈</li>
+    <li>通过 <code>CSRRW / CSRRS</code> 将 MIE 置 1</li>
+    <li>在处理完毕 MRET 前恢复 <code>MEPC</code></li>
+  </ol>
+</div>
+
+<h3>中断响应的最小延迟分析</h3>
+
+<table>
+<tr><th>延迟组成部分</th><th>最少周期</th><th>说明</th></tr>
+<tr><td>中断到达 &rarr; CSR 通知 EXU</td><td>0-1</td><td>中断来自外设 / CLINT / PLIC，异步到达</td></tr>
+<tr><td>CSR 评估 <code>csr2exu_irq_i</code></td><td>1</td><td>检查 MIE 使能 + MIP 挂起位</td></tr>
+<tr><td>EXU 检查 <code>~exu2pipe_exu_busy_o</code></td><td>0-1</td><td>如果 EXU 正好忙，等待 1 周期</td></tr>
+<tr><td>发出 <code>take_irq</code> &rarr; New PC</td><td>1</td><td>CSR 生成 <code>csr2exu_new_pc_i</code></td></tr>
+<tr><td>IFU flush 队列</td><td>1</td><td>清空队列 + 丢弃 IMEM 事务</td></tr>
+<tr><td>IFU 重新取指</td><td>1</td><td>从 MTVEC 取新指令</td></tr>
+<tr><td>陷阱处理程序第一条指令进入流水</td><td>1</td><td>进入 IDU 译码</td></tr>
+<tr><td><strong>总最小延迟</strong></td><td><strong>5-8</strong></td><td>中断从挂起到第一条处理指令开始执行</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="control-summary">第十课: 控制流全景图</h2>
+
+<p>下面汇总了 8 种改变程序流的事件，以及它们各自的新 PC 来源和惩罚周期:</p>
+
+<table>
+<tr><th>事件</th><th>新 PC 来源</th><th>Flush?</th><th>惩罚周期</th><th>PC 多路器优先级</th><th>主要信号</th></tr>
+<tr><td>复位</td><td><code>SCR1_RST_VECTOR</code> (0x200)</td><td>是</td><td>0 (初始化)</td><td>P1</td><td><code>init_pc</code></td></tr>
+<tr><td>异常</td><td><code>MTVEC.BASE</code></td><td>是</td><td>~4-5</td><td>P2</td><td><code>exu2csr_take_exc_o</code></td></tr>
+<tr><td>中断</td><td><code>MTVEC.BASE</code> (+ offset if vectored)</td><td>是</td><td>~5-8</td><td>P2</td><td><code>exu2csr_take_irq_o</code></td></tr>
+<tr><td>MRET</td><td><code>MEPC</code></td><td>是</td><td>5-6</td><td>P2</td><td><code>exu2csr_mret_instr_o</code></td></tr>
+<tr><td>调试恢复</td><td><code>hdu2exu_dbg_new_pc_i</code></td><td>是</td><td>~3</td><td>P3</td><td><code>dbg_run_start_npbuf</code></td></tr>
+<tr><td>WFI 退出</td><td><code>pc_curr_ff</code> (不变)</td><td>是</td><td>~2-3</td><td>P4</td><td><code>wfi_run_start_ff</code></td></tr>
+<tr><td>FENCE.I</td><td><code>inc_pc</code></td><td>是</td><td>~2-3</td><td>P5</td><td><code>exu_queue.fencei_req</code></td></tr>
+<tr><td>JAL/JALR/分支</td><td><code>ialu_addr_res &amp; JUMP_MASK</code></td><td>是</td><td>1 (分支采用)</td><td>P6</td><td><code>jb_taken</code></td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">惩罚周期是指什么？</div>
+  从 EXU 发出 new_pc_req 到新 PC 的第一条指令进入 EXU 执行所经过的额外 Bubble 周期。包含了 IFU flush + IMEM 丢弃 + 重新取指 + 流水线填充的时间。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="exercise">动手练习</h2>
+
+<fieldset>
+  <legend>练习 1: 画出 BEQ 的完整时序</legend>
+  <p>假设 <code>beq x1, x2, label</code> (条件成立)，目标地址 0x300。画出 T0-T7 各周期的 IFU/IDU/EXU 状态和关键信号值 (<code>ifu2idu_instr</code>, <code>idu2exu_cmd.jump_req</code>, <code>exu_queue.branch_req</code>, <code>ialu_cmp</code>, <code>jb_taken</code>, <code>exu2ifu_pc_new_req_o</code>, <code>exu2ifu_pc_new_o</code>, <code>q_flush_req</code>, <code>q_rptr</code>, <code>q_wptr</code>)。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: ECALL + MRET 的完整路径 (带 CSR 信号)</legend>
+  <p>假设 MTVEC=0x1C0 (Direct)，PC=0x300 处执行 ECALL (MEPC&rarr;0x304)。画出进入陷阱到 MRET 返回的全部周期，标注 <code>MEPC</code>, <code>MCAUSE</code>, <code>MSTATUS.MIE</code>, <code>MSTATUS.MPIE</code>, <code>MTVAL</code> 每个 CSR 的值变化。注意 MSTATUS 更新导致 MRET 延迟的情况。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: 多层优先级场景</legend>
+  <p>假设同一周期 T3 同时发生: (a) JAL 指令 <code>jb_taken=1</code>; (b) LSU load 地址未对齐异常 <code>lsu_exc_req=1</code>; (c) 外部中断 <code>csr2exu_irq_i=1</code>。最终 CPU 响应什么事件？按优先级顺序分析每一层仲裁的胜出者。新 PC 是多少？为什么？</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: 找源码写注释</legend>
+  <p>打开 <code>src/core/pipeline/scr1_pipe_exu.sv</code>，找到第 707-735 行的 PC 多路器和 new_pc_req 逻辑，为每一行源码添加中文注释。然后用相同方式为 ifu.sv 的 q_flush_req/ifu_fetch_req 逻辑 (第 381、465 行附近) 添加注释。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: LSU Stall 传播追踪</legend>
+  <p>跟踪一条 <code>lw x1, 0(x2)</code> 指令从 T2 到 T4 的全部信号。如果 DMEM 需要 3 个周期才返回数据 (resp 在 T6)，画出 T2-T7 的 <code>lsu_fsm_curr</code>, <code>lsu_rdy</code>, <code>exu_rdy</code>, <code>exu2idu_rdy_o</code>, <code>idu2ifu_rdy_o</code>, <code>ifu_fetch_req</code>, <code>ifu_fsm_curr</code> 的波形图。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: WFI 状态机源码验证</legend>
+  <p>打开 <code>src/core/pipeline/scr1_pipe_exu.sv</code>，找到 WFI logic 部分 (第 577-649 行)。验证: (a) WFI 暂停后 <code>exu_queue_barrier=1</code> 的原因; (b) <code>wfi_run_start_ff</code> 为什么只维持 1 周期; (c) 为什么 <code>wfi_run_start_next</code> 中要检查 <code>~exu2csr_take_irq_o</code>。</p>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="exercise-advanced">进阶练习 -- 流水线行为预测</h2>
+
+<fieldset>
+  <legend>练习 7: 预测流水线吞吐量</legend>
+  <p>给定以下指令序列，预测每条指令完成所需的周期数 (假设无缓存缺失):</p>
+  <pre>0x200: beq x0, x1, 0x300   <span class="cm">// 条件: x0 != x1, 不跳转</span>
+0x204: lw   x2, 0(x3)       <span class="cm">// DMEM 需要 2 周期</span>
+0x208: add  x4, x2, x5      <span class="cm">// 依赖 x2 (RAW)</span>
+0x20C: jal  x6, 0x400       <span class="cm">// 无条件跳转</span></pre>
+  <p>画出完整的流水线阶段图 (类似课堂上用表格表示的周期-阶段图)，标注 RAW 依赖导致的 stall 和分支惩罚。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: 异常 + 中断的完整场景</legend>
+  <p>以下场景按顺序发生，预测每个事件的实际响应结果:</p>
+  <ol style="margin:8px 0;">
+    <li>PC=0x300: <code>lw x1, 0(x2)</code> -- x2=0x1001 (地址未对齐)</li>
+    <li>PC=0x304: <code>add x3, x4, x5</code> -- 正常指令，但同周期外部中断到达</li>
+  </ol>
+  <p>问题: (a) 0x300 处的 lw 何时产生异常？(b) 0x304 处的 add 是否会执行？(c) 中断何时被受理？(d) MEPC 保存的是哪个地址？</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: IFU 队列深度与最大吞吐量</legend>
+  <p>SCR1 IFU 有 4 个半字的指令队列 (SCR1_IFU_Q_SIZE_HALF=4)。IMEM 响应延迟为 1 周期 (请求在 T0, 响应在 T1)。分析:</p>
+  <ol style="margin:8px 0;">
+    <li>连续 RVC (2 字节) 指令的最大取指吞吐量 (IPC)</li>
+    <li>连续 RVI (4 字节) 指令的最大取指吞吐量</li>
+    <li>当队列满时，IFU FSM 的行为 (见 <code>q_has_free_slots</code> 条件)</li>
+    <li>如果 IDU 因 EXU stall 停止接受，队列满后 IFU FSM 会转到什么状态？</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 10: 设计改进 -- 2 位动态分支预测器</legend>
+  <p>SCR1 使用静态预测不跳转。如果改成 2 位饱和计数器 (Smith Predictor) 动态预测，需要对哪些模块进行修改？</p>
+  <ol style="margin:8px 0;">
+    <li>画出修改后的流水线结构图</li>
+    <li>写出新的 <code>branch_taken_prediction</code> 信号逻辑</li>
+    <li>分析惩罚周期从 1 变为多少 (预测正确 vs 预测错误)</li>
+    <li>BTB (Branch Target Buffer) 是否需要额外存储？</li>
+  </ol>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0;">
+    <li>EXU 的 6 路 PC 多路器优先级从高到低分别是什么？每路的 gate 信号名称和值来源是什么？</li>
+    <li><code>exu2ifu_pc_new_req_o</code> 信号的 8 个 OR 条件各是什么？</li>
+    <li>分支不能跳转时惩罚为 0 周期的根本原因是什么？IFU 的队列 flush 如何实现？</li>
+    <li>LSU stall 的完整传播路径 (LSU→EXU→IDU→IFU→IFU FSM) 涉及哪些信号？</li>
+    <li>IFU 的 <code>q_flush_req</code> 由哪两个条件 OR 组成？flush 后 q_rptr 和 q_wptr 如何复位？</li>
+    <li>WFI 状态机: <code>wfi_halt_cond</code>、<code>wfi_run_req</code> 分别由哪些条件组合？<code>wfi_run_start_ff</code> 为何只有 1 周期？</li>
+    <li>MRET 的 <code>csr_access_ff</code> FSM 有两个状态，<code>csr_access_init</code> 信号如何影响 MRET 提交？</li>
+    <li>异常优先级仲裁器中 5 种异常的优先级排序是什么？<code>case(1'b1)</code> 优先级原理是什么？</li>
+    <li>同周期异常和中断竞争时，CPU 响应哪一个？为什么？</li>
+    <li>SCR1 的中断模型为什么不支持自动嵌套？如果要支持，软件需要怎么做？</li>
+    <li>IMEM 事务丢弃 (<code>imem_resp_discard_cnt</code>) 在哪些情况下发生？计数值如何确定？</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 8 周进入第三阶段 -- IFU 指令取指单元深度剖析: 2 状态 FSM、4x16 位环形队列、RVC 跨边界拼接、IMEM 握手协议、丢弃计数器、队列容量预测。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 控制流 | 第 7 周 (增强版)</p>
+</body>
+</html>

@@ -1,0 +1,574 @@
+================================================================================
+  SCR1 RISC-V 处理器项目 - 缩写与缩略词完整对照表
+================================================================================
+
+格式: 缩写 | 英文全称 | 中文解释
+
+================================================================================
+A
+================================================================================
+ABS           | Abstract                            | 抽象命令（调试模块用于访问寄存器/内存的抽象接口）
+ABI           | Application Binary Interface        | 应用程序二进制接口
+ABSTRACTAUTO  | Abstract Auto                       | 抽象自动执行（DM 寄存器）
+ABSTRACTCS    | Abstract Control and Status         | 抽象控制与状态（DM 寄存器）
+ACCESSMEM     | Access Memory                      | 抽象内存访问（调试命令类型）
+ACCESSREG     | Access Register                    | 抽象寄存器访问（调试命令类型）
+ACK           | Acknowledge                         | 确认（握手应答信号）
+ADDR / ADR    | Address                             | 地址
+ADDI          | Add Immediate                       | 立即数加法
+ADDI4SPN      | Add Immediate 4 x Stack Pointer N  | 栈指针偏移加法（4 字节对齐）
+ADDI16SP      | Add Immediate 16 x Stack Pointer   | 栈指针 16 字节对齐偏移加法
+AHB           | Advanced High-performance Bus      | ARM 高级高性能总线（片上互联总线协议）
+ALU / IALU    | (Integer) Arithmetic Logic Unit     | （整数）算术逻辑单元
+ALW           | Always                              | 始终开启（如不受门控的时钟）
+AND(I)        | AND (Immediate)                     | 按位与（立即数形式）
+AR            | Address Read                        | AXI 读地址通道前缀
+ARCH          | Architecture                        | 架构
+ARCHID        | Architecture ID                     | 架构标识符
+ASIC          | Application-Specific Integrated Circuit | 专用集成电路
+AUIPC         | Add Upper Immediate to PC           | 高 20 位立即数加 PC
+AW            | Address Width / Address Write       | 地址位宽 / AXI 写地址通道前缀
+AWIDTH        | Address Width                       | 地址位宽
+
+================================================================================
+B
+================================================================================
+B (AXI)       | Write Response                      | AXI 写响应通道前缀
+BEQ           | Branch if Equal                     | 相等则分支
+BGE(U)        | Branch if Greater or Equal (Unsigned) | 有/无符号大于等于则分支
+BHV           | Behavior                            | 复位行为控制（HDU/DM 复位行为配置）
+BLD_ID        | Build ID                            | 构建标识符（JTAG TAP 构建 ID 数据寄存器）
+BLT(U)        | Branch if Less Than (Unsigned)      | 有/无符号小于则分支
+BNE           | Branch if Not Equal                 | 不等则分支
+BP            | Bypass                              | 旁路/绕过（AHB/AXI 桥输入输出寄存器旁路选项）
+BRKPT         | Breakpoint                          | 断点
+BRKM          | Breakpoint Monitor                  | 断点监视器（TDU 子模块）
+BUF           | Bufferable                          | 可缓冲（AHB HPROT 保护控制位）
+BUSY          | Busy                                | 忙标志
+
+================================================================================
+C
+================================================================================
+C (FLAG)      | Carry                               | 进位/借位标志
+C_ADD(I)      | Compressed ADD (Immediate)          | RVC 压缩加法指令
+C_MV          | Compressed Move                     | RVC 压缩移动指令
+CFG           | Configuration                       | 配置（如 SCR1_CFG_RV32IMC_MAX）
+CDC           | Clock Domain Crossing               | 时钟域交叉（同步器用于跨时钟域传输）
+CH            | Chain / Channel                     | 扫描链/通道（JTAG 调试传输模块）
+CICSR         | Current Interrupt Context CSR       | 当前中断上下文（IPIC）
+CISV          | Current Interrupt Source Vector     | 当前中断源向量（IPIC）
+CLK           | Clock                               | 时钟
+CLKCTRL       | Clock Control                       | 时钟控制/时钟门控
+CLKSRC        | Clock Source                        | 时钟源选择（定时器时钟源，RTC 或系统时钟）
+CLRBITS       | Clear Bits                          | 位清零（SCU 系统控制操作类型）
+CLUSTER       | Cluster                             | 处理器集群（SOC 顶层模块）
+CMD           | Command                             | 命令
+CMDERR        | Command Error                       | 命令错误（抽象命令错误代码字段）
+CMP           | Compare                             | 比较
+CNT           | Counter                             | 计数器
+CORR          | Correction                          | 修正（有符号除法结果修正阶段）
+COUNTERH      | Counter High                        | 计数器高 32 位（hpmcounterh CSR 寄存器）
+CSR           | Control and Status Register         | 控制和状态寄存器
+CSRRW(I)      | CSR Read and Write (Immediate)      | CSR 读后写（立即数形式）
+CSRRS(I)      | CSR Read and Set Bits (Immediate)   | CSR 读后置位（立即数形式）
+CSRRC(I)      | CSR Read and Clear Bits (Immediate) | CSR 读后清零（立即数形式）
+CURR          | Current                             | 当前的
+CTRL          | Control                             | 控制信号
+CY            | Cycle                               | 周期计数器使能位（MCOUNTEN.CY）
+CYCLE(H)      | Cycle (High)                        | 周期计数器（高 32 位）
+CYCLEH        | Cycle High                          | 周期计数器高 32 位（cycleh 影子 CSR）
+
+================================================================================
+D
+================================================================================
+DATACOUNT     | Data Count                          | 数据寄存器数量（ABSTRACTCS 字段）
+DBG           | Debug                               | 调试子系统
+DBGC          | Debug Clock                         | 调试子系统时钟（HDU/DM/SCU 皆使用）
+DBRKPT        | Data Breakpoint                     | 数据断点
+DCSR          | Debug Control and Status Register   | 调试控制与状态寄存器（HART 级别调试 CSR）
+DEC           | Decode                              | 译码流水级
+DEVICE        | Device                              | 设备/芯片（调试模块设备树有效标志）
+DHALTED       | Debug Halted                        | 调试暂停状态（HART 调试状态机状态）
+DHI           | Debug-Hart Interface                | 调试-HART 接口（DM 内部控制 HART 状态的子模块）
+DIFF          | Different                           | 不同、差异
+DISCARD       | Discard                             | 丢弃
+DIV           | Divide                              | 除法
+DIVU          | Divide Unsigned                     | 无符号除法
+DM            | Debug Module                        | 调试模块（RISC-V 外部调试规范的硬件实现）
+DMACTIVE      | Debug Module Active                 | DM 活动标志
+DMCONTROL     | Debug Module Control                | 调试模块控制寄存器
+DMEM          | Data Memory                         | 数据存储器
+DMI           | Debug Module Interface              | 调试模块接口（TAPC 到 DM 的桥接访问接口）
+DMIHARDRESET  | DMI Hard Reset                      | DMI 硬复位（DTMCS 字段）
+DMIRESET      | DMI Reset                           | DMI 软复位（DTMCS 字段）
+DMISTAT       | DMI Status                          | DMI 状态（DTMCS 字段）
+DMODE         | Debug Mode                          | 调试模式
+DMON          | Data Monitor                        | 数据监视器
+DMSTATUS      | Debug Module Status                 | 调试模块状态寄存器
+DP            | Dual-Port                           | 双端口（双端口存储器）
+DPC           | Debug PC                            | 调试程序计数器（保存进入调试模式时的 PC）
+DR            | Data Register                       | JTAG 数据寄存器
+DRC           | Discard Response Counter            | 丢弃响应计数器
+DREG          | Data Register                       | 抽象数据寄存器（DM 的 DATA0/DATA1 寄存器）
+DRUN          | Debug Run                           | 调试运行状态（HART 在调试模式下运行）
+DSBL          | Disable                             | 禁用
+DSCRATCH      | Debug Scratch                       | 调试暂存寄存器（dscratch0/dscratch1）
+DTMCS         | Debug Transport Module Ctrl & Status| 调试传输模块控制与状态（JTAG DTM 寄存器）
+DVDND         | Dividend                            | 被除数
+DW            | Data Width                          | 数据位宽
+DWIDTH        | Data Width                          | 数据位宽
+
+================================================================================
+E
+================================================================================
+E (前缀)      | Event                               | 事件标志（e_exc / e_irq / e_mret）
+E (后缀)      | Enum                                | 枚举类型后缀
+EBREAK        | Environment Break                   | 环境断点（进入调试模式）
+EBREAKM       | EBREAK in M-mode                    | M 模式下 EBREAK 是否进入调试模式（DCSR 位）
+EC            | Exception Code                      | 异常/中断编码
+ECALL         | Environment Call                    | 环境调用（M-mode 下为 ECALL_M）
+EIRQ          | External Interrupt Request          | 外部中断请求
+EN            | Enable                              | 使能
+ENC           | Encoding                            | 指令集编码
+EOI           | End of Interrupt                    | 中断结束/中断响应完成（IPIC 寄存器）
+EQ            | Equal                               | 等于
+ER            | Error                               | 错误（存储器响应 RDY_ER 类型）
+EXC           | Exception                           | 异常
+EXE           | Execute                             | 执行流水级
+EXE_STAGE     | Execute Stage                       | 执行阶段（IDU 与 EXU 之间的流水线寄存器）
+EXCINJECT     | Exception Inject                    | 异常注入（程序缓冲区状态）
+EXT           | Extension                           | RISC-V 扩展
+EXU           | Execution Unit                      | 执行单元
+
+================================================================================
+F
+================================================================================
+FENCE(I)      | (Instruction) Fence                 | 存储器序同步 / 指令缓存刷新
+FENCEI        | FENCE.I                             | 指令缓存刷新屏障
+FETCH_SRC     | Fetch Source                        | 取指来源选择（NORMA/PBUF 模式）
+FF (后缀)     | Flip-Flop                           | 触发器/寄存器后的信号
+FIFO          | First In First Out                  | 先进先出队列（AHB 桥请求/响应缓冲队列）
+FLAGS         | --                                  | 标志位集合
+FPGA          | Field-Programmable Gate Array       | 现场可编程门阵列
+FPU           | Floating-Point Unit                 | 浮点运算单元
+FSM           | Finite State Machine                | 有限状态机
+FUNCT3/7/12   | Function 3/7/12                     | RISC-V 指令格式中的功能码字段
+FUSE          | --                                  | 熔丝/硬连线配置值
+
+================================================================================
+G
+================================================================================
+GE(U)         | Greater or Equal (Unsigned)         | 有/无符号大于等于比较
+GP            | Global Pointer                      | 全局指针（RISC-V ABI 寄存器 x3）
+GPR           | General Purpose Register            | 通用寄存器
+
+================================================================================
+H
+================================================================================
+H (前缀)      | Half                                | 半字（16 位）
+HALT          | Halt                                | 暂停/挂起
+HALTCAUSE     | Halt Cause                          | HART 暂停原因
+HART          | Hardware Thread                     | 硬件线程（RISC-V 处理器核心实例）
+HARTCMD       | HART Command                        | HART 调试命令
+HARTINFO      | HART Info                           | HART 信息寄存器（DM 的 hartinfo 寄存器）
+HARTRESET     | HART Reset                          | HART 复位请求（DMCONTROL 控制位）
+HASEL         | HART Select Enable                  | HART 选择使能
+HBURST        | Burst Type                          | AHB 突发传输类型
+HDU           | Hardware Debug Unit                 | 硬件调试单元
+HI            | High                                | 高位部分
+HMASTLOCK     | Locked Transfer                     | AHB 锁定传输指示
+HPM           | Hardware Performance Monitor        | 硬件性能监视器
+HPMCOUNTER    | Hardware Performance Monitor Counter| 硬件性能监视计数器
+HPROT         | Protection Control                  | AHB 保护控制信号
+HRDATA        | Read Data                           | AHB 读数据总线
+HREADY        | Ready                               | AHB 就绪信号
+HRESP         | Transfer Response                   | AHB 传输响应（OKAY/ERROR）
+HSIZE         | Transfer Size                       | AHB 传输数据大小（8B/16B/32B）
+HTRANS        | Transfer Type                       | AHB 传输类型（IDLE/NONSEQ）
+HW            | Hardware                            | 硬件
+HWBRK / HWBRKPT | Hardware Breakpoint              | 硬件断点（TDU 产生的指令/数据断点）
+HWDATA        | Write Data                          | AHB 写数据总线
+HWORD         | Half Word                           | 半字（16 位）
+HWRITE        | Write                               | AHB 写使能信号
+
+================================================================================
+I
+================================================================================
+I (后缀)      | Input                               | 输入端口
+I/F           | Interface                           | 接口
+IALU          | Integer Arithmetic Logic Unit       | 整数算术逻辑单元
+IBRKPT        | Instruction Breakpoint              | 指令断点
+ICOUNT        | Instruction Count                   | 指令计数（TDU 触发器类型 3）
+ICSR          | Interrupt Context Status Register   | 中断上下文状态寄存器（IPIC）
+IDCODE        | Identification Code                 | JTAG 设备识别码
+IDLE          | --                                  | 空闲状态
+IDU           | Instruction Decode Unit             | 指令译码单元
+IDX           | Index                               | 索引（IPIC）
+IE            | Interrupt Enable                    | 中断使能
+IER           | Interrupt Enable Register           | 中断使能寄存器（IPIC 子寄存器）
+IFDEF         | If Defined                          | 条件编译指令
+IFU           | Instruction Fetch Unit              | 指令取指单元
+IINVR         | Interrupt Invert Register           | 中断反相寄存器（IPIC 子寄存器）
+ILL           | Illegal                             | 非法
+IM            | Interrupt Mode                      | 中断模式（IPIC ICSR 字段：电平/边沿触发）
+IMEM          | Instruction Memory                  | 指令存储器
+IMM           | Immediate                           | 立即数
+IMON          | Instruction Monitor                 | 指令监视器
+IMPID         | Implementation ID                   | 实现标识符
+IMPEBREAK     | Implements EBREAK                   | 实现 EBREAK（DMSTATUS 字段）
+IMR           | Interrupt Mode Register             | 中断模式寄存器（IPIC 子寄存器）
+INC           | Increment                           | 递增
+INC_PC        | Increment PC                        | 递增 PC（PC+4/PC+2 的写回源）
+INIT          | Initialize                          | 初始化
+INSTR         | Instruction                         | 指令
+INSTRET(H)    | Instruction Retired (High)          | 已退休指令计数器（高 32 位）
+INSTRETH      | Instructions Retired High           | 已退休指令计数器高 32 位
+INT           | Internal                            | 内部（存储器阵列内部名称后缀）
+INTFPU        | Integer/FPU                         | 整数/浮点寄存器类型（调试抽象寄存器访问命令）
+INV           | Invert                              | 反相（IPIC 中断线路极性反转）
+IP            | Interrupt Pending                   | 中断挂起
+IPIC          | Integrated Programmable Interrupt Controller | 集成可编程中断控制器
+IPR           | Interrupt Pending Register          | 中断挂起寄存器（IPIC 读后写清除）
+IR            | Instruction Retired / Instruction Register | 指令退休计数器使能位 / JTAG 指令寄存器
+IRQ           | Interrupt Request                   | 中断请求
+IRQ_LINES     | IRQ Lines                           | 外部中断请求线路
+ISA           | Instruction Set Architecture        | 指令集架构
+ISR           | Interrupt Service Routine           | 中断服务例程
+ISV           | In-Service                          | 中断在处理中（IPIC ICSR 状态位）
+ISVR          | Interrupt Service Vector Register   | 中断服务向量寄存器（IPIC 只读）
+ITER          | Iteration                           | 迭代
+
+================================================================================
+J
+================================================================================
+JAL(R)        | Jump and Link (Register)            | 跳转并链接（寄存器间接）
+JB            | Jump / Branch                       | 跳转或分支的统称
+JTAG          | Joint Test Action Group             | IEEE 1149.1 联合测试行动组（调试/测试接口标准）
+JUMP          | --                                  | 无条件跳转
+
+================================================================================
+L
+================================================================================
+LB(U)         | Load Byte (Unsigned)                | 字节加载（无符号扩展）
+LDATA         | Load Data                           | 加载数据
+LEAD_ZEROS_CNT | Leading Zeros Count               | 前导零计数（优先编码函数）
+LH(U)         | Load Halfword (Unsigned)            | 半字加载（无符号扩展）
+LO            | Low                                 | 低位部分
+LSU           | Load-Store Unit                     | 加载/存储单元
+LT(U)         | Less Than (Unsigned)                | 有/无符号小于比较
+LUI           | Load Upper Immediate                | 加载高位立即数
+LW            | Load Word                           | 字加载
+
+================================================================================
+M
+================================================================================
+M9K / M10K    | --                                  | Intel FPGA 嵌入式存储器块型号（9/10 Kbits）
+MARCHID       | Machine Architecture ID             | 机器架构标识符
+MASK          | --                                  | 位掩码
+MBASE         | Module Base                         | 模块基地址（HDU/TDU 调试 CSR 地址空间基地址）
+MCAUSE        | Machine Cause                       | 机器异常原因寄存器
+MCOUNTEN      | Machine Counter Enable              | 机器计数器使能寄存器（非标准 CSR）
+MCOUNTINHIBIT | Machine Counter Inhibit             | 机器计数器抑制寄存器
+MCYCLE(H)     | Machine Cycle (High)                | 机器周期计数器（高 32 位）
+MCYCLEH       | Machine Cycle High                  | 机器周期计数器高 32 位（mcycleh CSR）
+MDU           | Multiply-Divide Unit                | 乘除法单元
+MEIE          | Machine External Interrupt Enable   | 机器外部中断使能位
+MEIP          | Machine External Interrupt Pending  | 机器外部中断挂起位
+MEM           | Memory                              | 存储器
+MEMIF         | Memory Interface                    | 存储器接口
+MEPC          | Machine Exception Program Counter   | 机器异常返回地址寄存器
+MHARTID       | Machine Hart ID                     | 机器硬件线程标识符
+MIE           | Machine Interrupt Enable            | 机器中断使能寄存器
+MIMP          | Machine Implementation ID           | 机器实现标识
+MINSTRET(H)   | Machine Instructions Retired (High) | 机器已退休指令计数器（高 32 位）
+MINSTRETH     | Machine Instructions Retired High   | 机器已退休指令计数器高 32 位（minstreth CSR）
+MIP           | Machine Interrupt Pending           | 机器中断挂起寄存器
+MISA          | Machine ISA Register                | 机器 ISA 与控制寄存器
+MISA_MXL      | MISA Machine XLEN                   | MISA 寄存器 XLEN 字段（32/64/128 位编码）
+MISALIGN      | --                                  | 地址未对齐
+MISC          | Miscellaneous                       | 杂项
+MODE          | --                                  | 模式（MTVEC.mode：direct / vectored）
+MON           | Monitor                             | 监视器（TDU 对流水线的监视接口）
+MPIE          | Machine Previous Interrupt Enable   | 机器先前中断使能位（MSTATUS.MPIE）
+MPP           | Machine Previous Privilege          | 机器先前特权级（MSTATUS.MPP）
+MPRF          | Multi-Port Register File            | 多端口寄存器文件
+MRET          | Machine-mode Return                 | 机器模式异常返回指令
+MS1           | Most Significant One                | 最高有效位优先编码
+MSCRATCH      | Machine Scratch                     | 机器暂存寄存器
+MSIE          | Machine Software Interrupt Enable   | 机器软件中断使能位
+MSIP          | Machine Software Interrupt Pending  | 机器软件中断挂起位
+MSLGN         | Misalign                            | 未对齐（地址）
+MSPAN         | Module Span                         | 模块地址空间范围（HDU/TDU CSR 映射跨度）
+MSTATUS       | Machine Status                      | 机器状态寄存器
+MTIE          | Machine Timer Interrupt Enable      | 机器定时器中断使能位
+MTIMER        | Machine Timer                       | 机器定时器
+MTIMECMPLO/HI | Machine Timer Compare Low/High      | 机器定时器比较值低/高 32 位
+MTIP          | Machine Timer Interrupt Pending     | 机器定时器中断挂起位
+MTRIG         | Machine Trigger                     | M 模式触发器（TDU mcontrol 类型触发器，类型 2）
+MTVAL         | Machine Trap Value                  | 机器异常值寄存器
+MTVEC         | Machine Trap Vector                 | 机器陷阱向量基址寄存器
+MUL           | Multiply                            | 乘法
+MULH          | Multiply High                       | 有符号乘法取高 32 位
+MULHSU        | Multiply High Signed-Unsigned       | 有符号×无符号乘法取高 32 位
+MULHU         | Multiply High Unsigned              | 无符号乘法取高 32 位
+MUX           | Multiplexer                         | 多路选择器
+MVENDORID     | Machine Vendor ID                   | 机器厂商标识符
+MXL           | Machine XLEN                        | 机器模式下的 XLEN 编码
+
+================================================================================
+N
+================================================================================
+N (前缀/后缀)| Negation / Active-low               | 取反 / 低有效（如 rst_n）
+NBYTES        | Number of Bytes                     | 字节数（双端口存储器参数）
+NDMRESET      | Non-DM Reset                        | 非 DM 复位（调试系统外部复位请求）
+NE            | Not Equal                           | 不等于
+NEG           | Negative                            | 负
+NEXT (后缀)   | --                                  | 下一周期值（组合逻辑信号）
+NEW (后缀)    | --                                  | 新计算值（中间变量）
+NMRET         | Not MRET                            | 非 MRET 指令
+NO            | --                                  | 否定前缀（如 no_commit）
+NONE          | --                                  | 无操作 / 无效
+NONSEQ        | Non-Sequential                      | 非连续传输（AHB HTRANS 类型）
+NOP           | No Operation                        | 空操作
+NOTRDY        | Not Ready                           | 未就绪（存储器响应类型：请求尚未完成）
+NPBUF         | Not Program Buffer                  | 非程序缓冲区
+NV            | Not Valid                           | 无效
+
+================================================================================
+O
+================================================================================
+O (FLAG)      | Overflow                            | 溢出标志
+O (后缀)      | Output                              | 输出端口
+OCPD          | Occupied                            | 已占用的（如队列已占用半字数）
+OFFS          | Offset                              | 偏移量
+OK            | --                                  | 存储器响应类型：成功
+OP            | Operation / Operand                 | 操作 / 操作数
+OPCODE        | Operation Code                      | 操作码（指令 [6:2] 字段）
+OPS           | Operands                            | 操作数（复数）
+OR(I)         | OR (Immediate)                      | 按位或（立即数形式）
+OVF           | Overflow                            | 上溢/溢出
+OVFLW         | Overflow                            | 溢出
+
+================================================================================
+P
+================================================================================
+PBUF          | Program Buffer                      | 程序缓冲区（调试模式下执行小段指令的硬件缓冲寄存器组）
+PC            | Program Counter                     | 程序计数器
+PIPE          | Pipeline                            | 流水线
+PND           | Pending                             | 挂起/待处理
+POS           | Positive                            | 正
+POSTEXEC      | Post Execute                        | 执行后操作（调试命令 POSTEXEC 位）
+PRIV          | Privilege / Privileged              | 特权级 / 特权指令
+PROD          | Product                             | 积
+PROGBUF       | Program Buffer                      | 程序缓冲区（DM 寄存器 PROGBUF0-5）
+PROGBUFSIZE   | Program Buffer Size                 | 程序缓冲区大小（ABSTRACTCS 字段）
+PTR           | Pointer                             | 指针（如队列读/写指针）
+PWRUP         | Power-Up                            | 上电（上电复位）
+
+================================================================================
+Q
+================================================================================
+Q             | Queue                               | 队列（指令队列相关信号前缀）
+QLFY          | Qualifier                           | 复位域交叉限定符
+QOS           | Quality of Service                  | 服务质量（AXI 协议 awqos/arqos 信号）
+QUO           | Quotient                            | 商
+
+================================================================================
+R
+================================================================================
+R (前缀)      | Read                                | 读操作
+RA            | Return Address                      | 返回地址（RISC-V ABI 寄存器 x1）
+RAM           | Random-Access Memory                | 随机存取存储器
+RD            | Register Destination / Read         | 目标寄存器 / 读命令
+RDATA         | Read Data                           | 读取数据
+RDC           | Reset Domain Crossing               | 复位域交叉（跨不同复位域的同步限定逻辑）
+RDY           | Ready                               | 就绪
+REG           | Register                            | 寄存器
+REGNO         | Register Number                     | 寄存器编号（调试 ACCESSREG 命令指定 GPR 编号）
+REM           | Remainder                           | 余数
+REMU          | Remainder Unsigned                  | 无符号取余
+REQ           | Request                             | 请求
+RES           | Result                              | 结果
+RESP          | Response                            | 响应
+RET           | Retire                              | 退休/提交
+RO            | Read-Only                           | 只读
+RS1/RS2       | Register Source 1 / 2               | 源寄存器 1 / 2
+RST           | Reset                               | 复位信号
+RSTEXIT       | Reset Exit                          | 复位退出（HART 暂停原因之一：复位退出后暂停）
+RST_VECTOR    | Reset Vector                        | 复位向量
+RTC           | Real-Time Clock                     | 实时时钟（定时器的独立时钟源）
+RUN           | --                                  | 运行状态
+RV32E         | RISC-V 32-bit Embedded              | RISC-V 32 位嵌入式指令集（RVE）
+RVC           | RISC-V Compressed                   | RISC-V 16 位压缩指令集扩展
+RVE           | RISC-V Embedded (RV32E)             | RISC-V 嵌入式基础整数指令集（16 寄存器）
+RVI           | RISC-V Integer (RV32I)              | RISC-V 基础整数指令集（32 寄存器）
+RVM           | RISC-V Multiply/Divide              | RISC-V 整数乘除法扩展
+RW            | Read / Write                        | 读/写
+
+================================================================================
+S
+================================================================================
+S (FLAG)      | Sign                                | 符号标志
+S (后缀)      | Struct                              | 结构体类型后缀
+S0-S11        | Saved Registers                     | 被保存寄存器（RISC-V ABI x8-x9, x18-x27）
+SB / SH / SW  | Store Byte / Halfword / Word        | 字节/半字/字存储
+SCR1          | Syntacore RISC-V Core 1             | 处理器核心名称
+SCU           | System Control Unit                 | 系统控制单元（生成系统/内核/DM/HDU 复位的硬件模块）
+SDATA         | Store Data                          | 存储数据
+SEL           | Select                              | 选择
+SETBITS       | Set Bits                            | 位置位（SCU 系统控制操作类型）
+SGN           | Sign                                | 符号
+SHAMT         | Shift Amount                        | 移位量（instr[24:20]）
+SHFT           | Shift                              | 移位
+SIMUL         | Simulation                          | 仿真
+SIRQ          | Software Interrupt Request          | 软件中断请求
+SLL(I)        | Shift Left Logical (Immediate)      | 逻辑左移（立即数形式）
+SLT(I(U))     | Set if Less Than (Immediate, Unsigned) | 有/无符号小于置位
+SOC           | System-on-Chip                      | 片上系统
+SOI           | Start of Interrupt                  | 中断开始（IPIC 软件触发中断服务开始）
+SP            | Stack Pointer                       | 栈指针（RISC-V ABI 寄存器 x2）
+SRA(I)        | Shift Right Arithmetic (Immediate)  | 算术右移（立即数形式）
+SRL(I)        | Shift Right Logical (Immediate)     | 逻辑右移（立即数形式）
+SSTEP         | Single Step                         | 单步调试
+STEP          | --                                  | 步进（同 sstep）
+STEPIE        | Step Interrupt Enable               | 单步中断使能（DCSR 位）
+STICKY        | Sticky                              | 粘滞状态（SCU 粘滞状态寄存器）
+STOP          | --                                  | 停止
+SUB           | Subtract                            | 减法
+SUM           | Summation / Sum                     | 和 / 加法结果
+SUM2          | Second Sum Adder                    | 第二个加法器（地址计算专用通路）
+SVA           | SystemVerilog Assertions            | SystemVerilog 断言
+SVH (后缀)    | SystemVerilog Header                | 头文件扩展名
+SYSCTRL       | System Control                      | 系统控制
+SYS_RST       | System Reset                        | 系统复位（SCU 生成的全芯片级别系统复位）
+SYSTEM        | --                                  | 系统指令操作码
+
+================================================================================
+T
+================================================================================
+T0-T6         | Temporary Registers                 | 临时寄存器（RISC-V ABI x5-x7, x28-x31）
+TAP           | Test Access Port                    | JTAG 测试访问端口
+TAPC          | TAP Controller                      | TAP 控制器（JTAG 状态机和指令/数据寄存器管理模块）
+TAPCSYNC      | TAPC Synchronizer                   | TAPC 同步器（跨 TCK/SysCLK 时钟域同步模块）
+TCM           | Tightly-Coupled Memory              | 紧耦合存储器
+TCK           | Test Clock                          | JTAG 测试时钟
+TDATA         | Trigger Data                        | 触发数据寄存器
+TDI           | Test Data Input                     | JTAG 测试数据输入
+TDO           | Test Data Output                    | JTAG 测试数据输出
+TDO_EN        | TDO Enable                          | TDO 输出使能（用于三态缓冲器控制）
+TDU           | Trigger Debug Unit                  | 触发调试单元
+TIMEH         | Time High                           | 时间计数器高 32 位（timeh 影子 CSR）
+TINFO         | Trigger Info                        | 触发器信息（TDU 只读寄存器 tinfo）
+TIRQ          | Timer Interrupt Request             | 定时器中断请求
+TMS           | Test Mode Select                    | JTAG 测试模式选择
+TMREQ         | Timer Request                       | 定时器请求（HART 暂停原因：定时器触发暂停）
+TP            | Thread Pointer                      | 线程指针（RISC-V ABI 寄存器 x4）
+TRACE         | --                                  | 仿真跟踪日志
+TRAP          | --                                  | 陷阱（异常/中断的统称）
+TRGT          | Target                              | 目标平台
+TRIG          | Trigger                             | 触发器（调试触发条件）
+TRSTN         | Test Reset (Active Low)             | JTAG 测试复位（低电平有效）
+TSELECT       | Trigger Select                      | 触发选择寄存器
+TXN           | Transaction                         | 事务（一次请求-响应交互）
+TYPE          | --                                  | 类型（枚举/结构体类型的命名前缀）
+
+================================================================================
+U
+================================================================================
+U (后缀)      | Unsigned                            | 无符号
+UNALIGNED     | --                                  | 未对齐
+UPD           | Update                              | 更新使能信号
+
+================================================================================
+V
+================================================================================
+V (后缀)      | Vector / Value / Version            | 向量 / 值 / 版本
+VD            | Valid                               | 有效标志
+VECT / VECTORED | Vectored                          | 向量模式（MTVEC.mode=1，中断按向量地址跳转）
+
+================================================================================
+W
+================================================================================
+W (前缀)      | Write / Word                        | 写操作 / 字（32 位）
+WAIT4END      | Wait For End                        | 等待结束（程序缓冲区状态：等待执行完成）
+WB            | Writeback                            | 回写（寄存器文件写回阶段）
+WDATA         | Write Data                          | 写入数据
+WDTH          | Width                               | 数据宽度
+WFI           | Wait for Interrupt                  | 等待中断指令
+WORD          | --                                  | 字（32 位）
+WR            | Write                               | 写使能
+WSTRB         | Write Strobe                        | AXI 写字节选通信号
+
+================================================================================
+X
+================================================================================
+X0-X31        | --                                  | RISC-V 通用寄存器命名
+XCHECK        | X-State Check                       | X 态检查断言（仿真用）
+XDEBUGVER     | External Debug Version              | 外部调试版本号（DCSR 字段）
+XILINX        | --                                  | 赛灵思 FPGA 厂商
+XLEN          | --                                  | 通用寄存器位宽（SCR1 为 32）
+XOR(I)        | XOR (Immediate)                     | 按位异或（立即数形式）
+XPROP         | X Propagation                       | X 态传播检测（仿真用）
+
+================================================================================
+Z
+================================================================================
+Z (FLAG)      | Zero                                | 零标志
+ZIMM          | Zero-Extended Immediate             | 零扩展立即数（CSR 立即数形式中 rs1 字段的零扩展值）
+
+================================================================================
+信号命名规范
+================================================================================
+格式: <源模块>2<目标模块>_<信号名>_<方向后缀>
+
+_I  (后缀)  | Input                | 本模块视角的输入信号
+_O  (后缀)  | Output               | 本模块视角的输出信号
+_FF (后缀)  | Flip-Flop            | 触发器输出（寄存一拍后的信号）
+_VD (后缀)  | Valid                | 有效标志
+_REQ(后缀)  | Request              | 请求/条件标志
+2           | "to"                 | 源到目标的连接标记
+
+================================================================================
+项目构建系统缩写
+================================================================================
+CFG          | Configuration        | 预定义配置（MAX/BASE/MIN/CUSTOM）
+ARCH         | Architecture         | ISA 架构选择（IMC/IC/IM/I/EMC/EM/EC/E）
+BUS          | Bus                  | 总线类型选择（AHB/AXI）
+VECT_IRQ     | Vectored IRQ         | 向量中断使能
+TCM          | Tightly-Coupled Memory | 紧耦合存储器使能
+TRACE        | Trace Log            | 仿真跟踪日志
+SIM          | Simulation           | 仿真
+TB           | Testbench            | 测试平台
+RTL          | Register Transfer Level | 寄存器传输级
+INC_DIR      | Include Directory    | 头文件包含目录
+BLD_DIR      | Build Directory      | 构建输出目录
+TST_DIR      | Test Directory       | 测试目录
+IMEM_PATTERN | IMEM Pattern         | 指令存储器延迟模式
+DMEM_PATTERN | DMEM Pattern         | 数据存储器延迟模式
+VCS          | --                   | Synopsys VCS 仿真器
+NCSIM        | --                   | Cadence NCSim/Incisive 仿真器
+VERILATOR    | --                   | Verilator 开源仿真器（Verilog 转 C++）
+
+================================================================================
+测试与基准程序缩写
+================================================================================
+RISC-V       | --                   | 第五代精简指令集架构
+ISA          | Instruction Set Architecture | 指令集架构
+DHRYSTONE    | --                   | Dhrystone 整数性能基准测试
+COREMARK     | --                   | EEMBC CoreMark 嵌入式 CPU 性能基准测试
+COMPLIANCE   | --                   | RISC-V 合规性测试套件
+ARCH_TEST    | Architecture Test    | RISC-V 架构测试套件
+ISR_SAMPLE   | Interrupt Service Routine Sample | 中断服务例程示例
+HELLO        | --                   | Hello World 测试程序
+CROSS_PREFIX | Cross Compiler Prefix | 交叉编译器前缀（如 riscv64-unknown-elf-）
+GCC          | GNU Compiler Collection | GNU C 编译器
+OBJDUMP      | Object Dump          | 目标文件反汇编工具
+OBJCOPY      | Object Copy          | 目标文件格式转换工具
+READELF      | Read ELF             | ELF 文件信息读取工具
+ILP32        | --                   | 32 位整数+长整数+指针 ABI
+ILP32E       | --                   | 32 位嵌入式 ABI（RVE 对应）
+
+================================================================================
+文件生成时间: 2026-07-18
+涵盖范围: SCR1 项目全部 SystemVerilog RTL 源码、头文件、测试平台、构建系统
+================================================================================

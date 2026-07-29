@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调试子系统 HDU + TDU | SCR1 第 12 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; --orange: #e67e22; --orange-light: #fef3e2; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #1a365d; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .fn { color: #dcdcaa; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .info { background: var(--orange-light); border-color: var(--orange); } .info .box-title { color: #92400e; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 260px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.80em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 16px 0; font-family: monospace; font-size: 0.83em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.35; overflow-x: auto; }
+  .step { padding: 8px 0; border-bottom: 1px dotted var(--border); }
+  .step-num { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: var(--blue); color: white; border-radius: 50%; margin-right: 10px; font-weight: 700; font-size: 0.85em; }
+  .hl-orange { color: var(--orange); font-weight: 600; }
+  .signal-table td:first-child { font-family: 'Fira Code', monospace; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>调试子系统 HDU + TDU (增强版) | SCR1 第 12 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#hdu-fsm">HDU 调试状态机</a>
+  <a href="#hdu-cnten">HDU 7个计数使能信号</a>
+  <a href="#hdu-test">LFSR 软件测试方法论</a>
+  <a href="#hdu-nmi">NMI 不可屏蔽中断路径</a>
+  <a href="#hdu-pbuf">Program Buffer</a>
+  <a href="#hdu-csr">调试 CSR 状态转移</a>
+  <a href="#hdu-flow">调试模式进入/退出流程</a>
+  <a href="#tdu-arch">TDU 触发器架构</a>
+  <a href="#tdu-xbar">TDU 触发交叉开关</a>
+  <a href="#tdu-actions">触发器动作: halt/resume/trigger gen</a>
+  <a href="#tdu-filter">触发器使能/禁用与过滤</a>
+  <a href="#tdu-mcontrol">mcontrol 触发器</a>
+  <a href="#tdu-icount">icount 触发器</a>
+  <a href="#tdu-chain">触发器链 + 动作选择</a>
+  <a href="#dtm">DTM: JTAG到调试器</a>
+  <a href="#ebreak-inject">ebreak/trigger 注入流水线</a>
+  <a href="#exercise">动手练习 (12题)</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周覆盖 4 个调试模块 (增强版)</div>
+  <strong>HDU</strong> (<code>scr1_pipe_hdu.sv</code>, 904 行) — HART 调试单元: 状态机 + Program Buffer + 调试 CSR + DM 接口 + Run Control<br>
+  <strong>TDU</strong> (<code>scr1_pipe_tdu.sv</code>, 610 行) — 触发调试单元: mcontrol/icount 触发器 + 指令/数据断点 + 链<br>
+  <strong>DM</strong> (<code>scr1_dm.sv</code>, 1427 行) — 调试模块: DMI 接口 + Abstract Command FSM + DHI FSM + Program Buffer 存储<br>
+  <strong>TAPC + Synchronizer</strong> (<code>scr1_tapc.sv</code> + <code>scr1_tapc_synchronizer.sv</code>) — JTAG TAP 控制器 + TCK 到 SysCLK 跨时钟域同步
+</div>
+
+<!-- ============ HDU FSM ============ -->
+<h2 id="hdu-fsm">第二课: HDU 调试状态机 — 4 个状态</h2>
+
+<pre>
+                   haltreq
+                     │
+    ┌────────────────┼───────────────┐
+    ▼                │               │
+┌──────────┐   ┌──────────┐   ┌───────────┐
+│ RUN      │──▶│ DBG_RUN  │──▶│ DBG_HALTED│   ┌──────────┐
+│(正常运行) │   │(调试运行) │   │(调试暂停)  │◀──│  RESET   │
+└──────────┘   └──────────┘   └───────────┘   └──────────┘
+    ▲                │               │              ▲
+    │                │  resumereq     │   init_pc   │
+    └────────────────┴───────────────┘              │
+              resumereq                             │
+                                       dm_dhalt_req │
+                                                    │
+                                          ┌─────────┘
+                                          │  (reset 退出)
+                                          │
+                        dm_dhalt_req     │
+                        ───────────────▶ │
+</pre>
+
+<table>
+<tr><th>状态</th><th>枚举值</th><th>含义</th><th>no_commit</th><th>irq_dsbl</th><th>pc_advmt_dsbl</th><th>pbuf_fetch</th><th>hwbrk_dsbl</th></tr>
+<tr><td><strong>RESET</strong></td><td>2'b00</td><td>上电复位, 等待 init_pc</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td><strong>RUN</strong></td><td>2'b01</td><td>正常执行, 可退休指令</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td><strong>DBG_RUN</strong></td><td>2'b11</td><td>调试下运行 (DRUN)</td><td>0</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td><strong>DBG_HALTED</strong></td><td>2'b10</td><td>暂停, 所有指令被禁止提交</td><td>ebreak/trigger 时=1</td><td>1</td><td>1</td><td>0</td><td>0</td></tr>
+</table>
+
+<h3>状态转移触发条件与 Run Control 差异</h3>
+
+<table>
+<tr><th>转移</th><th>触发</th><th>Run Control 配置</th></tr>
+<tr><td>RESET → RUN</td><td><code>init_pc=1</code> 且无 haltreq</td><td>正常: all=0</td></tr>
+<tr><td>RESET → DBG_HALTED</td><td><code>init_pc=1</code> 且有 <code>dm_dhalt_req</code></td><td>RSTEXIT halt cause</td></tr>
+<tr><td>RUN → DBG_HALTED</td><td>dmode_cause_any & hart_halt_ack</td><td>irq_dsbl=1, 其他按触发类型</td></tr>
+<tr><td>RUN → DBG_HALTED (ebreak)</td><td><code>dbg_state_drun=0</code> 时 ebreak 命中</td><td>redirect.ebreak 控制</td></tr>
+<tr><td>RUN → DBG_HALTED (trigger)</td><td><code>tdu2hdu_dmode_req & exu2hdu_ibrkpt_hw</code></td><td>no_commit=1 (dmode_cause_tmreq)</td></tr>
+<tr><td>DBG_HALTED → RUN</td><td>dm_run_req, dm_cmd_drun=0</td><td>irq_dsbl=step?~stepie:0, fetch=normal</td></tr>
+<tr><td>DBG_HALTED → DBG_RUN</td><td>dm_run_req, dm_cmd_drun=1</td><td>irq_dsbl=1, fetch=PBUF, pc_dsbl=1, hwbrk_dsbl=1</td></tr>
+<tr><td>DBG_RUN → DBG_HALTED</td><td>单步完成 / ebreak / trigger / 异常</td><td>回到 halted</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">RESUME 到 RUN vs DRUN 的关键差异</div>
+  回到 <strong>RUN</strong>: <code>fetch_src=normal</code>, <code>irq_dsbl=step?(~stepie):0</code>, <code>pc_dsbl=0</code>, <code>hwbrk_dsbl=0</code> — 完全恢复执行。<br>
+  回到 <strong>DRUN</strong>: <code>fetch_src=PBUF</code>, <code>irq_dsbl=1</code>, <code>pc_dsbl=1</code>, <code>hwbrk_dsbl=1</code> — 从 Program Buffer 取指，禁止 IRQ 和硬件断点。
+</div>
+
+<!-- ============ HDU 7 Counter Enable Signals ============ -->
+<h2 id="hdu-cnten">第三课: HDU 的 7 个计数使能信号 — 精确触发条件与目的地</h2>
+
+<p>HDU 通过 <code>type_scr1_hdu_runctrl_s</code> 结构体向流水线发出 7 个关键控制信号。这些信号在 <code>hart_runctrl_upd</code> (从 DHALTED 恢复时) 和 <code>hart_runctrl_clr</code> (进入 DHALTED 时) 更新。</p>
+
+<table class="signal-table">
+<tr><th>#</th><th>信号</th><th>方向</th><th>触发条件 (何时=1)</th><th>目的模块</th><th>效果</th></tr>
+<tr>
+  <td>1</td>
+  <td><code>hdu2exu_no_commit_o</code></td>
+  <td>HDU → EXU</td>
+  <td>dmode_cause_ebreak=1 或 dmode_cause_tmreq=1<br>(ebreak 或 trigger 模块请求时)</td>
+  <td>EXU retire</td>
+  <td>阻止当前指令退休, 架构状态不回写</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>hdu2exu_irq_dsbl_o</code></td>
+  <td>HDU → EXU</td>
+  <td>DBG_RUN/DBG_HALTED 状态; RESUME 到 RUN 时 <code>step ? (~stepie) : 0</code></td>
+  <td>EXU 中断控制器</td>
+  <td>禁止所有外部中断 (定时器/软件/外部)</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>hdu2exu_pc_advmt_dsbl_o</code></td>
+  <td>HDU → EXU</td>
+  <td>DBG_RUN (DRUN) 状态 (hart_runctrl 更新时设 1)</td>
+  <td>EXU PC 逻辑</td>
+  <td>PC 不递增, 配合 pbuf 指令执行</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>hdu2exu_pbuf_fetch_o</code></td>
+  <td>HDU → EXU</td>
+  <td>hart_runctrl.fetch_src == PBUF (DRUN 期间)</td>
+  <td>EXU fetch mux</td>
+  <td>IFU 取指 MUX 切换到 Program Buffer 路径</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>hdu2exu_dmode_sstep_en_o</code></td>
+  <td>HDU → EXU</td>
+  <td>hart_runctrl.redirect.sstep = 1 (DCSR.STEP 使能时)</td>
+  <td>EXU 单步控制</td>
+  <td>执行一条指令后自动回到 DBG_HALTED</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>hdu2tdu_hwbrk_dsbl_o</code></td>
+  <td>HDU → TDU</td>
+  <td>hart_runctrl.hwbrkpt_dsbl = 1 (DRUN 期间)</td>
+  <td>TDU</td>
+  <td>调试运行期间屏蔽硬件断点 (避免自触发)</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>hdu2exu_dbg_new_pc_o</code></td>
+  <td>HDU → EXU</td>
+  <td>始终输出 DPC 的当前值 (<code>csr_dpc_ff</code>)</td>
+  <td>EXU PC 恢复</td>
+  <td>调试恢复时从 DPC 保存的地址重新取指</td>
+</tr>
+</table>
+
+<div class="box">
+  <div class="box-title">信号 1-7 的时序关系</div>
+  <strong>进入 DHALTED</strong>: 先置 <code>no_commit=1</code> (流水线停止提交) → timeout 后 <code>hart_halt_ack=1</code> → FSM 进入 DHALTED → <code>irq_dsbl=1</code>。<br>
+  <strong>退出 DHALTED</strong>: DM 写 resume_req → <code>dfsm_update=1</code> → <code>hart_runctrl_upd=1</code> → 根据 cmd 设置 4/5/6/7 信号。
+</div>
+
+<!-- ============ LFSR-based Test ============ -->
+<h2 id="hdu-test">第四课: HDU 的基于计数器的软件测试方法论</h2>
+
+<p>SCR1 HDU 采用 <strong>超时计数器 (Timeout Counter)</strong> 和 <strong>FSM 状态遍历</strong> 相结合的验证策略。</p>
+
+<h3>Halt Request Timeout Counter 验证</h3>
+
+<pre>
+<span class="cm">// 来源: scr1_pipe_hdu.sv L452-467</span>
+<span class="cm">// SCR1_HDU_TIMEOUT = 64 周期</span>
+
+assign halt_req_timeout_cnt_en = hdu2exu_dbg_halt2run_o
+                               | (hart_halt_req & ~hdu2exu_dbg_run2halt_o);
+
+<span class="cm">// 计数器递减逻辑</span>
+assign halt_req_timeout_cnt_next = hdu2exu_dbg_halt2run_o  ? <span class="num">'1</span>    <span class="cm">// 恢复时重置为全1</span>
+                                 : hart_halt_req           ? cnt - <span class="num">1</span>
+                                                           : cnt;
+
+assign halt_req_timeout_flag = ~|halt_req_timeout_cnt; <span class="cm">// cnt==0 时置位</span>
+</pre>
+
+<h3>软件验证测试序列 (模拟 LFSR 遍历模式)</h3>
+
+<table>
+<tr><th>步骤</th><th>操作</th><th>期望状态</th><th>验证信号</th></tr>
+<tr><td>1</td><td>上电复位</td><td>FSM=RESET, timeout_cnt='1</td><td>dbg_state</td></tr>
+<tr><td>2</td><td>拉高 init_pc, 无 haltreq</td><td>RESET → RUN</td><td>dbg_state=2'b01</td></tr>
+<tr><td>3</td><td>DM 发送 haltreq + cmd=DHALTED</td><td>RUN, hart_halt_req=1, cnt 递减</td><td>halt_req_timeout_cnt 递减</td></tr>
+<tr><td>4</td><td>等待 64 周期</td><td>timeout_flag=1, hart_halt_ack=1</td><td>dbg_state=2'b10 (HALTED)</td></tr>
+<tr><td>5</td><td>验证 pause 期间信号</td><td>irq_dsbl=1, no_commit=0 (非 ebreak)</td><td>hdu2exu_* 信号</td></tr>
+<tr><td>6</td><td>DM 发送 resumereq + cmd=DRUN</td><td>DHALTED → DRUN</td><td>pfetch_src=PBUF, hwbrk_dsbl=1</td></tr>
+<tr><td>7</td><td>注入 ebreak 指令到 pbuf</td><td>DRUN → DHALTED (ebreak 触发)</td><td>dmode_cause_ebreak=1</td></tr>
+<tr><td>8</td><td>验证 halt cause 编码</td><td>hart_haltcause=EBREAK (001)</td><td>hart_haltstatus.cause</td></tr>
+<tr><td>9</td><td>DM 发送 resumereq + cmd=RUN</td><td>DHALTED → RUN</td><td>irq_dsbl=step?(~stepie):0</td></tr>
+<tr><td>10</td><td>软件 EBREAK 指令</td><td>RUN → DHALTED (ebreak 触发)</td><td>pipe2hdu_brkpt_i, dmode_cause_ebreak</td></tr>
+</table>
+
+<div class="box info">
+  <div class="box-title">验证覆盖点</div>
+  <ol>
+    <li><strong>Timeout 边界</strong>: cnt=1 → cnt=0 的 flag 置位时机</li>
+    <li><strong>hlt2run vs run2hlt</strong>: 两个边沿信号不会被同时断言</li>
+    <li><strong>cause 优先级</strong>: TMREQ > EBREAK > DMREQ > SSTEP (编码器 case 优先级)</li>
+    <li><strong>Run Control 清理</strong>: hart_runctrl_clr 在状态转移时正确清零</li>
+  </ol>
+</div>
+
+<!-- ============ NMI Path ============ -->
+<h2 id="hdu-nmi">第五课: HDU 的 NMI (不可屏蔽中断) 处理路径</h2>
+
+<p>SCR1 的 HDU 中 NMI 通过 <strong>调试模式的全局中断禁用</strong> 机制实现。RISC-V Debug Spec 0.13 定义了 DCSR.NMIP (bit 12, 非可屏蔽中断挂起), SCR1 将其硬连线为 0 (无独立 NMI 引脚)。实际的 NMI 处理通过以下三层实现:</p>
+
+<h3>NMI 路径架构</h3>
+
+<pre>
+外部 NMI 源 (可选)
+       │
+       ▼
+┌─────────────┐    irq_dsbl      ┌──────────┐
+│  EXU 中断    │◀───────────────│   HDU    │
+│  控制器      │                 │ RunCtrl  │
+│             │   dmode_cause_   │          │
+│  ebreak/    │───except───────▶│  FSM     │
+│  trigger    │                 │          │
+└─────────────┘                 └──────────┘
+       │                              │
+       │ irq_dsbl=1 期间:             │ dmode_cause_any
+       │ 所有中断被屏蔽               │ (包含 dmode_cause_except)
+       ▼                              ▼
+  中断不响应                   FSM 进入 DBG_HALTED
+                                      │
+                              hart_event_o → DM
+</pre>
+
+<h3>关键 NMI 相关行为</h3>
+
+<table>
+<tr><th>场景</th><th>irq_dsbl</th><th>NMI 行为</th></tr>
+<tr><td>RUN 状态</td><td>0</td><td>中断正常响应</td></tr>
+<tr><td>DBG_HALTED</td><td>1</td><td>所有中断 (包括 NMI) 被屏蔽</td></tr>
+<tr><td>DBG_RUN (DRUN)</td><td>1</td><td>所有中断被屏蔽, 硬件断点也被屏蔽 (hwbrk_dsbl=1)</td></tr>
+<tr><td>单步 (step=1, stepie=0)</td><td>1</td><td>中断被屏蔽</td></tr>
+<tr><td>单步 (step=1, stepie=1)</td><td>0</td><td>中断可在单步指令退休后响应</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">DCSR.STEPIE (Step Interrupt Enable) 的作用</div>
+  DCSR.STEPIE 位控制单步执行期间是否允许中断: <code>irq_dsbl = step ? (~stepie) : 0</code>。当 step=1 且 stepie=1 时, 中断不会被屏蔽, NMI 可以在单步指令退休后得到处理。
+</div>
+
+<!-- ============ Program Buffer ============ -->
+<h2 id="hdu-pbuf">第六课: Program Buffer — 调试模式下的指令注入引擎</h2>
+
+<pre>
+<span class="cm">// PBUF FSM: 4 状态 (来源: scr1_pipe_hdu.sv L546-589)</span>
+
+PBUF_IDLE ──pbuf_start_fetch──▶ PBUF_FETCH ──exc_inj_req──▶ PBUF_EXCINJECT
+     ▲                               │                          │
+     │                               │ exu_exc_req              │ pbuf_exc_inj_end
+     │                               ▼                          ▼
+     │                          PBUF_WAIT4END ◀──────── PBUF_WAIT4END
+     │                               │
+     └────── dbg_halted ─────────────┘
+</pre>
+
+<h3>PBUF 地址递增与异常注入</h3>
+
+<pre>
+<span class="cm">// pbuf_addr_ff 从 0 递增到 SCR1_HDU_PBUF_ADDR_SPAN-1 (7)
+// 当达到最后一个地址且 handshake 完成时, FSM 进入 EXCINJECT 状态</span>
+
+assign pbuf_addr_end = (pbuf_addr_ff == (<span class="num">SCR1_HDU_PBUF_ADDR_SPAN-1</span>));
+assign pbuf_exc_inj_req = ifu_handshake_done & pbuf_addr_end;
+
+<span class="cm">// EXCINJECT 状态: 注入 "Instruction fetch access fault" 异常
+// 这是终止 PBUF 执行的标准方式</span>
+assign hdu2ifu_pbuf_instr_err_o = pbuf_fsm_excinj;
+</pre>
+
+<table>
+<tr><th>信号</th><th>方向</th><th>含义</th></tr>
+<tr><td><code>hdu2ifu_pbuf_instr_vd_o</code></td><td>HDU → IFU</td><td>pbuf 指令有效 (FETCH 或 EXCINJECT 状态, 非等待锁存)</td></tr>
+<tr><td><code>hdu2ifu_pbuf_instr_err_o</code></td><td>HDU → IFU</td><td>pbuf 指令错误 (EXCINJECT 状态, 注入取指异常)</td></tr>
+<tr><td><code>hdu2ifu_pbuf_instr_o</code></td><td>HDU → IFU</td><td>32 位注入指令 (可选过寄存器以改善时序)</td></tr>
+<tr><td><code>ifu2hdu_pbuf_instr_rdy_i</code></td><td>IFU → HDU</td><td>IFU 就绪接收 pbuf 指令</td></tr>
+<tr><td><code>hdu2dm_pbuf_addr_o</code></td><td>HDU → DM</td><td>当前 pbuf 地址, 用于 DM 查表输出对应指令</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">pbuf 指令来源: 寄存器输出 vs 直通</div>
+  参数 <code>HART_PBUF_INSTR_REGOUT_EN</code> 控制是否为 pbuf 指令添加一级寄存器: <strong>=1</strong> (默认) 改善时序但引入 1 周期等待锁存 (<code>pbuf_instr_wait_latching</code>); <strong>=0</strong> 节省面积但可能降低频率。
+</div>
+
+<!-- ============ Debug CSR State Transitions ============ -->
+<h2 id="hdu-csr">第七课: 调试 CSR (DCSR/DPC/DSCRATCH0/1) 状态转移</h2>
+
+<h3>CSR 全状态转移图</h3>
+
+<pre>
+          上电复位                     进入 HALT
+          ───────                     ─────────
+  DCSR    ebreakm=0         halt     cause ← hart_haltcause
+          stepie=0          ────▶     (EBREAK=001, TMREQ=010,
+          step=0                      DMREQ=011, SSTEP=100,
+          cause=0                     RSTEXIT=101)
+
+  DPC     dpc_ff=0          halt     dpc_ff ← pipe2hdu_pc_curr_i
+                            ────▶     (冻结进入调试时的 PC)
+
+  DSCRATCH0                DM 通过 abstract data reg 读写
+                           (dscratch0 通过 dm2hdu_dreg_rdata_i 读,
+                            通过 hdu2dm_dreg_wr/wdata 写)
+
+          调试器写 CSR
+          ───────────
+  DCSR    csr_dcsr_wr=1 → ebreakm/stepie/step 可被修改
+          (仅在 DHALTED 状态下通过 DM 写入)
+
+  DPC     csr_dpc_wr=1 → dpc_ff ← csr_wr_data
+          (调试器可修改恢复 PC)
+
+          恢复执行
+          ───────
+  DPC     hdu2exu_dbg_new_pc_o = csr_dpc_ff
+          (输出到 EXU 作为恢复地址)
+</pre>
+
+<h3>DCSR 位域完整定义 (来源: scr1_hdu.svh)</h3>
+
+<table>
+<tr><th>位</th><th>名称</th><th>类型</th><th>含义</th></tr>
+<tr><td>[1:0]</td><td>PRV</td><td>WARL</td><td>进入调试前的特权级: 固定为 M-mode (2'b11)</td></tr>
+<tr><td>[2]</td><td>STEP</td><td>WARL</td><td>单步使能: 1=恢复后执行 1 条指令再暂停</td></tr>
+<tr><td>[5:3]</td><td>rsrv0</td><td>WARL</td><td>保留, 硬连线为 0</td></tr>
+<tr><td>[8:6]</td><td>CAUSE</td><td>WARL</td><td>调试进入原因: 1=EBREAK, 2=Trigger, 3=Haltreq, 4=Step, 5=Reset</td></tr>
+<tr><td>[10:9]</td><td>rsrv1</td><td>WARL</td><td>保留</td></tr>
+<tr><td>[11]</td><td>STEPIE</td><td>WARL</td><td>单步中断使能: 1=单步期间允许中断</td></tr>
+<tr><td>[14:12]</td><td>rsrv2</td><td>WARL</td><td>保留</td></tr>
+<tr><td>[15]</td><td>EBREAKM</td><td>WARL</td><td>M-mode 下 EBREAK 进入调试模式: 1=进入, 0=产生异常</td></tr>
+<tr><td>[27:16]</td><td>rsrv3</td><td>WARL</td><td>保留</td></tr>
+<tr><td>[31:28]</td><td>XDEBUGVER</td><td>RO</td><td>外部调试支持版本: 固定 4'h4 (spec 0.13)</td></tr>
+</table>
+
+<div class="box info">
+  <div class="box-title">DSCRATCH0 的特殊实现 — 通过 DM Abstract Data Register</div>
+  SCR1 的 DSCRATCH0 不直接存储在 HDU 中, 而是通过 DM 的 abstract data register 0 实现: 读时从 <code>dm2hdu_dreg_rdata_i</code> 获取, 写时通过 <code>hdu2dm_dreg_req_o</code> 请求 DM 写入。这使得 DSCRATCH0 天然对调试器可见。
+</div>
+
+<!-- ============ Debug Flow ============ -->
+<h2 id="hdu-flow">第八课: 调试模式进入与退出 — 完整 6 步流程</h2>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>触发</strong>: haltreq / EBREAK / 硬件断点 → HDU 检测 <code>dmode_cause_any</code>
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>提交屏障</strong>: ebreak/trigger 时 <code>exu_no_commit = 1</code> → 当前指令不退休; haltreq 时通过 timeout 等待 EXU 空闲
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>Timeout 确认</strong>: haltreq 需等待 64 周期 timeout (<code>halt_req_timeout_flag=1</code>) 且 EXU 不忙; 软硬件断点可立即确认
+</div>
+<div class="step">
+  <span class="step-num">4</span> <strong>状态更新</strong>: <code>hart_halt_ack=1</code> → FSM 进入 DBG_HALTED → DCSR.cause 锁存 halt cause → DPC 锁存当前 PC → HART status 更新 → DM 得知暂停
+</div>
+<div class="step">
+  <span class="step-num">5</span> <strong>调试交互</strong>: DM DHI FSM 通过 pbuf 注入指令 (读寄存器、写寄存器、访问内存)
+</div>
+<div class="step">
+  <span class="step-num">6</span> <strong>恢复</strong>: DM 写 DMCONTROL.resumereq → DHI FSM RESUME_REQ → <code>dm_cmd_run/drun</code> → FSM 更新 → <code>hart_runctrl</code> 配置 → 从 DPC 重新取指
+</div>
+
+<!-- ============ TDU Architecture ============ -->
+<h2 id="tdu-arch">第九课: TDU 触发器架构 — 完整 CSR 布局</h2>
+
+<pre>
+            tselect (选择触发器编号 0..N-1)
+                   │
+    ┌──────────────┼──────────────┐
+    ▼              ▼              ▼
+┌────────┐   ┌──────────┐  ┌──────────┐
+│TDATA1  │   │ TDATA2   │  │ TINFO    │
+│类型+动作│   │匹配地址/值│  │触发类型信息│
+└────────┘   └──────────┘  └──────────┘
+
+    tselect 选中 mcontrol N ⟹ TDATA1 返回 MCONTROL 字段
+    tselect 选中 icount 位  ⟹ TDATA1 返回 ICOUNT 字段
+</pre>
+
+<h3>TDATA1: 3 种类型 (由 type[31:28] 字段区分)</h3>
+
+<table>
+<tr><th>type</th><th>常量</th><th>触发器类型</th><th>功能</th></tr>
+<tr><td>2</td><td><code>SCR1_TDU_MCONTROL_TYPE_VAL</code></td><td>mcontrol</td><td>虚拟地址匹配 (执行/加载/存储) 触发</td></tr>
+<tr><td>3</td><td><code>SCR1_TDU_ICOUNT_TYPE_VAL</code></td><td>icount</td><td>指令计数递减触发 (14-bit counter)</td></tr>
+<tr><td>15</td><td>4'b1111</td><td>disabled</td><td>此触发器不生效</td></tr>
+</table>
+
+<h3>TINFO 返回的能力位掩码</h3>
+
+<pre>
+<span class="cm">// TINFO 告知调试器此 tselect 位置支持的触发器类型</span>
+<span class="cm">// 位 2 = 1: 支持 mcontrol</span>
+<span class="cm">// 位 3 = 1: 支持 icount</span>
+
+<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; MTRIG_NUM; ++i)
+    <span class="kw">if</span>(csr_tselect_ff == i)
+        tinfo_out[<span class="num">SCR1_TDU_MCONTROL_TYPE_VAL</span>] = <span class="num">1'b1</span>;  <span class="cm">// type=2 支持</span>
+
+<span class="kw">if</span>(csr_tselect_ff == ALLTRIG_NUM - <span class="num">1</span>)  <span class="cm">// 最后一个 tselect</span>
+    tinfo_out[<span class="num">SCR1_TDU_ICOUNT_TYPE_VAL</span>] = <span class="num">1'b1</span>;   <span class="cm">// type=3 支持</span>
+</pre>
+
+<!-- ============ TDU Trigger Crossbar ============ -->
+<h2 id="tdu-xbar">第十课: TDU 触发交叉开关 — 完整触发事件枚举与流水线</h2>
+
+<h3>触发事件枚举表</h3>
+
+<table>
+<tr><th>事件编号</th><th>事件名称</th><th>来源接口</th><th>匹配条件</th><th>产生信号</th></tr>
+<tr><td>E1</td><td>指令执行匹配</td><td>exu2tdu_imon_i</td><td>vd=1, addr==TDATA2, exec_ff=1, m_ff=1, ~tdu_dsbl</td><td>csr_mcontrol_exec_hit[i]</td></tr>
+<tr><td>E2</td><td>数据加载匹配</td><td>lsu2tdu_dmon_i</td><td>vd=1, load=1, addr==TDATA2, load_ff=1, m_ff=1</td><td>csr_mcontrol_ldst_hit[i]</td></tr>
+<tr><td>E3</td><td>数据存储匹配</td><td>lsu2tdu_dmon_i</td><td>vd=1, store=1, addr==TDATA2, store_ff=1, m_ff=1</td><td>csr_mcontrol_ldst_hit[i]</td></tr>
+<tr><td>E4</td><td>icount 递减</td><td>exu2tdu_imon_i</td><td>vd=1, m_ff=1, count>0, ~skip_ff, 指令退休</td><td>icount_count 递减</td></tr>
+<tr><td>E5</td><td>icount 命中</td><td>exu2tdu_imon_i</td><td>m_ff=1, count==1, ~skip_ff, 指令退休</td><td>csr_icount_hit</td></tr>
+</table>
+
+<h3>触发信号流水线</h3>
+
+<pre>
+        EXU 指令监视                     LSU 数据监视
+  ┌──────────────────┐         ┌─────────────────────┐
+  │ exu2tdu_imon_i   │         │ lsu2tdu_dmon_i      │
+  │ .vd .req .addr   │         │ .vd .load .store    │
+  └──────┬───────────┘         │ .addr               │
+         │                     └──────┬──────────────┘
+         ▼                            ▼
+  ┌──────────────┐           ┌───────────────┐
+  │ mcontrol_exec │           │ mcontrol_ldst │
+  │    _hit[N-1:0]│           │   _hit[N-1:0] │
+  └──────┬───────┘           └──────┬────────┘
+         │                          │
+         ▼                          ▼
+  ┌──────────────┐           ┌───────────────┐
+  │tdu2exu_ibrkpt│           │tdu2lsu_dbrkpt │
+  │_match_o      │           │_match_o       │
+  │_exc_req_o    │           │_exc_req_o     │
+  └──────┬───────┘           └──────┬────────┘
+         │                          │
+         │    ┌─────────────────────┘
+         │    │
+         ▼    ▼
+  ┌──────────────────────────────────────┐
+  │            TDU → HDU 汇总            │
+  │  tdu2hdu_dmode_req_o =              │
+  │    OR over i:                        │
+  │    (action_ff[i] & bp_retire_i[i])  │
+  │    | (icount_action & bp_retire)    │
+  └──────────────┬───────────────────────┘
+                 │
+                 ▼
+  ┌──────────────────────┐
+  │ HDU 接收 dmode_req,  │
+  │ 触发 dmode_cause_tmreq│
+  └──────────────────────┘
+</pre>
+
+<div class="box info">
+  <div class="box-title">关键: bp_retire 的时序</div>
+  <code>exu2tdu_bp_retire_i</code> 是指令退休时的断点位掩码, 在指令完成执行且无异常时置位。TDU 只在 <code>bp_retire_i</code> 对应位为 1 时才向 HDU 发送 <code>dmode_req</code>, 保证 <strong>触发动作发生在指令退休之后</strong> (timing=0 时触发在指令执行前, 但 dmode 请求在退休时)。
+</div>
+
+<!-- ============ TDU Trigger Actions ============ -->
+<h2 id="tdu-actions">第十一课: TDU 触发器动作 — Halt/Resume/Trigger Gen</h2>
+
+<h3>3 种动作类型的完整流程</h3>
+
+<table>
+<tr><th>动作</th><th>action 位</th><th>信号路径</th><th>最终效果</th></tr>
+<tr>
+  <td><strong>断点异常</strong></td>
+  <td>0</td>
+  <td><code>csr_mcontrol_exec_hit</code> → <code>tdu2exu_ibrkpt_exc_req_o</code> → EXU 产生 BREAKPOINT 异常 (mcause=3)</td>
+  <td>M-mode 异常处理程序接管</td>
+</tr>
+<tr>
+  <td><strong>进入调试模式</strong></td>
+  <td>1</td>
+  <td><code>csr_mcontrol_action_ff[i] & bp_retire_i[i]</code> → <code>tdu2hdu_dmode_req_o</code> → HDU <code>dmode_cause_tmreq</code> → FSM 进入 HALTED</td>
+  <td>外部调试器接管</td>
+</tr>
+<tr>
+  <td><strong>Trigger Gen</strong> (icount 预留)</td>
+  <td>action=1 (进入调试) 或 action=0 (断点异常)</td>
+  <td>icount count→1 时 hit=1, retire 位触发 action</td>
+  <td>按 action 决定: 断点异常 或 进入调试</td>
+</tr>
+</table>
+
+<h3>动作汇总逻辑 (来源: scr1_pipe_tdu.sv L533-542)</h3>
+
+<pre>
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    tdu2hdu_dmode_req_o = <span class="num">1'b0</span>;
+    <span class="kw">for</span>(<span class="kw">int</span> i = <span class="num">0</span>; i &lt; MTRIG_NUM; ++i)
+        tdu2hdu_dmode_req_o |= (csr_mcontrol_action_ff[i]
+                              & exu2tdu_bp_retire_i[i]);
+<span class="cm">    // icount 的 action 也参与 dmode_req</span>
+    tdu2hdu_dmode_req_o |= (csr_icount_action_ff
+                          & exu2tdu_bp_retire_i[ALLTRIG_NUM-<span class="num">1</span>]);
+<span class="kw">end</span>
+</pre>
+
+<!-- ============ TDU Trigger Enable/Disable ============ -->
+<h2 id="tdu-filter">第十二课: TDU 触发器使能/禁用与过滤逻辑</h2>
+
+<h3>三级使能过滤链</h3>
+
+<pre>
+          Level 1: tdu_dsbl_i (全局 TDU 禁用)
+          ────────────────────────────────────
+          │ 来自顶层, 调试模式下 DM 控制的全局禁用
+          │ 当 tdu_dsbl_i=1 时所有触发器失效
+          ▼
+          Level 2: hdu2tdu_hwbrk_dsbl_o (HDU 硬件断点禁用)
+          ────────────────────────────────────
+          │ hart_runctrl.hwbrkpt_dsbl = 1 (DRUN 期间)
+          │ 等同于 tdu_dsbl_i 的效果
+          ▼
+          Level 3: csr_mcontrol_dmode_ff/M_ff (单触发器使能)
+          ────────────────────────────────────
+          │ dmode=1 时仅 DM 可写; M_ff=0 时触发器不参与匹配
+          ▼
+          Level 4: csr_mcontrol_exec_ff/load_ff/store_ff (匹配类型选择)
+          ────────────────────────────────────
+          │ 仅当对应的 exec/load/store 位为 1 时才参与相应匹配
+          ▼
+          Level 5: 地址/数据匹配 (TDATA2)
+          ────────────────────────────────────
+          │ exu2tdu_imon_i.addr == csr_tdata2_ff[i]
+          ▼
+          最终: csr_mcontrol_exec_hit[i] 置位
+</pre>
+
+<h3>dmode 写保护逻辑</h3>
+
+<pre>
+<span class="cm">// dmode=1 时, 写操作仅当 tdu_dsbl_i=1 (即 DM 控制禁用) 时才生效</span>
+assign csr_mcontrol_upd[trig] = ~csr_mcontrol_dmode_ff[trig]
+                              ? csr_mcontrol_wr_req[trig]        <span class="cm">// dmode=0: 任意可写</span>
+                              : tdu_dsbl_i & csr_mcontrol_wr_req[trig]; <span class="cm">// dmode=1: 仅 DM 可控</span>
+
+<span class="cm">// icount 同理</span>
+assign csr_icount_upd = ~csr_icount_dmode_ff
+                      ? csr_icount_wr_req
+                      : tdu_dsbl_i & csr_icount_wr_req;
+
+<span class="cm">// TDATA2 同理</span>
+assign csr_tdata2_upd[trig] = ~csr_mcontrol_dmode_ff[trig]
+                            ? clk_en & csr_addr_tdata2[trig] & csr_wr_req
+                            : clk_en & csr_addr_tdata2[trig] & csr_wr_req & tdu_dsbl_i;
+</pre>
+
+<div class="box warn">
+  <div class="box-title">tdu_dsbl_i 的双重角色</div>
+  <code>tdu_dsbl_i</code> 既作为全局禁用 (level 1), 也作为 dmode=1 触发器的 <strong>写使能钥匙</strong>。当 HDU 设置 hwbrkpt_dsbl=1 时 (DRUN 期间), 效果等同于 tdu_dsbl_i=1, 既禁用匹配又启用写操作。这保证了调试器在 DRUN 期间不会被自己的断点触发。
+</div>
+
+<!-- ============ mcontrol ============ -->
+<h2 id="tdu-mcontrol">第十三课: mcontrol 触发器 — 地址/数据匹配</h2>
+
+<table>
+<tr><th>字段</th><th>位</th><th>含义</th><th>SCR1 支持</th></tr>
+<tr><td>type</td><td>[31:28]</td><td>触发器类型</td><td>固定 2 (mcontrol)</td></tr>
+<tr><td>dmode</td><td>[27]</td><td>仅 Debug Mode 可写</td><td>支持</td></tr>
+<tr><td>maskmax</td><td>[26:21]</td><td>最大掩码值</td><td>固定 0 (不支持掩码匹配)</td></tr>
+<tr><td>hit</td><td>[20]</td><td>命中标志 (WARL)</td><td>支持 (可写 1 清零)</td></tr>
+<tr><td>select</td><td>[19]</td><td>地址/数据选择: 0=addr, 1=data</td><td>固定 0 (仅地址匹配)</td></tr>
+<tr><td>timing</td><td>[18]</td><td>0=执行前, 1=执行后</td><td>固定 0 (执行前匹配)</td></tr>
+<tr><td>action</td><td>[17:12]</td><td>动作: 0=断点异常, 1=进入调试</td><td>支持 (仅 bit[0] 有效)</td></tr>
+<tr><td>chain</td><td>[11]</td><td>链式组合 (hardwired 0)</td><td>不支持</td></tr>
+<tr><td>match</td><td>[10:7]</td><td>匹配方式: 0=等于, 1=NAND...</td><td>固定 0 (精确匹配)</td></tr>
+<tr><td>m</td><td>[6]</td><td>M-mode 使能</td><td>支持</td></tr>
+<tr><td>reserveda</td><td>[5]</td><td>保留</td><td>固定 0</td></tr>
+<tr><td>s</td><td>[4]</td><td>S-mode 使能</td><td>固定 0 (仅 M-mode)</td></tr>
+<tr><td>u</td><td>[3]</td><td>U-mode 使能</td><td>固定 0 (仅 M-mode)</td></tr>
+<tr><td>execute</td><td>[2]</td><td>执行地址匹配</td><td>支持</td></tr>
+<tr><td>store</td><td>[1]</td><td>存储地址匹配</td><td>支持</td></tr>
+<tr><td>load</td><td>[0]</td><td>加载地址匹配</td><td>支持</td></tr>
+</table>
+
+<h3>执行断点匹配逻辑 (来源: scr1_pipe_tdu.sv L492-499)</h3>
+
+<pre>
+assign csr_mcontrol_exec_hit[trig] = ~tdu_dsbl_i
+                                   & csr_mcontrol_m_ff[trig]
+                                   & csr_mcontrol_exec_ff[trig]
+                                   & exu2tdu_imon_i.vd
+                                   & exu2tdu_imon_i.addr == csr_tdata2_ff[trig];
+</pre>
+
+<h3>数据监视点匹配逻辑 (来源: scr1_pipe_tdu.sv L513-518)</h3>
+
+<pre>
+assign csr_mcontrol_ldst_hit[trig] = ~tdu_dsbl_i
+                                   & csr_mcontrol_m_ff[trig]
+                                   & lsu2tdu_dmon_i.vd
+                                   & ( (csr_mcontrol_load_ff[trig]  & lsu2tdu_dmon_i.load)
+                                     | (csr_mcontrol_store_ff[trig] & lsu2tdu_dmon_i.store))
+                                   & lsu2tdu_dmon_i.addr == csr_tdata2_ff[trig];
+</pre>
+
+<!-- ============ icount ============ -->
+<h2 id="tdu-icount">第十四课: icount 触发器 — 指令计数触发</h2>
+
+<table>
+<tr><th>字段</th><th>位</th><th>含义</th></tr>
+<tr><td>type</td><td>[31:28]</td><td>固定 3 (icount)</td></tr>
+<tr><td>dmode</td><td>[27]</td><td>仅 DM 可写 (同 mcontrol)</td></tr>
+<tr><td>hit</td><td>[24]</td><td>命中标志: 计数器减到 0 后置 1</td></tr>
+<tr><td>count</td><td>[23:10]</td><td>14-bit 递减计数器</td></tr>
+<tr><td>m</td><td>[9]</td><td>M-mode 使能</td></tr>
+<tr><td>action</td><td>[5:0]</td><td>同 mcontrol: bit[0]=1 进入调试</td></tr>
+</table>
+
+<h3>icount 递减与命中逻辑</h3>
+
+<pre>
+<span class="cm">// 递减使能: 仅在 M-mode 下, 指令有效, count>0 时</span>
+assign csr_icount_decr_en = (~tdu_dsbl_i & csr_icount_m_ff)
+                          ? exu2tdu_imon_i.vd & (csr_icount_count_ff != <span class="num">14'b0</span>)
+                          : <span class="num">1'b0</span>;
+
+<span class="cm">// 实际递减: 指令退休且 skip 未激活时</span>
+assign csr_icount_count_decr = exu2tdu_imon_i.req & csr_icount_decr_en
+                             & ~csr_icount_skip_ff;
+
+<span class="cm">// count 下个值: 写操作时取写数据, 否则递减</span>
+csr_icount_count_next = csr_icount_count_decr
+                      ? csr_icount_count_ff - <span class="num">1'b1</span>
+                      : csr_icount_count_ff;
+
+<span class="cm">// hit 在 count==1 且非 skip 时置位, 写入时可清零</span>
+csr_icount_hit_next = exu2tdu_bp_retire_i[ALLTRIG_NUM-<span class="num">1</span>]
+                    ? <span class="num">1'b1</span>
+                    : csr_icount_hit_ff;
+
+<span class="cm">// skip: 写 count 后第一条指令不计入 (避免立即触发)</span>
+csr_icount_skip_ff: 写操作后自动置 1, 第一条退休指令后清零
+</pre>
+
+<div class="box tip">
+  <div class="box-title">icount 作为单步触发器</div>
+  设置 count=1 → 执行一条指令后 count→0 → hit=1 → 退休时触发。与 DCSR.STEP 的区别: icount 方案不依赖 DCSR 配置, 且可以限定在 M-mode 下生效。
+</div>
+
+<!-- ============ Trigger Chain ============ -->
+<h2 id="tdu-chain">第十五课: 触发器链 — 多触发器组合</h2>
+
+<h3>chain 机制 (hardwired)</h3>
+
+<pre>
+<span class="cm">// SCR1 将 chain 硬连线为 0 (来源: scr1_pipe_tdu.sv L195)</span>
+tdu2csr_rdata_o[<span class="num">SCR1_TDU_MCONTROL_CHAIN</span>] = <span class="num">1'b0</span>;
+
+<span class="cm">// 链式组合逻辑 (参考实现, SCR1 不支持)
+// 当 chain=1 时:
+//   T[i].hit & T[i+1].match → T[i+1] 生效
+//   最后一个触发器的 action 为最终动作</span>
+</pre>
+
+<div class="box info">
+  <div class="box-title">SCR1 的链限制</div>
+  SCR1 将 chain 硬连线为 0, 不支持触发器链式组合。如果调试器设置 chain=1, 该位会被 WARL 机制静默转换为 0。多条件组合断点需要通过软件协作实现。
+</div>
+
+<!-- ============ DTM Connection ============ -->
+<h2 id="dtm">第十六课: DTM (Debug Transport Module) — JTAG 到调试器连接</h2>
+
+<h3>完整调试路径: PC → USB Blaster → JTAG → TAPC → DMI → DM → HDU</h3>
+
+<pre>
+┌──────────────┐     JTAG (TCK/TMS/TDI/TDO)     ┌────────────────┐
+│  外部调试器   │ ─────────────────────────────▶ │   scr1_tapc    │
+│  (GDB/       │                                │  TAP Controller │
+│   OpenOCD)    │◀─────────────────────────────  │                │
+└──────────────┘                                └───────┬────────┘
+                                                        │
+                                         tapc2tapcsync_* │ TCK domain
+                                                        │
+                                                ┌───────▼────────┐
+                                                │ tapc_synchronizer│
+                                                │ TCK→SysCLK 同步 │
+                                                └───────┬────────┘
+                                                        │
+                                         tapcsync2core_* │ SysCLK domain
+                                                        │
+                                                ┌───────▼────────┐
+                                                │   scr1_dm      │
+                                                │  Debug Module  │
+                                                │  DMI + DHI +   │
+                                                │  Abstract Cmd  │
+                                                └───────┬────────┘
+                                                        │
+                                           dm2pipe_*    │
+                                                        ▼
+                                                ┌───────────────┐
+                                                │ scr1_pipe_hdu │
+                                                │  HART Debug   │
+                                                │     Unit      │
+                                                └───────────────┘
+</pre>
+
+<h3>TAP Controller 状态机 (16 状态标准 JTAG FSM)</h3>
+
+<pre>
+                    TRSTn
+                      │
+                      ▼
+              ┌──────────────┐
+              │ TEST-LOGIC-   │
+              │   RESET       │
+              └───┬──────┬───┘
+       TMS=0     │      │ TMS=1
+         ┌───────┘      └──────┐
+         ▼                     ▼
+   ┌──────────┐         (保持 RESET)
+   │ RUN-TEST/ │
+   │   IDLE    │
+   └──┬───┬───┘
+TMS=1│   │TMS=0 (保持 IDLE)
+     ▼   │
+┌─────────────┐
+│ SELECT-DR-   │────TMS=1──▶ SELECT-IR-SCAN ──TMS=0──▶ CAPTURE-IR ──TMS=0──▶ SHIFT-IR
+│   SCAN       │                                                                    │
+└──TMS=0──────┘                                                              TMS=1  │
+     │                                                                              ▼
+     ▼                                                                       EXIT1-IR ──TMS=0──▶ PAUSE-IR
+ CAPTURE-DR ──TMS=0──▶ SHIFT-DR ──TMS=1──▶ EXIT1-DR ──TMS=0──▶ PAUSE-DR            │
+     │                    │                    │                   │         TMS=1   │
+     │                    │              TMS=1 │           TMS=1   │           ┌─────┘
+     │                    │                    ▼                   ▼           ▼
+     │                    │               UPDATE-DR           EXIT2-DR    EXIT2-IR
+     │                    │                                         │
+     │◀─── UPDATE-DR ─────┘                                         │ TMS=1
+     │                                                              ▼
+     │                                                          UPDATE-IR
+     │                                                              │
+     └──────────────────────────────────────────────────────────────┘
+</pre>
+
+<h3>TAPC IR 指令编码</h3>
+
+<table>
+<tr><th>IR 指令</th><th>编码</th><th>选中的 DR</th><th>功能</th></tr>
+<tr><td>IDCODE</td><td>5'b00001 (默认)</td><td>IDCODE Register (32-bit)</td><td>读设备 ID</td></tr>
+<tr><td>BYPASS</td><td>5'b11111</td><td>BYPASS Register (1-bit)</td><td>旁路模式</td></tr>
+<tr><td>DMI_ACCESS</td><td>自定义</td><td>DMI Scan Chain</td><td>通过 DMI 访问 DM 寄存器</td></tr>
+<tr><td>SCU_ACCESS</td><td>自定义</td><td>SCU Scan Chain</td><td>访问系统控制单元</td></tr>
+<tr><td>BUILD_ID</td><td>自定义</td><td>BUILD ID Register</td><td>读构建 ID</td></tr>
+</table>
+
+<h3>TAPC Synchronizer: TCK 到 SysCLK 跨时钟域</h3>
+
+<pre>
+<span class="cm">// TCK 域: 产生 tck_divpos/tck_divneg (TCK 的 2 分频信号)</span>
+<span class="kw">always_ff</span> @(<span class="kw">posedge</span> tapc_tck)  tck_divpos &lt;= ~tck_divpos;
+<span class="kw">always_ff</span> @(<span class="kw">negedge</span> tapc_tck) tck_divneg &lt;= ~tck_divneg;
+
+<span class="cm">// SysCLK 域: 3 级同步器采样 tck_divpos/tck_divneg 边沿</span>
+tck_divpos_sync &lt;= {tck_divpos_sync[<span class="num">2:0</span>], tck_divpos};
+tck_divneg_sync &lt;= {tck_divneg_sync[<span class="num">2:0</span>], tck_divneg};
+
+<span class="cm">// 边沿检测: rise_load = 上升沿, rise_reset = 下降沿</span>
+assign tck_rise_load  = tck_divpos_sync[<span class="num">2</span>] ^ tck_divpos_sync[<span class="num">1</span>];
+assign tck_rise_reset = tck_divpos_sync[<span class="num">3</span>] ^ tck_divpos_sync[<span class="num">2</span>];
+
+<span class="cm">// 在 SysCLK 域捕获 DMI 信号</span>
+<span class="kw">if</span> (tck_rise_load) begin
+    tapcsync2core_ch_capture_o &lt;= dmi_ch_capture_sync[<span class="num">2</span>];
+    tapcsync2core_ch_shift_o   &lt;= dmi_ch_shift_sync[<span class="num">2</span>];
+    tapcsync2core_ch_tdi_o     &lt;= dmi_ch_tdi_sync[<span class="num">2</span>];
+<span class="kw">end</span>
+</pre>
+
+<!-- ============ Debug Interrupt Injection ============ -->
+<h2 id="ebreak-inject">第十七课: ebreak/trigger 注入流水线的调试中断路径</h2>
+
+<h3>3 条进入 DBG_HALTED 的路径</h3>
+
+<table>
+<tr><th>路径</th><th>来源</th><th>信号链</th><th>DCSR.cause</th></tr>
+<tr>
+  <td><strong>软件断点</strong></td>
+  <td>EBREAK 指令</td>
+  <td><code>pipe2hdu_brkpt_i</code> → <code>dmode_cause_ebreak</code> → <code>hart_halt_ack</code> (ebreakm=1 时)</td>
+  <td>3'b001</td>
+</tr>
+<tr>
+  <td><strong>硬件断点</strong></td>
+  <td>TDU mcontrol/icount</td>
+  <td><code>csr_mcontrol_exec_hit</code> → <code>exu2tdu_bp_retire</code> → <code>tdu2hdu_dmode_req_o</code> → <code>dmode_cause_tmreq</code> → <code>hart_halt_ack</code></td>
+  <td>3'b010</td>
+</tr>
+<tr>
+  <td><strong>DM 请求</strong></td>
+  <td>外部调试器</td>
+  <td><code>dmcontrol_haltreq_ff</code> → <code>halt_req_vd</code> → DHI FSM → <code>dm2pipe_cmd=DHALTED</code> → <code>hart_halt_req</code> → <code>hart_halt_ack</code></td>
+  <td>3'b011</td>
+</tr>
+</table>
+
+<h3>DM DHI (Debug Hart Interface) FSM — halt/resume 命令生成</h3>
+
+<pre>
+<span class="cm">// DHI FSM 7 状态 (来源: scr1_dm.sv L106-114)</span>
+
+DHI_IDLE ──halt_req_vd──▶ DHI_HALT_REQ ──cmd_resp_ok──▶ DHI_EXEC_HALT ──hart_dhalt──▶ DHI_IDLE
+    │                          │                              │
+    │ abs_exec_req_ff          │                              │
+    ▼                          │                              │
+DHI_EXEC ──cmd_resp_ok──▶ DHI_EXEC_RUN ──hart_drun──▶ DHI_EXEC_HALT (返回)
+    │
+    │ resume_req_vd
+    ▼
+DHI_RESUME_REQ ──cmd_resp_ok──▶ DHI_RESUME_RUN ──hart_run──▶ DHI_IDLE
+</pre>
+
+<div class="box">
+  <div class="box-title">DM → HDU 的 halt/resume 命令编码</div>
+  DHI FSM 产生 3 种命令:
+  <code>SCR1_HDU_DBGSTATE_RUN</code> (2'b01) — 恢复正常执行,
+  <code>SCR1_HDU_DBGSTATE_DHALTED</code> (2'b10) — 暂停 HART,
+  <code>SCR1_HDU_DBGSTATE_DRUN</code> (2'b11) — 调试运行 (pbuf 模式)。
+  命令通过 <code>dm2pipe_cmd_o</code> 和 <code>dm2pipe_cmd_req_o</code> 发送给 HDU。
+</div>
+
+<h3>Abstract Command 执行流程: 读寄存器示例</h3>
+
+<pre>
+<span class="cm">// 调试器想读 x3 的值:
+// 1. 通过 DMI 写 COMMAND register: cmdtype=0 (Access Register),
+//    regno=0x1003 (GPR x3), transfer=1, write=0, size=2 (32-bit)</span>
+dmi_write(DM_COMMAND, <span class="num">0x00231003</span>);
+
+<span class="cm">// 2. DM Abstract FSM: IDLE → XREG_RW
+//    构造 CSRRW 指令: {DSCRATCH0, x3, CSRRW, x5, SYSTEM}</span>
+abs_exec_instr = {<span class="num">SCR1_HDU_DBGCSR_ADDR_DSCRATCH0</span>,
+                  <span class="num">5'h3</span>,  <span class="cm">// rs1 = x3</span>
+                  <span class="num">SCR1_FUNCT3_CSRRW</span>,
+                  <span class="num">5'h5</span>,  <span class="cm">// rd  = x5 (临时)</span>
+                  <span class="num">SCR1_OP_SYSTEM</span>};
+
+<span class="cm">// 3. DHI FSM: IDLE → EXEC → EXEC_RUN → EXEC_HALT
+//    HART 从 DRUN → 执行 CSRRW → 结果写入 x5 → 回到 DHALTED</span>
+
+<span class="cm">// 4. DM 再执行 CSRRW 读出 x5 → DATA0</span>
+
+<span class="cm">// 5. 调试器读 DATA0 register 获得 x3 的值</span>
+dmi_read(DM_DATA0);  <span class="cm">// 得到 x3 的原始值</span>
+</pre>
+
+<!-- ============ Exercises ============ -->
+<h2 id="exercise">动手练习 (12 题)</h2>
+
+<fieldset>
+  <legend>练习 1: 追踪调试流程</legend>
+  <p>从 HART 执行 EBREAK 指令到 DM 发现 HART 已暂停, 画出 HDU 状态转移和关键信号 (<code>exu_no_commit</code>, <code>hart_event_o</code>, <code>hart_status_o</code>) 的时序。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: Program Buffer 指令注入</legend>
+  <p>调试器想读 x3 的值。它如何通过 pbuf 注入指令? 注入什么指令? 读回的值通过什么路径到达 DM?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: mcontrol 断点设置</legend>
+  <p>设置一个断点: 当地址 = 0x8000 有指令执行时触发进入调试模式。写出 tdata1 和 tdata2 的各字段值。对比 action=0 (断点异常) 和 action=1 (进入调试) 的差异。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: icount 单步替代</legend>
+  <p>用 icount 实现单步 (count=1, action=进入调试), 和 DCSR.STEP 单步有什么区别? 写出 icount 寄存器配置, 并解释 skip 位的作用。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: HDU 7 个计数使能信号分析</legend>
+  <p>HDU 从 DBG_HALTED 恢复到 DRUN 状态时, 7 个计数使能信号各自的值是什么? 为什么 <code>hwbrkpt_dsbl</code> 必须为 1? 如果错误地设为 0 会发生什么?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: Halt Request Timeout 验证</legend>
+  <p>HDU 的 halt request timeout 计数器从 64 递减到 0。请编写一个模拟测试序列: 验证 timeout=1 时 hart_halt_ack 不会过早置位; 验证 timeout=0 且 exu_busy=0 时 hart_halt_ack 正确置位; 验证 timeout=64 时计数器初始值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 7: TDU 触发交叉开关追踪</legend>
+  <p>设置一个数据监视点: 当地址 0x2000_1000 被加载时进入调试模式。请追踪信号路径: <code>lsu2tdu_dmon_i</code> → <code>csr_mcontrol_ldst_hit</code> → <code>tdu2lsu_dbrkpt_match_o</code> → <code>exu2tdu_bp_retire</code> → <code>tdu2hdu_dmode_req_o</code> → <code>dmode_cause_tmreq</code>。画出时序图。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: 触发器 dmode 写保护验证</legend>
+  <p>dmode=1 时 M-mode 软件尝试写 tdata1 会被静默忽略。请设计一个测试: (a) 从 M-mode 写入 tdata1 并读回, 验证值未改变; (b) 通过 DM (pbuf 注入指令) 写 tdata1, 验证写入成功。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: DTM 连接路径追踪</legend>
+  <p>外部调试器 (OpenOCD) 想读 DMCONTROL 寄存器。追踪完整路径: JTAG TMS 信号操作 → TAPC FSM 状态转移 → IR 寄存器写入 DMI_ACCESS → DR Shift 写入 DMI 地址 → synchronizer 跨时钟域 → DM 解析地址 → 读 DMCONTROL 值 → 反向路径返回 TDO。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 10: Debug CSR 状态机设计</legend>
+  <p>画出 DCSR/DPC/DSCRATCH0 在以下场景中的状态转移图: (a) 上电复位; (b) EBREAK 进入调试; (c) 调试器写 DPC 为新值; (d) 从新地址恢复执行。标注每个状态的 cause 和 DPC 值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 11: Abstract Command 内存访问追踪</legend>
+  <p>调试器通过 Abstract Command 读取地址 0x8000 处的 32-bit 内存值。追踪 DM Abstract FSM 的完整状态转移: IDLE→MEM_SAVE_XREG→MEM_SAVE_XREG_FORADDR→MEM_RW→MEM_RETURN_XREG→MEM_RETURN_XREG_FORADDR→IDLE。说明每个状态生成的 RISC-V 指令。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 12: TDU icount skip 机制分析</legend>
+  <p>设置 icount count=1000 来统计指令执行数。解释 <code>skip_ff</code> 的机制: 为什么写 count 后第一条退休指令不计入? 如果 skip 机制不存在, 对 count 精度有什么影响? 写出 <code>csr_icount_skip_next</code> 的完整逻辑表达式。</p>
+</fieldset>
+
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>HDU 4 状态各对应什么 <code>no_commit</code>/<code>irq_dsbl</code>/<code>pc_dsbl</code>/<code>pbuf_fetch</code>/<code>hwbrk_dsbl</code> 控制?</li>
+    <li>进入调试模式的 3 种触发方式是什么? 各自的 DCSR.cause 编码和信号路径?</li>
+    <li>HDU 的 7 个计数使能信号各自的精确触发条件和目的地是什么?</li>
+    <li>halt request timeout 计数器如何工作? 为何需要 64 周期等待?</li>
+    <li>DCSR/DPC/DSCRATCH0/1 在进入/退出调试时的状态转移是怎样的?</li>
+    <li>DCSR.STEPIE 如何控制 NMI 在单步期间的响应?</li>
+    <li>TDU 支持的两种触发器类型是什么? mcontrol 的 dmode/m/exec/load/store 怎么配合?</li>
+    <li>icount 的 count/pending/skip 如何协作实现精确定时触发?</li>
+    <li>TDU 触发交叉开关如何连接 EXU/LSU/HDU? 指令断点和数据断点分别走什么接口?</li>
+    <li>dmode=1 的写保护机制是怎样的? tdu_dsbl_i 的双重角色是什么?</li>
+    <li>DTM 的完整连接路径是什么? TAPC FSM 有哪 16 个状态? synchronizer 如何跨时钟域?</li>
+    <li>Abstract Command 如何通过 pbuf 注入指令实现寄存器/CSR/内存访问?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 13 周进入总线接口与存储器子系统: AHB/IMEM Router/DMEM Router 的仲裁与截获、TCM 紧耦合存储器的 0 延迟访问、dp_memory 双端口 RAM 的字节写使能、以及 AXI 接口适配层。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | HDU + TDU + DM + DTM 调试子系统 (增强版) | 第 12 周</p>
+</body>
+</html>

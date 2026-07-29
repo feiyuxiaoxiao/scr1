@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>总线接口与存储子系统 | SCR1 第 13 周</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .err { background: #f8d7da; border-color: #dc3545; } .err .box-title { color: #721c24; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 16px 0; font-family: monospace; font-size: 0.83em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.35; overflow-x: auto; }
+  .timing { font-family: 'Courier New', monospace; font-size: 0.78em; overflow-x: auto; white-space: pre; background: #fff; border: 1px solid var(--border); padding: 12px; border-radius: 6px; margin: 12px 0; line-height: 1.25; }
+  h3 { color: #1a365d; margin-top: 28px; }
+  h4 { color: #174ea6; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>总线接口与存储子系统 | SCR1 第 13 周</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#memif">mem_if 通用存储器协议</a>
+  <a href="#ahb-protocol">AHB-Lite 总线协议详解</a>
+  <a href="#ahb-timing">AHB 读/写/错误时序图</a>
+  <a href="#router">IMEM/DMEM Router (仲裁 + 截获)</a>
+  <a href="#router-expanded">Router 扩展: 地址译码与优先级</a>
+  <a href="#tcm">TCM 紧耦合存储器 (0 延迟)</a>
+  <a href="#dp-memory">dp_memory 双端口 RAM</a>
+  <a href="#ahb">AHB 总线封装 (scr1_top_ahb)</a>
+  <a href="#ahb-master">SCR1 作为 AHB 主设备: 仲裁层次</a>
+  <a href="#ahb-slave-mux">AHB 从设备多路复用器</a>
+  <a href="#ahb-resp">AHB 响应与 SCR1 错误处理</a>
+  <a href="#axi">AXI 总线封装 (scr1_top_axi)</a>
+  <a href="#timer">Timer 定时器</a>
+  <a href="#timer-ahb">Timer 的 AHB 从设备接口</a>
+  <a href="#ext-master">外部 AHB 主设备端口</a>
+  <a href="#top-hierarchy">顶层模块层次树</a>
+  <a href="#bus-err-sim">总线错误注入与仿真</a>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周覆盖 7 个文件 + AHB-Lite 协议全解析</div>
+  <code>scr1_memif.svh</code> — 通用存储器握手协议定义<br>
+  <code>scr1_imem_router.sv</code> / <code>scr1_dmem_router.sv</code> — 指令/数据存储器仲裁路由器<br>
+  <code>scr1_tcm.sv</code> — 紧耦合存储器 (Tightly Coupled Memory) 0 延迟访问<br>
+  <code>scr1_dp_memory.sv</code> — 双端口同步 RAM (带字节写使能)<br>
+  <code>scr1_top_ahb.sv</code> / <code>scr1_top_axi.sv</code> — AHB/AXI 总线封装顶层<br>
+  <code>scr1_timer.sv</code> — 64 位 mtime 定时器 (含 AHB 从机接口)<br>
+  <code>scr1_tcm_ahb_slave.sv</code> — TCM 的 AHB 从设备封装 (对外暴露)<br>
+  <code>scr1_dm_ahb.sv</code> — 调试模块 AHB 主/从接口
+</div>
+
+<!-- ============ memif ============ -->
+<h2 id="memif">第二课: mem_if — 通用存储器握手协议</h2>
+
+<pre>
+<span class="cm">// scr1_memif.svh: 所有存储器接口的共享协议</span>
+
+<span class="cm">// 请求通道: 主设备 → 从设备</span>
+req              <span class="cm">// 请求有效</span>
+req_ack          <span class="cm">// 从设备确认 (握手完成)</span>
+cmd              <span class="cm">// READ / WRITE</span>
+width            <span class="cm">// BYTE / HWORD / WORD</span>
+addr             <span class="cm">// 地址</span>
+wdata            <span class="cm">// 写数据 (仅 WRITE 时)</span>
+
+<span class="cm">// 响应通道: 从设备 → 主设备</span>
+resp             <span class="cm">// OK / ERROR</span>
+rdata            <span class="cm">// 读数据 (仅 READ 时)</span></pre>
+
+<div class="box">
+  <div class="box-title">握手模式: Valid/Ack 配对</div>
+  主设备拉高 <code>req</code>, 从设备拉高 <code>req_ack</code> → 握手完成。IFU 作为 IMEM 的主设备, LSU 作为 DMEM 的主设备, 都使用同一套协议。
+</div>
+
+<table>
+<tr><th>信号</th><th>IMEM</th><th>DMEM</th></tr>
+<tr><td>主设备</td><td>IFU (<code>ifu2imem_req</code>)</td><td>LSU (<code>lsu2dmem_req</code>)</td></tr>
+<tr><td>从设备</td><td>IMEM Router / TCM</td><td>DMEM Router / TCM</td></tr>
+<tr><td>请求类型</td><td>仅 READ</td><td>READ + WRITE</td></tr>
+</table>
+
+<!-- ============ AHB-Lite Protocol ============ -->
+<h2 id="ahb-protocol">第三课: AHB-Lite 总线协议详解</h2>
+
+<div class="box">
+  <div class="box-title">AHB-Lite 是 ARM AMBA 3 协议族的简化子集</div>
+  SCR1 使用 AHB-Lite 作为外部总线接口。与全功能 AHB 相比, AHB-Lite 去掉了 "split/retry" 响应多主设备仲裁和总线锁定, 仅保留单一主设备 + 多从设备架构。核心优势: 协议简单、面积小、延迟可预测。
+</div>
+
+<h3>AHB-Lite 信号表</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>位宽</th><th>说明</th></tr>
+<tr><td><code>HCLK</code></td><td>全局</td><td>1</td><td>总线时钟, 所有传输在此上升沿同步</td></tr>
+<tr><td><code>HRESETn</code></td><td>全局</td><td>1</td><td>总线复位 (低有效)</td></tr>
+<tr><td><code>HADDR</code></td><td>Master→Slave</td><td>32</td><td>系统地址总线</td></tr>
+<tr><td><code>HWRITE</code></td><td>Master→Slave</td><td>1</td><td>传输方向: 0=读, 1=写</td></tr>
+<tr><td><code>HSIZE</code></td><td>Master→Slave</td><td>3</td><td>传输大小: 000=字节, 001=半字, 010=字</td></tr>
+<tr><td><code>HBURST</code></td><td>Master→Slave</td><td>3</td><td>突发类型: 000=SINGLE, 001=INCR, 其他=WRAP/INCR4/INCR8/INCR16</td></tr>
+<tr><td><code>HTRANS</code></td><td>Master→Slave</td><td>2</td><td>传输类型: 00=IDLE, 01=BUSY, 10=NONSEQ, 11=SEQ</td></tr>
+<tr><td><code>HPROT</code></td><td>Master→Slave</td><td>4</td><td>保护控制: [3]=Cacheable, [2]=Bufferable, [1]=Privileged, [0]=Data/Opcode</td></tr>
+<tr><td><code>HWDATA</code></td><td>Master→Slave</td><td>32</td><td>写数据总线 (仅写事务)</td></tr>
+<tr><td><code>HRDATA</code></td><td>Slave→Master</td><td>32</td><td>读数据总线 (仅读事务)</td></tr>
+<tr><td><code>HREADY</code></td><td>Slave→Master</td><td>1</td><td>传输完成标志: 1=当前传输完成, 0=插入等待</td></tr>
+<tr><td><code>HRESP</code></td><td>Slave→Master</td><td>2</td><td>传输响应: 00=OKAY, 01=ERROR</td></tr>
+</table>
+
+<h3>HTRANS 传输类型</h3>
+
+<table>
+<tr><th>HTRANS[1:0]</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>00</code></td><td>IDLE</td><td>主设备无数据传输请求。从设备必须忽略该传输并返回 OKAY + 零等待状态</td></tr>
+<tr><td><code>01</code></td><td>BUSY</td><td>主设备正在执行突发, 但下一传输无法立即进行。从设备必须返回 OKAY + 零等待状态</td></tr>
+<tr><td><code>10</code></td><td>NONSEQ</td><td>单个传输或突发的第一个传输。地址与控制信息与前一次传输无关</td></tr>
+<tr><td><code>11</code></td><td>SEQ</td><td>突发中的剩余传输。地址 = 前一次传输地址 + (1<<HSIZE)</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">SCR1 的 HTRANS 使用</div>
+  SCR1 单发射顺序核始终使用 <code>NONSEQ + SINGLE</code> 模式, 每次只发起一个 32 位传输。不使用 INCR/WRAP 突发 — 这是 Harvard 架构 + 顺序执行的自然结果。HTRANS 在 IDLE 和 NONSEQ 之间切换。
+</div>
+
+<!-- ============ AHB Timing Diagrams ============ -->
+<h2 id="ahb-timing">第四课: AHB-Lite 读/写/错误时序图</h2>
+
+<h3>基本读传输 (无等待)</h3>
+
+<div class="timing">
+         T0      T1      T2      T3      T4      T5
+HCLK     _|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_
+HADDR    ----&lt;A&gt;-------------------------------
+HTRANS   ----&lt;NONSEQ&gt;----------&lt;IDLE&gt;----------
+HWRITE   ----&lt; 0 &gt;-------------------------------
+HSIZE    ----&lt;010&gt;-------------------------------
+HREADY   --------&lt; 1 &gt;---------------------------
+HRDATA   -------------&lt; D(A) &gt;-------------------
+HRESP    -------------&lt;OKAY&gt;---------------------
+                     |               |
+                  地址阶段         数据阶段</div>
+
+<h3>读传输 (2 拍等待)</h3>
+
+<div class="timing">
+         T0      T1      T2      T3      T4      T5      T6
+HCLK     _|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_
+HADDR    ----&lt;A&gt;-------------------------------------------
+HTRANS   ----&lt;NONSEQ&gt;--------------------------------------&lt;IDLE&gt;--
+HWRITE   ----&lt; 0 &gt;-----------------------------------------
+HSIZE    ----&lt;010&gt;-----------------------------------------
+HREADY   --------&lt;0&gt;----&lt;0&gt;----&lt;1&gt;-------------------------
+HRDATA   -------------------------&lt; D(A) &gt;-----------------
+HRESP    -------------------------&lt;OKAY&gt;-------------------
+                     |                         |
+                  地址阶段                 数据阶段
+            (从设备插入 2 拍等待)</div>
+
+<h3>写传输 (无等待)</h3>
+
+<div class="timing">
+         T0      T1      T2      T3      T4      T5
+HCLK     _|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_
+HADDR    ----&lt;A&gt;-------------------------------
+HTRANS   ----&lt;NONSEQ&gt;----------&lt;IDLE&gt;----------
+HWRITE   ----&lt; 1 &gt;-------------------------------
+HSIZE    ----&lt;010&gt;-------------------------------
+HWDATA   ----&lt; W(A) &gt;---------------------------
+HREADY   --------&lt; 1 &gt;---------------------------
+HRESP    ------------&lt;OKAY&gt;---------------------
+                     |               |
+                  地址阶段         数据阶段</div>
+
+<h3>错误响应: 读错误</h3>
+
+<div class="timing">
+         T0      T1      T2      T3      T4      T5
+HCLK     _|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_
+HADDR    ----&lt;A&gt;-------------------------------
+HTRANS   ----&lt;NONSEQ&gt;----------&lt;IDLE&gt;----------
+HWRITE   ----&lt; 0 &gt;-------------------------------
+HREADY   --------&lt;1&gt;----&lt;1&gt;--------------------
+HRDATA   -----------------------------&lt;XXXX&gt;----
+HRESP    -------------&lt;OKAY&gt;------&lt;ERROR&gt;-------
+                     |               |
+               地址+控制认可     两阶段错误响应
+HRESP=OKAY 在 HREADY=1 时仅表示从设备已接受控制信息
+真正的 ERROR 出现在数据阶段 HREADY=1 拍</div>
+
+<div class="box warn">
+  <div class="box-title">AHB 两阶段错误响应机制</div>
+  AHB-Lite 的 <code>HRESP</code> 需要两拍来完成错误上报: 第一拍 (地址阶段) 从设备必须返回 <code>OKAY</code> 以接收地址/控制信息; 第二拍 (数据阶段) 从设备返回 <code>ERROR</code> 表示访问失败。这不是协议缺陷, 而是流水线架构的必然 — 地址译码需要一拍。
+</div>
+
+<h3>错误响应: 写错误</h3>
+
+<div class="timing">
+         T0      T1      T2      T3      T4      T5
+HCLK     _|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_|‾|_
+HADDR    ----&lt;A&gt;-------------------------------
+HTRANS   ----&lt;NONSEQ&gt;----------&lt;IDLE&gt;----------
+HWRITE   ----&lt; 1 &gt;-------------------------------
+HWDATA   ----&lt; W(A) &gt;---------------------------
+HREADY   --------&lt;1&gt;----&lt;1&gt;--------------------
+HRESP    -------------&lt;OKAY&gt;------&lt;ERROR&gt;-------
+                     |               |
+               控制信息确认      ERROR 上报
+   写 ERROR 意味着数据未写入, 主设备需要采取错误处理措施</div>
+
+<div class="box">
+  <div class="box-title">HRESP 两拍的原因</div>
+  地址拍: 从设备还未完成地址译码, 只能返回 OKAY 先接收控制信息。<br>
+  数据拍: 从设备已完成译码并判定地址非法/设备故障, 返回 ERROR。<br>
+  HREADY 控制整个流水线推进 — 若 HRESP=ERROR 且 HREADY=1, 主设备立即标记该事务失败。
+</div>
+
+<!-- ============ Router ============ -->
+<h2 id="router">第五课: IMEM/DMEM Router — 地址空间仲裁与截获</h2>
+
+<pre>
+<span class="cm">// Router 的核心功能: 地址译码 → 路由到不同从设备</span>
+                 ifu2imem_addr
+                       │
+                       ▼
+               ┌───────────────┐
+               │  Address Map  │   地址 0x0000_???? → TCM (紧耦合)
+               │  Decoder      │   地址 0x0040_???? → Debug
+               └───────┬───────┘   地址 else → AHB Bus
+                       │
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+        ┌──────┐  ┌─────────┐  ┌───────┐
+        │ TCM  │  │  Debug  │  │  AHB  │
+        │ Port │  │  Bus    │  │  Bus  │
+        └──────┘  └─────────┘  └───────┘</pre>
+
+<h3>IMEM Router 的地址空间划分</h3>
+
+<table>
+<tr><th>地址范围</th><th>目标</th><th>用途</th></tr>
+<tr><td>TCM 基址区域</td><td>TCM (IMEM Port)</td><td>程序代码在紧耦合存储器中</td></tr>
+<tr><td>调试区域</td><td>Debug Bus</td><td>调试器注入的存储器访问</td></tr>
+<tr><td>其余 (default)</td><td>AHB Bus</td><td>通过 AHB 总线访问外部存储器</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">Router 的关键约束: 单主设备 → 多从设备</div>
+  一次请求只能路由到一个从设备。Router 是纯组合逻辑地址译码, 无状态, 不缓冲 — 所有握手和反压由下游从设备 (TCM / AHB) 各自处理。
+</div>
+
+<h3>DMEM Router 的额外职责 — 截获 TDU 断点地址</h3>
+
+<pre>
+<span class="cm">// DMEM Router 在路由数据地址时, 还向 TDU 提供 dmon 监视数据</span>
+lsu2tdu_dmon.vd    = exu2lsu_req &amp; lsu_fsm_idle;
+lsu2tdu_dmon.addr  = exu2lsu_addr;
+lsu2tdu_dmon.load  = cmd_is_load;
+lsu2tdu_dmon.store = cmd_is_store;</pre>
+
+<!-- ============ Router Expanded ============ -->
+<h2 id="router-expanded">第六课: Router 扩展 — 地址译码与优先级</h2>
+
+<h3>DMEM Router 的完整路由表 (3 目标)</h3>
+
+<table>
+<tr><th>地址范围</th><th>目标从设备</th><th>说明</th></tr>
+<tr><td><code>TCM_BASE ~ TCM_BASE+SIZE-1</code></td><td>TCM (Port B)</td><td>片内紧耦合 SRAM, 1 拍延迟</td></tr>
+<tr><td><code>TIMER_BASE ~ TIMER_BASE+0x1F</code></td><td>Timer</td><td>内存映射定时器, 地址掩码 0xFFFFFE0</td></tr>
+<tr><td>其余地址</td><td>AHB 数据桥</td><td>通过 AHB-Lite 访问外部存储/外设</td></tr>
+</table>
+
+<h3>地址译码组合逻辑</h3>
+
+<pre>
+<span class="cm">// IMEM Router 地址匹配 (2 目标)</span>
+<span class="kw">assign</span> imem_tcm_sel   = (imem_addr &amp; TCM_MASK) == TCM_BASE;
+<span class="kw">assign</span> imem_debug_sel = (imem_addr &amp; DEBUG_MASK) == DEBUG_BASE;
+<span class="kw">assign</span> imem_ahb_sel   = ~imem_tcm_sel &amp; ~imem_debug_sel;
+
+<span class="cm">// DMEM Router 地址匹配 (3 目标: TCM / Timer / AHB)</span>
+<span class="kw">assign</span> dmem_tcm_sel   = (dmem_addr &amp; TCM_MASK)   == TCM_BASE;
+<span class="kw">assign</span> dmem_timer_sel = (dmem_addr &amp; TIMER_MASK) == TIMER_BASE;
+<span class="kw">assign</span> dmem_ahb_sel   = ~dmem_tcm_sel &amp; ~dmem_timer_sel;
+</pre>
+
+<h3>请求分发与应答汇聚 — 优先级</h3>
+
+<pre>
+<span class="cm">// 当 TCM 和 AHB 都能响应时需要优先级仲裁</span>
+<span class="cm">// TCM 优先级最高 (紧耦合), Timer 次之, AHB 最低</span>
+
+<span class="kw">assign</span> dmem_resp_src = dmem_tcm_sel   ? TCM_RESP   :
+                        dmem_timer_sel ? TIMER_RESP :
+                                         AHB_RESP;
+
+<span class="cm">// req_ack 也需要按优先级合并:</span>
+<span class="kw">assign</span> lsu_req_ack = dmem_tcm_sel   ? tcm_req_ack   :
+                      dmem_timer_sel ? timer_req_ack :
+                                       ahb_req_ack;
+</pre>
+
+<div class="box">
+  <div class="box-title">Router 的纯组合逻辑特性</div>
+  Router 不含任何寄存器。地址译码、请求分发、应答回传全部在同拍完成。这意味着: 哪个从设备被选中, 就完全由该从设备的 <code>req_ack</code> 决定主设备何时握手成功; Router 自身不引入任何额外延迟。所有从设备的 <code>req_ack</code> 通过 MUX 汇聚到主设备一侧。
+</div>
+
+<h3>DMEM Router 路由流程图</h3>
+
+<pre>
+                 lsu2dmem_addr_i
+                       │
+                       ▼
+            ┌──────────────────────┐
+            │  地址范围匹配         │
+            │  addr & MASK == BASE  │
+            └──────┬───────┬───────┘
+                   │       │       │
+          ┌────────┘       │       └────────┐
+          ▼                ▼                ▼
+    TCM 命中          Timer 命中          AHB 命中
+          │                │                │
+          ▼                ▼                ▼
+   dmem2tcm_req_o    dmem2timer_req  dmem2ahb_req_o
+          │                │                │
+          ▼                ▼                ▼
+   dmem_resp ←─── MUX ──→ lsu2dmem_resp_i (OK/ERROR)
+</pre>
+
+<!-- ============ TCM ============ -->
+<h2 id="tcm">第七课: TCM 紧耦合存储器 — 0 延迟访问</h2>
+
+<pre>
+<span class="cm">// scr1_tcm.sv: 绕过 AHB 总线, 直接连 dp_memory</span>
+<span class="cm">// 两个端口: IMEM Port (指令) + DMEM Port (数据)</span>
+
+┌─────────────────────────────────────┐
+│               scr1_tcm              │
+│                                     │
+│  IMEM Port ──────────▶ Port A (读)  │
+│                    ┌──┴──────────┐  │
+│  DMEM Port ───────▶│ Port B (读写)│──┤  scr1_dp_memory
+│                    └─────────────┘  │
+│                                     │
+│  仲裁: IMEM 优先                    │
+└─────────────────────────────────────┘</pre>
+
+<div class="box tip">
+  <div class="box-title">TCM 的 0 延迟: 为什么</div>
+  TCM 直连 dp_memory 的同步端口, 请求发出后 1 拍返回数据。相比通过 AHB 总线 (需要仲裁 + 多拍握手), TCM 消除了所有协议开销, 实现 1 拍吞吐。代价: TCM 容量受芯片面积限制 (通常 64KB-256KB)。
+</div>
+
+<!-- ============ dp_memory ============ -->
+<h2 id="dp-memory">第八课: dp_memory — 双端口同步 RAM</h2>
+
+<pre>
+<span class="cm">// scr1_dp_memory.sv: 双端口 + 字节写使能</span>
+<span class="kw">module</span> scr1_dp_memory
+    parameter SCR1_WIDTH = <span class="num">32</span>,      <span class="cm">// 数据宽度</span>
+    parameter SCR1_SIZE  = ...        <span class="cm">// 存储器大小 (字节)</span>
+(
+    <span class="cm">// Port A: 只读 (IMEM)</span>
+    input  rena, addra,
+    output qa,
+    <span class="cm">// Port B: 读写 (DMEM), 带字节写使能</span>
+    input  renb, wenb, webb[<span class="num">3</span>:<span class="num">0</span>], addrb, datab,
+    output qb
+);</pre>
+
+<h3>字节写使能 (webb) 的实现 (Intel FPGA)</h3>
+
+<pre>
+wenbb = <span class="num">{4{wenb}}</span> &amp; webb;        <span class="cm">// 4 个字节独立控制</span>
+
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (wenb) <span class="kw">begin</span>
+        <span class="kw">if</span> (wenbb[<span class="num">0</span>]) memory_array[addrb][<span class="num">0</span>] &lt;= datab[ <span class="num">0</span>:<span class="num">7</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">1</span>]) memory_array[addrb][<span class="num">1</span>] &lt;= datab[ <span class="num">8</span>:<span class="num">15</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">2</span>]) memory_array[addrb][<span class="num">2</span>] &lt;= datab[<span class="num">16</span>:<span class="num">23</span>];
+        <span class="kw">if</span> (wenbb[<span class="num">3</span>]) memory_array[addrb][<span class="num">3</span>] &lt;= datab[<span class="num">24</span>:<span class="num">31</span>];
+    <span class="kw">end</span>
+    qb &lt;= memory_array[addrb];
+<span class="kw">end</span></pre>
+
+<div class="box">
+  <div class="box-title">为什么需要字节写使能?</div>
+  SB 指令只写 1 字节, SH 写 2 字节, SW 写 4 字节。RAM 必须按字节粒度控制, 否则 SB 会将整个 32 位字全部覆盖, 破坏相邻字节。webb[3:0] 由 LSU 根据 lsu_cmd 译码生成。
+</div>
+
+<h3>非 FPGA 实现 (ASIC / 仿真)</h3>
+
+<pre>
+<span class="cm">// 直接使用 32 位宽的 RAM block (无字节写使能)</span>
+<span class="cm">// 由 synthesis 工具推断为 SRAM / register file</span>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (wenb) ram_block[addrb] &lt;= datab;
+    qb &lt;= ram_block[addrb];
+<span class="kw">end</span>
+<span class="kw">always_ff</span> @(posedge clk)
+    qa &lt;= ram_block[addra];</pre>
+
+<!-- ============ AHB Top ============ -->
+<h2 id="ahb">第九课: AHB 总线封装 — scr1_top_ahb</h2>
+
+<pre>
+<span class="cm">// scr1_top_ahb.sv: SCR1 核心 + AHB 总线封装</span>
+
+┌────────────────────────────────────────────────┐
+│                 scr1_top_ahb                   │
+│                                                │
+│  ┌──────────┐   ┌──────────────┐              │
+│  │ scr1_core│──▶│ imem_ahb     │──▶ AHB Bus   │
+│  │ (pipeline│   │ (AHB master) │              │
+│  │  + CSRs) │──▶│ dmem_ahb     │──▶ AHB Bus   │
+│  └──────────┘   └──────────────┘              │
+│                                                │
+│  外设: timer, IPIC IRQ lines ...               │
+└────────────────────────────────────────────────┘</pre>
+
+<h3>AHB 主设备封装 (scr1_imem_ahb / scr1_dmem_ahb)</h3>
+
+<pre>
+<span class="cm">// mem_if 协议 → AHB 总线协议转换</span>
+<span class="cm">// 关键信号:</span>
+HADDR    <span class="cm">// AHB 地址 (32-bit)</span>
+HBURST   <span class="cm">// 突发类型: SINGLE / INCR</span>
+HTRANS   <span class="cm">// 传输类型: IDLE / NONSEQ</span>
+HSIZE    <span class="cm">// 传输大小: BYTE / HWORD / WORD</span>
+HWDATA   <span class="cm">// 写数据</span>
+HRDATA   <span class="cm">// 读数据</span>
+HREADY   <span class="cm">// 就绪 (反压)</span>
+HRESP    <span class="cm">// 响应: OKAY / ERROR</span></pre>
+
+<!-- ============ AHB Master Arbitration ============ -->
+<h2 id="ahb-master">第十课: SCR1 作为 AHB 主设备 — 仲裁层次</h2>
+
+<div class="box">
+  <div class="box-title">SCR1 有 2 个独立 AHB Master</div>
+  <code>scr1_imem_ahb</code> — 指令 AHB 主设备, 仅发起读传输<br>
+  <code>scr1_dmem_ahb</code> — 数据 AHB 主设备, 发起读/写传输<br>
+  两个 Master 独立工作, 各自有独立的 AHB 总线信号。<b>指令通道和数据通道不需要互斥仲裁</b>, 因为它们是两条物理独立的 AHB-Lite 总线。
+</div>
+
+<h3>读通道 (IMEM AHB Master) 内部架构</h3>
+
+<pre>
+┌──────────────────── scr1_imem_ahb ────────────────────┐
+│                                                        │
+│  ifu2imem_req ──▶ ┌──────────┐  mem_if→AHB  ┌───────┐ │
+│  ifu2imem_addr──▶│ req FIFO  │────▶协议────▶│ AHB   │─▶ HADDR
+│                  └──────────┘   转换      │ Master│─▶ HTRANS
+│                                          │  FSM  │─▶ HSIZE
+│  imem2ifu_rdata◀─┌──────────┐  AHB→mem_if│       │◀─ HRDATA
+│  imem2ifu_resp ◀─│resp FIFO │◀────协议────│       │◀─ HRESP
+│                  └──────────┘   转换      └───────┘◀─ HREADY
+│                                                        │
+│  FIFO 深度通常 = 2 (请求 + 响应分离, 流水化)          │
+└────────────────────────────────────────────────────────┘</pre>
+
+<h3>写通道 (DMEM AHB Master) 内部架构</h3>
+
+<pre>
+┌──────────────────── scr1_dmem_ahb ────────────────────┐
+│                                                        │
+│  lsu2dmem_req ──▶ ┌──────────┐  mem_if→AHB  ┌───────┐ │
+│  lsu2dmem_addr──▶│ req FIFO  │────▶协议────▶│ AHB   │─▶ HADDR
+│  lsu2dmem_wdata─▶│ (含cmd)   │   转换      │ Master│─▶ HWDATA
+│                  └──────────┘              │  FSM  │─▶ HWRITE
+│                                            │       │─▶ HTRANS
+│  dmem2lsu_rdata◀─┌──────────┐  AHB→mem_if │       │◀─ HRDATA
+│  dmem2lsu_resp ◀─│resp FIFO │◀────协议────│       │◀─ HRESP
+│                  └──────────┘   转换      └───────┘◀─ HREADY
+└────────────────────────────────────────────────────────┘</pre>
+
+<h3>请求/响应分离流水线</h3>
+
+<pre>
+<span class="cm">// scr1_imem_ahb / scr1_dmem_ahb 的核心: FIFO 缓冲</span>
+<span class="cm">// 请求打入 req_fifo → AHB Master FSM 逐条消费</span>
+<span class="cm">// 响应由 AHB 总线返回 → resp_fifo → mem_if 协议</span>
+
+T0:  IFU 发出 req[0] → req_fifo.push(req[0])
+     AHB_FSM: IDLE, 无请求待发
+
+T1:  IFU 发出 req[1] → req_fifo.push(req[1])
+     AHB_FSM: 从 req_fifo 取出 req[0], 驱动 HADDR, HTRANS=NONSEQ
+
+T2:  IFU 不请求
+     AHB_FSM: req[0] 地址阶段完成, HREADY=1 → 等数据
+              取出 req[1], 驱动下一个地址
+
+T3:  HRDATA[0] 返回 → resp_fifo.push(data[0])
+     AHB_FSM: req[1] 等待
+
+T4:  HRDATA[1] 返回 → resp_fifo.push(data[1])
+     resp_fifo → imem2ifu_rdata (按序返回)
+</pre>
+
+<div class="box tip">
+  <div class="box-title">FIFO 的作用: 解耦请求速率与 AHB 总线延迟</div>
+  当 AHB 总线因从设备忙而插入等待 (HREADY=0) 时, IFU/LSU 可以继续发出请求存入 FIFO (只要 FIFO 未满)。当总线空闲时, AHB Master FSM 从 FIFO 取请求快速发射。FIFO 将流水线停顿从 "全局阻塞" 降级为 "FIFO 满时阻塞"。
+</div>
+
+<!-- ============ AHB Slave Multiplexer ============ -->
+<h2 id="ahb-slave-mux">第十一课: AHB 从设备多路复用器</h2>
+
+<div class="box">
+  <div class="box-title">SCR1 SoC 的 AHB 互联架构</div>
+  SCR1 使用地址译码 + 多路复用器方案连接多个 AHB 从设备。这是 AHB-Lite 单主设备系统的标准互联方式 — 无需总线仲裁, 所有从设备共享主设备的地址/控制总线, 通过地址译码选中唯一活跃从设备。
+</div>
+
+<h3>1-to-3 从设备配置 (完整 SoC)</h3>
+
+<pre>
+                    ┌──────────────────────────────┐
+                    │     scr1_dmem_ahb (Master)   │
+                    │  HADDR, HWDATA, HWRITE ...    │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────▼───────────────┐
+                    │      地址译码器 (Decoder)     │
+                    │  HSELx = addr ∈ [BASE, END]  │
+                    └──┬──────────┬──────────┬─────┘
+                       │          │          │
+              HSEL0    │   HSEL1  │   HSEL2  │
+              ┌────────▼──┐ ┌─────▼─────┐ ┌──▼──────────┐
+              │ TCM AHB   │ │ Timer AHB │ │ Ext SRAM    │
+              │ Slave     │ │ Slave     │ │ AHB Slave   │
+              │ (内部 SRAM)│ │ (mtime)   │ │ (外部存储)   │
+              └─────┬─────┘ └─────┬─────┘ └──┬──────────┘
+                    │             │           │
+                    └──────┬──────┴─────┬─────┘
+                           │            │
+                    ┌──────▼────────────▼──────┐
+                    │    响应多路复用器 (MUX)    │
+                    │  HRDATA = HSELx ? hrdata_x   │
+                    │  HRESP  = HSELx ? hresp_x    │
+                    │  HREADY = HSELx ? hready_x   │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                          scr1_dmem_ahb (HRDATA, HRESP, HREADY)
+</pre>
+
+<h3>AHB 从设备选择逻辑</h3>
+
+<pre>
+<span class="cm">// 地址译码: 根据 HADDR 生成 HSELx</span>
+<span class="kw">parameter</span> TCM_BASE   = <span class="num">32'h0000_0000</span>;
+<span class="kw">parameter</span> TCM_SIZE   = <span class="num">32'h0001_0000</span>; <span class="cm">// 64KB</span>
+<span class="kw">parameter</span> TIMER_BASE = <span class="num">32'h0049_0000</span>;
+<span class="kw">parameter</span> TIMER_SIZE = <span class="num">32'h0000_0020</span>; <span class="cm">// 32B</span>
+
+<span class="kw">assign</span> HSEL_TCM   = (HADDR >= TCM_BASE)   &amp; (HADDR &lt; TCM_BASE + TCM_SIZE);
+<span class="kw">assign</span> HSEL_TIMER = (HADDR >= TIMER_BASE) &amp; (HADDR &lt; TIMER_BASE + TIMER_SIZE);
+<span class="kw">assign</span> HSEL_EXT   = ~HSEL_TCM &amp; ~HSEL_TIMER;
+
+<span class="cm">// 响应 MUX: 未选中的从设备输出 0, 选中的驱动实际值</span>
+<span class="kw">assign</span> HRDATA = ({<span class="num">32</span>{HSEL_TCM}}   &amp; hrdata_tcm  )
+                | ({<span class="num">32</span>{HSEL_TIMER}} &amp; hrdata_timer)
+                | ({<span class="num">32</span>{HSEL_EXT}}   &amp; hrdata_ext  );
+
+<span class="kw">assign</span> HRESP  = HSEL_TCM   ? hresp_tcm   :
+                  HSEL_TIMER ? hresp_timer :
+                               hresp_ext;
+
+<span class="kw">assign</span> HREADY = HSEL_TCM   ? hready_tcm   :
+                  HSEL_TIMER ? hready_timer :
+                               hready_ext;
+</pre>
+
+<div class="box warn">
+  <div class="box-title">HREADY 多路复用的陷阱</div>
+  AHB-Lite 中, 每个从设备都有自己的 <code>HREADYout</code>。多路复用器必须确保只有当前被 <code>HSELx</code> 选中的从设备的 <code>HREADY</code> 被传递给主设备。未选中的从设备应输出 <code>HREADY=1</code> (以不阻塞总线), 但不直接连到 MUX 输入端 — 通常通过 AND-OR 结构: <code>master_hready = (HSEL_TCM & hready_tcm) | (HSEL_TIMER & hready_timer) | (HSEL_EXT & hready_ext)</code>。
+</div>
+
+<h3>1-to-2 配置 (最小 SoC, 无 Timer)</h3>
+
+<pre>
+                    ┌──────────────────────────────┐
+                    │     scr1_dmem_ahb (Master)   │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────▼───────────────┐
+                    │      地址译码器 (Decoder)     │
+                    └──┬──────────────────────┬────┘
+                       │                      │
+              HSEL0    │               HSEL1  │
+              ┌────────▼──┐           ┌───────▼──────┐
+              │ TCM AHB   │           │ Ext Memory   │
+              │ Slave     │           │ AHB Slave    │
+              └───────────┘           └──────────────┘
+</pre>
+
+<!-- ============ AHB Response & Error Handling ============ -->
+<h2 id="ahb-resp">第十二课: AHB 响应与 SCR1 错误处理</h2>
+
+<h3>AHB HRESP 编码</h3>
+
+<table>
+<tr><th>HRESP[1:0]</th><th>名称</th><th>说明</th><th>SCR1 处理</th></tr>
+<tr><td><code>00</code></td><td>OKAY</td><td>传输成功完成</td><td>正常读出数据, 指令/数据继续流水</td></tr>
+<tr><td><code>01</code></td><td>ERROR</td><td>传输失败 (访问非法地址或设备故障)</td><td>触发访问错误异常, 流水线清空</td></tr>
+<tr><td><code>10</code></td><td>RETRY</td><td>事务未完成, 重试</td><td>AHB-Lite 不支持</td></tr>
+<tr><td><code>11</code></td><td>SPLIT</td><td>事务未完成, 分离</td><td>AHB-Lite 不支持</td></tr>
+</table>
+
+<h3>SCR1 内部错误传播路径</h3>
+
+<pre>
+<span class="cm">// AHB HRESP=ERROR → dmem_resp=ERROR → LSU 异常生成</span>
+
+AHB Bus: HRESP=ERROR ──▶ dmem_ahb resp FIFO ──▶ DMEM resp=ERROR
+                                                       │
+                                                       ▼
+                                                  scr1_pipe_lsu
+                                               dmem_resp_er = 1
+                                                       │
+                                          ┌────────────┼────────────┐
+                                          ▼            ▼            ▼
+                                   lsu2exu_exc_o  异常编码选择   FSM→IDLE
+                                          │       LD_FAULT 或
+                                          ▼       ST_FAULT
+                                     EXU 异常仲裁
+                                          │
+                                          ▼
+                                   流水线清空 (flush)
+                                   保存 MEPC, MCAUSE, MTVAL
+                                   跳转 MTVEC (异常入口)
+</pre>
+
+<h3>LSU 中 HRESP=ERROR 的处理</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_lsu.sv: DMEM ERROR 响应处理</span>
+<span class="kw">assign</span> dmem_resp_er = (dmem2lsu_resp_i == SCR1_MEM_RESP_RDY_ER);
+
+<span class="cm">// 异常代码选择 (优先级编码):</span>
+<span class="cm">// LD_ACCESS_FAULT: 加载指令收到 HRESP=ERROR</span>
+<span class="cm">// ST_ACCESS_FAULT: 存储指令收到 HRESP=ERROR</span>
+<span class="kw">case</span> (<span class="num">1'b1</span>)
+    dmem_resp_er &amp; lsu_cmd_ff_load:  exc_code = SCR1_EXC_CODE_LD_ACCESS_FAULT;
+    dmem_resp_er &amp; lsu_cmd_ff_store: exc_code = SCR1_EXC_CODE_ST_ACCESS_FAULT;
+    ...
+<span class="kw">endcase</span>
+
+<span class="cm">// 异常优先级: DMEM ERROR > 断点 > 地址未对齐</span>
+<span class="cm">// 这是因为: 一旦 DMEM 返回 ERROR, 数据已不可用,</span>
+<span class="cm">// 其他异常 (未对齐/断点) 已经没有意义</span></pre>
+
+<div class="box err">
+  <div class="box-title">AHB ERROR 的完整异常处理流程 (以 LW 为例)</div>
+  1. LUI 发出 <code>LW a0, 0(a1)</code>, 地址落在非法外部总线范围<br>
+  2. DMEM Router 将请求路由到 dmem_ahb, AHB Master 驱动 HADDR<br>
+  3. 外部 AHB 从设备检测地址非法, 在数据拍返回 <code>HRESP=ERROR, HREADY=1</code><br>
+  4. dmem_ahb 收到 ERROR → resp_fifo → 转换为 <code>dmem_resp=RDY_ER</code><br>
+  5. LSU 的 <code>dmem_resp_er</code> 置 1 → 产生 <code>LD_ACCESS_FAULT</code> 异常<br>
+  6. EXU 仲裁: 将当前指令标记为异常, 保存 PC→MEPC, 异常码→MCAUSE, 地址→MTVAL<br>
+  7. 流水线清空, 下一条 PC = MTVEC (异常入口地址)
+</div>
+
+<h3>IFU 取指错误的处理 (AHB 指令总线)</h3>
+
+<pre>
+<span class="cm">// 取指时 HRESP=ERROR → INSTR_ACCESS_FAULT</span>
+<span class="cm">// IFU 的错误处理更为关键: 因为没有指令就无法执行</span>
+
+AHB Imem: HRESP=ERROR
+         │
+         ▼
+  imem_ahb resp_fifo → imem2ifu_resp = RDY_ER
+         │
+         ▼
+  scr1_pipe_ifu: imem_resp_er = 1
+         │
+         ▼
+  IFU FSM → 暂停取指, 向 EXU 报告异常
+  EXU → 标记当前指令为 INSTR_ACCESS_FAULT
+       → 保存 MEPC (异常指令 PC)
+       → 跳转 MTVEC
+</pre>
+
+<!-- ============ AXI ============ -->
+<h2 id="axi">第十三课: AXI 总线封装 — scr1_top_axi</h2>
+
+<pre>
+<span class="cm">// scr1_top_axi.sv: SCR1 核心 + AXI 总线封装</span>
+<span class="cm">// 通过 scr1_mem_axi 模块做 mem_if → AXI 转换</span>
+
+┌────────────────────────────────────────────────┐
+│                 scr1_top_axi                   │
+│  ┌──────────┐   ┌──────────────┐              │
+│  │ scr1_core│──▶│  mem_axi     │──▶ AXI Bus   │
+│  │          │   │ (AXI master) │              │
+│  └──────────┘   └──────────────┘              │
+└────────────────────────────────────────────────┘</pre>
+
+<table>
+<tr><th>维度</th><th>AHB</th><th>AXI</th></tr>
+<tr><td>通道</td><td>共享地址/数据总线</td><td>5 个独立通道: AW/W/B/AR/R</td></tr>
+<tr><td>读写并发</td><td>不支持 (半双工)</td><td>支持 (全双工)</td></tr>
+<tr><td>突发长度</td><td>固定/增量</td><td>可编程 (1-16)</td></tr>
+<tr><td>outstanding</td><td>单事务</td><td>支持多事务流水线</td></tr>
+<tr><td>SCR1 用途</td><td>简单 SoC</td><td>高性能系统</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">SCR1 用 AHB 还是 AXI?</div>
+  SCR1 是单发射顺序核, AHB 完全够用。AXI 版本主要用于与已有 AXI 系统集成、或需要 burst 访问的外部存储器。两个封装内部核心 (<code>scr1_core</code>) 完全复用同一套接口。
+</div>
+
+<!-- ============ Timer ============ -->
+<h2 id="timer">第十四课: Timer 定时器 — mtime + mtimecmp</h2>
+
+<pre>
+<span class="cm">// scr1_timer.sv: 64 位 mtime 计数器 + mtimecmp 比较器</span>
+
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (~rst_n)
+        mtime &lt;= <span class="num">64'b0</span>;
+    <span class="kw">else</span>
+        mtime &lt;= mtime + <span class="num">1</span>;          <span class="cm">// 每个 clk 递增</span>
+
+    <span class="kw">if</span> (mtime >= mtimecmp)           <span class="cm">// mtime >= mtimecmp?</span>
+        mtip = <span class="num">1</span>;                      <span class="cm">// 定时器中断挂起</span>
+<span class="kw">end</span></pre>
+
+<h3>寄存器映射</h3>
+
+<table>
+<tr><th>相对地址</th><th>绝对地址</th><th>寄存器</th><th>位宽</th><th>访问</th><th>说明</th></tr>
+<tr><td><code>0x00</code></td><td><code>0x0049_0000</code></td><td>MTIME_LO</td><td>32</td><td>R/W</td><td>mtime 低 32 位</td></tr>
+<tr><td><code>0x04</code></td><td><code>0x0049_0004</code></td><td>MTIME_HI</td><td>32</td><td>R/W</td><td>mtime 高 32 位</td></tr>
+<tr><td><code>0x08</code></td><td><code>0x0049_0008</code></td><td>MTIMECMP_LO</td><td>32</td><td>R/W</td><td>mtimecmp 低 32 位</td></tr>
+<tr><td><code>0x0C</code></td><td><code>0x0049_000C</code></td><td>MTIMECMP_HI</td><td>32</td><td>R/W</td><td>mtimecmp 高 32 位</td></tr>
+<tr><td><code>0x10</code></td><td><code>0x0049_0010</code></td><td>TIMER_CTRL</td><td>12</td><td>R/W</td><td>控制: ENABLE, CLKSRC, DIV[9:0]</td></tr>
+</table>
+
+<h3>TIMER_CTRL 寄存器</h3>
+
+<table>
+<tr><th>位</th><th>名称</th><th>说明</th></tr>
+<tr><td><code>[0]</code></td><td>ENABLE</td><td>定时器使能: 0=停止计数, 1=计数</td></tr>
+<tr><td><code>[1]</code></td><td>CLKSRC</td><td>时钟源选择: 0=内部核心时钟, 1=外部 RTC 时钟</td></tr>
+<tr><td><code>[11:2]</code></td><td>DIV</td><td>分频系数: 定时器每 DIV+1 个时钟周期递增一次。DIV=0 表示每个时钟递增</td></tr>
+</table>
+
+<h3>时钟源选择逻辑</h3>
+
+<pre>
+<span class="cm">// Timer 时钟源: 内部 clk 或 外部 rtc_clk (经同步器)</span>
+<span class="kw">assign</span> timer_clk_en = timer_ctrl_enable &amp;
+    (timer_ctrl_clksrc ? rtc_clk_synced : <span class="num">1'b1</span>);
+
+<span class="cm">// 分频器</span>
+<span class="kw">always_ff</span> @(posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (div_counter >= timer_ctrl_div)
+        div_counter &lt;= <span class="num">0</span>;
+    <span class="kw">else</span>
+        div_counter &lt;= div_counter + <span class="num">1</span>;
+<span class="kw">end</span>
+
+<span class="kw">assign</span> timer_tick = (div_counter == timer_ctrl_div) &amp; timer_clk_en;
+</pre>
+
+<div class="box tip">
+  <div class="box-title">mtime 如何进入 CSR?</div>
+  <code>soc2csr_mtimer_val_i</code> → CSR 模块的 TIME/TIMEH 用户阴影寄存器 + MIP.MTIP。软件读 TIME CSR 获取当前时间, 写 mtimecmp 设定下一次中断时刻。
+</div>
+
+<!-- ============ Timer AHB Interface ============ -->
+<h2 id="timer-ahb">第十五课: Timer 的 AHB 从设备接口</h2>
+
+<div class="box">
+  <div class="box-title">Timer 作为内存映射外设: AHB Slave 接口</div>
+  Timer 在 SoC 中作为 AHB 从设备, 被 DMEM AHB Master 通过地址译码访问。Timer 内部实现 <code>mem_if</code> 或直接 AHB 从设备协议, 将 AHB 读/写转换为寄存器访问。
+</div>
+
+<h3>AHB Slave 接口实现 (简化)</h3>
+
+<pre>
+<span class="cm">// Timer 的 AHB 从设备接口: 处理 HTRANS + HADDR → 寄存器读写</span>
+
+<span class="kw">always_ff</span> @(posedge HCLK) <span class="kw">begin</span>
+    <span class="kw">if</span> (HSEL &amp; HTRANS[<span class="num">1</span>] &amp; HREADY) <span class="kw">begin</span>
+        <span class="kw">if</span> (~HWRITE) <span class="kw">begin</span>  <span class="cm">// 读</span>
+            <span class="kw">case</span> (HADDR[<span class="num">4</span>:<span class="num">0</span>])
+                <span class="num">5'h00</span>: hrdata &lt;= mtime[<span class="num">31</span>:<span class="num">0</span>];
+                <span class="num">5'h04</span>: hrdata &lt;= mtime[<span class="num">63</span>:<span class="num">32</span>];
+                <span class="num">5'h08</span>: hrdata &lt;= mtimecmp[<span class="num">31</span>:<span class="num">0</span>];
+                <span class="num">5'h0C</span>: hrdata &lt;= mtimecmp[<span class="num">63</span>:<span class="num">32</span>];
+                <span class="num">5'h10</span>: hrdata &lt;= timer_ctrl;
+                <span class="kw">default</span>: hrdata &lt;= <span class="num">0</span>;
+            <span class="kw">endcase</span>
+        <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span>  <span class="cm">// 写</span>
+            <span class="kw">case</span> (HADDR[<span class="num">4</span>:<span class="num">0</span>])
+                <span class="num">5'h00</span>: mtime[<span class="num">31</span>:<span class="num">0</span>]  &lt;= HWDATA;
+                <span class="num">5'h04</span>: mtime[<span class="num">63</span>:<span class="num">32</span>] &lt;= HWDATA;
+                <span class="num">5'h08</span>: mtimecmp[<span class="num">31</span>:<span class="num">0</span>]  &lt;= HWDATA;
+                <span class="num">5'h0C</span>: mtimecmp[<span class="num">63</span>:<span class="num">32</span>] &lt;= HWDATA;
+                <span class="num">5'h10</span>: timer_ctrl      &lt;= HWDATA[<span class="num">11</span>:<span class="num">0</span>];
+            <span class="kw">endcase</span>
+        <span class="kw">end</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="kw">assign</span> HREADYout = <span class="num">1'b1</span>;  <span class="cm">// Timer 零等待, 始终就绪</span>
+<span class="kw">assign</span> HRESPout  = <span class="num">2'b00</span>; <span class="cm">// OKAY, Timer 自身不产生 ERROR</span>
+</pre>
+
+<h3>Timer 地址空间布局</h3>
+
+<pre>
+0x0049_0000 ┌──────────────────┐
+            │  MTIME_LO [31:0] │  ← mtime 低 32 位 (R/W)
+0x0049_0004 ├──────────────────┤
+            │  MTIME_HI [31:0] │  ← mtime 高 32 位 (R/W)
+0x0049_0008 ├──────────────────┤
+            │ MTIMECMP_LO[31:0]│  ← mtimecmp 低 32 位 (R/W)
+0x0049_000C ├──────────────────┤
+            │ MTIMECMP_HI[31:0]│  ← mtimecmp 高 32 位 (R/W)
+0x0049_0010 ├──────────────────┤
+            │  TIMER_CTRL[11:0]│  ← 控制寄存器 (R/W)
+0x0049_0014 ├──────────────────┤
+            │    (reserved)    │
+0x0049_001F └──────────────────┘
+</pre>
+
+<!-- ============ External AHB Master Port ============ -->
+<h2 id="ext-master">第十六课: 外部 AHB 主设备端口 — SCR1 作为从设备</h2>
+
+<div class="box">
+  <div class="box-title">调试模块 (DM) 通过 AHB 主设备端口访问 SCR1</div>
+  SCR1 的调试模块 (<code>scr1_dm_ahb.sv</code>) 提供了一个 <b>外部 AHB 主设备端口</b>。当外部调试器 (如 JTAG 探针) 需要读写 SCR1 的存储器或 CSR 时, DM 作为 AHB Master 发起传输, 此时 SCR1 核心的资源 (TCM, Timer, 外部总线) 作为 AHB Slave 响应。
+</div>
+
+<h3>双主设备共享总线架构</h3>
+
+<pre>
+                         ┌────────────────────┐
+                         │   AHB Bus Matrix   │
+                         │   (地址译码 + MUX)  │
+                         └──┬──────────────┬──┘
+                            │              │
+              ┌─────────────▼──┐   ┌──────▼─────────────┐
+              │  Master Port 1 │   │  Master Port 2      │
+              │  DM (调试器)    │   │  SCR1 Core          │
+              │  scr1_dm_ahb   │   │  imem_ahb + dmem_ahb│
+              │                │   │                     │
+              └────────┬───────┘   └────────┬────────────┘
+                       │                    │
+                       │         ┌──────────▼────────────┐
+                       │         │  DMEM Router          │
+                       │         │  → TCM / Timer / AHB  │
+                       │         └───────────────────────┘
+                       │                    │
+                       └───────┬────────────┘
+                               ▼
+                     ┌──────────────────┐
+                     │  AHB Slave 资源   │
+                     │  TCM, Timer, Ext │
+                     └──────────────────┘</pre>
+
+<h3>DM AHB Master 的工作流程</h3>
+
+<pre>
+<span class="cm">// scr1_dm_ahb.sv: 调试模块作为 AHB Master</span>
+<span class="cm">// 流程: JTAG 命令 → DM 译码 → AHB Master 访问 → 返回数据</span>
+
+JTAG 探针
+    │ TDI/TDO
+    ▼
+DMI (Debug Module Interface)
+    │ 抽象命令 (Abstract Command)
+    ▼
+DM (Debug Module)
+    │ 译码: 读/写存储器地址
+    ▼
+scr1_dm_ahb (AHB Master)
+    │ 驱动 HADDR, HTRANS, HWRITE
+    ▼
+AHB 总线 → 从设备 (TCM / Timer / External)
+    │ HRDATA, HRESP
+    ▼
+scr1_dm_ahb → DM → DMI → JTAG (返回调试器)
+</pre>
+
+<h3>DM 访问与 CPU 访问的仲裁</h3>
+
+<pre>
+<span class="cm">// 当 DM 和 CPU 同时访问相同的 AHB 从设备时,</span>
+<span class="cm">// 需要 AHB Bus Matrix 进行仲裁。</span>
+<span class="cm">// SCR1 简化方案: DM 访问时暂停 CPU (hart halted)</span>
+
+<span class="kw">always_comb</span> <span class="kw">begin</span>
+    <span class="kw">if</span> (dm_active) <span class="kw">begin</span>
+        <span class="cm">// DM 模式: CPU 暂停, DM 独占总线</span>
+        hmaster_sel = DM_MASTER;
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span>
+        <span class="cm">// 正常运行模式</span>
+        hmaster_sel = CPU_MASTER;
+    <span class="kw">end</span>
+<span class="kw">end</span>
+</pre>
+
+<div class="box tip">
+  <div class="box-title">SCR1 调试访问的实际仲裁策略</div>
+  SCR1 采用 "暂停即切换" 策略: 当调试器通过 JTAG 发出 halt 请求, CPU 进入调试模式 (hart halted), 此时 HDU 接管控制权; DM 通过 AHB Master 口直接读写处理器资源。CPU 恢复运行后, DM 释放 AHB 总线。这种设计避免了复杂的多主设备仲裁器, 代价是调试期间 CPU 无法并发执行。
+</div>
+
+<!-- ============ 顶层层次 ============ -->
+<h2 id="top-hierarchy">第十七课: 顶层模块完整层次树</h2>
+
+<pre>
+scr1_top_ahb / scr1_top_axi
+│
+├── scr1_core (流水线核心)
+│   ├── scr1_pipe_top
+│   │   ├── scr1_pipe_ifu        (取指)
+│   │   ├── scr1_pipe_idu        (译码)
+│   │   ├── scr1_pipe_exu        (执行)
+│   │   │   ├── scr1_pipe_ialu   (整型 ALU)
+│   │   │   ├── scr1_pipe_lsu    (访存 + 总线错误处理)
+│   │   │   └── (MDU)            (乘除)
+│   │   ├── scr1_pipe_mprf       (寄存器文件)
+│   │   ├── scr1_pipe_csr        (控制状态)
+│   │   ├── scr1_ipic            (中断控制)
+│   │   ├── scr1_pipe_hdu        (调试)
+│   │   └── scr1_pipe_tdu        (触发)
+│   │
+├── scr1_imem_ahb / mem_axi      (指令总线封装)
+├── scr1_dmem_ahb / (mem_axi 共享)(数据总线封装)
+├── scr1_tcm                     (紧耦合存储, 可选)
+│   └── scr1_dp_memory           (双端口 RAM, TCM 底层)
+├── scr1_timer                   (定时器, AHB 从设备)
+├── scr1_dm_ahb                  (调试模块 AHB 主/从接口)
+├── scr1_imem_router             (IMEM 地址路由器)
+├── scr1_dmem_router             (DMEM 地址路由器)
+└── scr1_tcm_ahb_slave           (TCM 的 AHB 从设备封装)
+</pre>
+
+<!-- ============ Bus Error Simulation ============ -->
+<h2 id="bus-err-sim">第十八课: 总线错误注入与仿真</h2>
+
+<div class="box">
+  <div class="box-title">总线错误注入的目的</div>
+  验证 SCR1 在异常情况下的行为: 确保 AHB ERROR 响应被正确传递、LSU 产生正确的异常代码、流水线正确清空和恢复、MTVAL 保存正确地址、软件异常处理程序能被正确调起。
+</div>
+
+<h3>仿真测试平台中的错误注入机制</h3>
+
+<pre>
+<span class="cm">// scr1_memory_tb_ahb.sv: AHB 存储器仿真模型, 支持错误注入</span>
+
+<span class="kw">module</span> scr1_memory_tb_ahb (
+    <span class="cm">// AHB Slave 信号</span>
+    input  HCLK, HRESETn,
+    input  HSEL,
+    input  [<span class="num">31</span>:<span class="num">0</span>] HADDR,
+    input  [<span class="num">1</span>:<span class="num">0</span>]  HTRANS,
+    input         HWRITE,
+    ...
+);
+
+<span class="cm">// 错误注入控制寄存器 (仅仿真)</span>
+<span class="kw">reg</span>  inject_error;          <span class="cm">// 使能错误注入</span>
+<span class="kw">reg</span> [<span class="num">31</span>:<span class="num">0</span>] error_addr_start;  <span class="cm">// 错误地址起始</span>
+<span class="kw">reg</span> [<span class="num">31</span>:<span class="num">0</span>] error_addr_end;    <span class="cm">// 错误地址结束</span>
+
+<span class="kw">wire</span> addr_in_error_range = (HADDR >= error_addr_start)
+                         &amp; (HADDR &lt;= error_addr_end);
+
+<span class="kw">always_ff</span> @(posedge HCLK) <span class="kw">begin</span>
+    <span class="kw">if</span> (HSEL &amp; HTRANS[<span class="num">1</span>]) <span class="kw">begin</span>
+        <span class="kw">if</span> (inject_error &amp; addr_in_error_range)
+            HRESP &lt;= <span class="num">2'b01</span>;  <span class="cm">// ERROR</span>
+        <span class="kw">else</span>
+            HRESP &lt;= <span class="num">2'b00</span>;  <span class="cm">// OKAY</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+
+<h3>错误注入测试场景</h3>
+
+<table>
+<tr><th>场景编号</th><th>测试描述</th><th>预期结果</th></tr>
+<tr><td>1</td><td>LW 访问非法外部地址 (0xFFFF_0000), AHB 返回 ERROR</td><td>LD_ACCESS_FAULT 异常, MCAUSE=5, MTVAL=0xFFFF_0000</td></tr>
+<tr><td>2</td><td>SW 到只读区域, AHB 返回 ERROR</td><td>ST_ACCESS_FAULT 异常, MCAUSE=7, MTVAL=写入地址</td></tr>
+<tr><td>3</td><td>IFU 取指从错误地址 (外部 Flash 故障), Imem AHB 返回 ERROR</td><td>INSTR_ACCESS_FAULT 异常, MCAUSE=1</td></tr>
+<tr><td>4</td><td>写 mtimecmp 后立即读回, 验证 AHB 写→读一致性</td><td>读回值 = 写入值, HRESP=OKAY</td></tr>
+<tr><td>5</td><td>连续 3 次 ERROR 注入后恢复正常, 验证异常处理程序返回</td><td>3 次异常正常触发, MRET 后程序继续执行</td></tr>
+<tr><td>6</td><td>Timer 地址越界访问 (0x0049_0020), 从设备返回 ERROR</td><td>LD/ST_ACCESS_FAULT 异常</td></tr>
+</table>
+
+<h3>完整错误注入仿真流程</h3>
+
+<pre>
+┌─────────────────────────────────────────────────────────────┐
+│  总线错误注入仿真流程                                         │
+│                                                             │
+│  ┌────────────┐    ┌──────────────┐    ┌──────────────────┐ │
+│  │ Testbench   │───▶│ AHB Memory   │───▶│ SCR1 Core        │ │
+│  │ 错误配置     │    │ Model        │    │ (CPU + Pipeline) │ │
+│  │             │    │ HRESP=ERROR   │    │                  │ │
+│  │ $write(     │    │ 注入到读/写    │    │ 收到 HRESP=ERROR  │ │
+│  │  error_     │    │              │    │ ↓                │ │
+│  │  addr_start,│    │              │    │ LSU/IFU 异常生成  │ │
+│  │  error_     │    │              │    │ ↓                │ │
+│  │  addr_end   │    │              │    │ EXU 仲裁          │ │
+│  │ )           │    │              │    │ ↓                │ │
+│  └────────────┘    └──────────────┘    │ 流水线清空        │ │
+│                                        │ ↓                │ │
+│  ┌────────────┐                        │ 跳转 MTVEC        │ │
+│  │ 结果校验    │◀────────────────────── │ ↓                │ │
+│  │            │    MCAUSE, MTVAL,      │ 异常处理程序      │ │
+│  │ 断言检查:   │    MEPC 值回读         │ ↓                │ │
+│  │  MCAUSE=?  │                        │ MRET 返回         │ │
+│  │  MTVAL=?   │                        └──────────────────┘ │
+│  │  流水线恢复?│                                             │
+│  └────────────┘                                             │
+└─────────────────────────────────────────────────────────────┘</pre>
+
+<!-- ============ 练习 ============ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: mem_if 握手分析</legend>
+  <p>画出 IFU 向 IMEM 发起一次 4 字节读请求的 mem_if 握手时序。标注 req, req_ack, addr, rdata, resp 信号的波形。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: Router 地址译码</legend>
+  <p>假设 TCM 基址 = 0x0000, 大小 = 64KB。IFU 请求地址 0x0000_1000 和 0x0100_0000 分别路由到哪里?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: dp_memory 字节写使能</legend>
+  <p>执行 SH (存半字) 到地址 0x1002。写出 webb[3:0] 的值和各字节的写入行为。SD 指令 (4 字节) 和 SB 指令 (1 字节) 的区别?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: AHB vs AXI 对比</legend>
+  <p>在 SCR1 单发射顺序核中, AXI 的 5 独立通道有哪些被实际用到? 哪些优势在单核场景下体现不出来?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: mtime+mtimecmp 中断生成</legend>
+  <p>软件要设置 1ms 后触发定时器中断。时钟频率 = 100MHz。计算 mtimecmp 应写入的值, 并画出中断从产生到 CPU 跳转到 MTVEC 的完整路径。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: AHB 读传输时序</legend>
+  <p>画出 DMEM AHB Master 从 0x8000_0000 读一个字 (4 字节), 且外部 SRAM 从设备插入 3 拍等待的完整时序图。标注 HCLK, HADDR, HTRANS, HWRITE, HSIZE, HREADY, HRDATA, HRESP 每个信号的波形。解释为什么 SCR1 的 HTRANS 始终在 IDLE 和 NONSEQ 之间切换。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 7: AHB 两阶段错误响应</legend>
+  <p>为什么 AHB 的 HRESP 需要两拍才能完成 ERROR 上报? 画出时序图并解释: 如果从设备在地址阶段直接返回 ERROR 会发生什么? 结合 AHB 流水线架构分析原因。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: DMEM Router 3 目标路由</legend>
+  <p>假设 DMEM Router 需要同时支持 TCM (0x0000~0xFFFF), Timer (0x0049_0000~0x0049_001F), 和外部 AHB。写出完整的地址译码组合逻辑, 并说明: 如果 Timer 的地址掩码设为 0xFFFFFE0, 地址 0x0049_0020 会被路由到哪里? 为什么?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: 总线错误处理路径</legend>
+  <p>SW 指令写入外部地址时, AHB 从设备返回 HRESP=ERROR。追踪完整的错误传播路径: AHB → dmem_ahb → DMEM Router → LSU → EXU → CSR (MCAUSE/MTVAL/MEPC)。画出每个模块的输入/输出信号变化。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 10: AHB 从设备多路复用器设计</legend>
+  <p>设计一个 1-to-3 AHB 从设备多路复用器 (TCM + Timer + External)。要求: (1) 写出 HSELx 生成逻辑 (2) 写出 HRDATA/HRESP/HREADY 的 MUX 逻辑 (3) 说明为何未选中从设备不能简单输出 0, 特别是在 HREADY 处理上。如果地址落在 Timer 区域但 Timer 被禁用 (ENABLE=0), Timer 应返回什么 HRESP?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 11: 调试模块 AHB 主设备访问</legend>
+  <p>当外部调试器通过 JTAG 发出读 0x0049_0000 (mtime 低 32 位) 的命令时, 画出从 JTAG TDI 到 mtime 值从 TDO 返回的完整数据流, 包括 DM/DMI/scr1_dm_ahb/AHB 总线各层。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 12: 错误注入测试平台设计</legend>
+  <p>为 scr1_memory_tb_ahb 设计一套错误注入配置接口: (1) 支持按地址范围注入 ERROR (2) 支持注入概率 (如 10% 概率返回 ERROR) (3) 设计测试程序验证 LD/ST/INSTR 三类 access fault 都能被正确触发和处理。</p>
+</fieldset>
+
+<h2 id="summary">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>mem_if 协议的握手模式 (Valid/Ack) 如何工作? 命令和响应如何分离?</li>
+    <li>AHB-Lite 总线的全部信号 (HADDR/HTRANS/HSIZE/HBURST/HWRITE/HWDATA/HRDATA/HREADY/HRESP) 各有什么含义?</li>
+    <li>AHB 读/写传输的完整时序是怎样的? 什么是两阶段错误响应机制?</li>
+    <li>IMEM Router 如何根据地址路由请求到 TCM / Debug / AHB? DMEM Router 增加了 Timer 目标后地址译码有什么变化?</li>
+    <li>TCM 为什么能实现 0 延迟访问? 和通过 AHB 访问有什么区别?</li>
+    <li>dp_memory 的字节写使能 (webb[3:0]) 如何支持 SB/SH/SW?</li>
+    <li>SCR1 的两个 AHB Master (IMEM/DMEM) 的请求/响应 FIFO 如何工作? 为什么需要分离流水线?</li>
+    <li>AHB 从设备多路复用器 (1-to-N) 如何根据地址选择从设备? HREADY 多路复用的陷阱是什么?</li>
+    <li>Timer 的 AHB 从设备接口如何实现? mtime/mtimecmp 的 64 位寄存器为何分为两个 32 位访问?</li>
+    <li>AXI 的 5 个独立通道分别是什么? 和 AHB 的共享总线有什么区别?</li>
+    <li>HRESP=ERROR 到达后, SCR1 从 LSU/IFU → EXU → CSR 的完整异常处理路径是怎样的?</li>
+    <li>调试模块 (scr1_dm_ahb) 如何作为 AHB Master 访问 SCR1 资源? CPU 和 DM 如何仲裁总线?</li>
+    <li>如何设计错误注入测试平台来验证 SCR1 的总线错误处理?</li>
+    <li>scr1_top_ahb 的完整模块层次树包括哪些模块? 各模块间的数据流是怎样的?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周 (最终周) 预告</div>
+  第 14 周进入仿真验证与项目收尾: 4 种仿真器 (Modelsim/VCS/NCsim/Verilator) 编译流程 + 测试套件 (riscv_isa/compliance/arch/hello/isr_sample/coremark/dhrystone) + AHB/AXI 两种总线的仿真测试平台架构 + 14 周知识总复习 + 进阶方向推荐。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 总线接口与存储子系统 | 第 13 周</p>
+</body>
+</html>

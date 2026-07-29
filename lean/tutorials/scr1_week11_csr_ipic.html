@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSR 控制状态寄存器 + IPIC 中断控制器 | SCR1 第 11 周 (增强版)</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #1a365d; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .rd { color: #ce9178; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 250px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.80em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .fig { text-align: center; margin: 16px 0; font-family: monospace; font-size: 0.83em; background: var(--code-bg); padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.35; overflow-x: auto; }
+  .timing { text-align: left; margin: 16px 0; font-family: 'Fira Code', monospace; font-size: 0.78em; background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; white-space: pre; line-height: 1.4; overflow-x: auto; }
+  .timing .hdr { color: #569cd6; } .timing .sig { color: #9cdcfe; } .timing .val0 { color: #6a9955; } .timing .val1 { color: #ce9178; } .timing .arrow { color: #dcdcaa; }
+  .step { padding: 9px 14px; margin: 6px 0; background: #f8f9fa; border-left: 4px solid var(--blue); border-radius: 0 6px 6px 0; }
+  .step-num { display: inline-block; width: 22px; height: 22px; background: var(--blue); color: white; border-radius: 50%; text-align: center; line-height: 22px; font-size: 0.82em; margin-right: 8px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.78em; font-weight: 600; margin-right: 4px; }
+  .tag-new { background: #d4edda; color: #155724; }
+</style>
+</head>
+<body>
+
+<h1>CSR 控制状态寄存器 + IPIC 中断控制器 | SCR1 第 11 周 <span class="tag tag-new">增强版</span></h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">本周概述</a>
+  <a href="#csr-arch">CSR 模块架构</a>
+  <a href="#csr-addr">CSR 12-bit 地址编码全解析 <span class="tag tag-new">新</span></a>
+  <a href="#csr-events">事件处理: EXC/IRQ/MRET</a>
+  <a href="#csr-mscratch">MSCRATCH 中断处理模式 <span class="tag tag-new">新</span></a>
+  <a href="#csr-mstatus">MSTATUS 状态转移</a>
+  <a href="#csr-mtvec">MTVEC 陷阱向量</a>
+  <a href="#csr-mepc">MEPC + MCAUSE + MTVAL</a>
+  <a href="#csr-mip-mie">MIP + MIE 中断控制</a>
+  <a href="#csr-mip-mie-interact">MIP vs MIE 交互 &amp; WFI 唤醒 <span class="tag tag-new">新</span></a>
+  <a href="#csr-counters">MCYCLE/MINSTRET 计数器</a>
+  <a href="#csr-hpm">性能计数器扩展 (mhpmcounter3) <span class="tag tag-new">新</span></a>
+  <a href="#csr-misa">MISA + Machine Info</a>
+  <a href="#csr-rmw">CSR 原子读-改-写 (RMW) <span class="tag tag-new">新</span></a>
+  <a href="#csr-newpc">新 PC 生成 (Direct/Vectored)</a>
+  <a href="#ipic-arch">IPIC 架构</a>
+  <a href="#ipic-regs">IPIC 11 个寄存器</a>
+  <a href="#ipic-prio">优先级树搜索 (search_one_16)</a>
+  <a href="#ipic-prio-gate">search_one_16 门级展开 <span class="tag tag-new">新</span></a>
+  <a href="#ipic-flow">CSR-IPIC 协同流程 + 时序</a>
+  <a href="#exercise">动手练习 <span class="tag tag-new">+1题</span></a>
+  <a href="#submodule-commit">Summary</a>
+</nav>
+
+<h2 id="overview">第一课: 本周概述</h2>
+
+<div class="box">
+  <div class="box-title">本周覆盖 2 个模块</div>
+  <strong>CSR</strong> (<code>scr1_pipe_csr.sv</code>) — 11 个 M-mode CSR 寄存器 + 3 类事件处理 + 64 位计数器 + 新 PC 生成<br>
+  <strong>IPIC</strong> (<code>scr1_ipic.sv</code>) — 16 路 IRQ 控制器: 同步/边沿/反相 + 11 个专用寄存器 + 4 级优先级树
+</div>
+
+<!-- ============ CSR ARCH ============ -->
+<h2 id="csr-arch">第二课: CSR 模块架构 — 3 个接口</h2>
+
+<div class="fig">
+              soc2csr_irq_* ── 中断源      soc2csr_fuse_mhartid ── 熔丝
+                     │                              │
+ EXU ─── R/W ──────▶ scr1_pipe_csr ◀───── IPIC ── ipic2csr_irq_m_req_o
+ EXU ─── 事件 ─────▶     │           ◀───── HDU ── 调试 CSR (DCSR/DPC/...)
+ EXU ─── new_pc ────▶    │           ◀───── TDU ── 触发 CSR (TSELECT/...)
+                     │   │
+              csr2exu_new_pc_o              csr2exu_ip_ie_o
+              csr2exu_rw_exc_o              csr2exu_irq_o
+</div>
+
+<table>
+<tr><th>接口</th><th>方向</th><th>功能</th></tr>
+<tr><td>R/W 接口</td><td>EXU → CSR</td><td>CSRRW/CSRRS/CSRRC 的读写, 3 种写命令 (WRITE/SET/CLEAR)</td></tr>
+<tr><td>事件接口</td><td>EXU → CSR</td><td>异常/中断/MRET 三事件, 更新 MEPC/MCAUSE/MTVAL/MSTATUS</td></tr>
+<tr><td>输出接口</td><td>CSR → EXU</td><td>异常/中断新 PC, 中断挂起使能, CSR 访问异常</td></tr>
+</table>
+
+<!-- ============ CSR 12-bit ADDRESS ============ -->
+<h2 id="csr-addr">第三课: CSR 12-bit 地址编码全解析 <span class="tag tag-new">新增</span></h2>
+
+<p>RISC-V 的 CSR 地址空间为 12-bit (<code>SCR1_CSR_ADDR_WIDTH = 12</code>)。12-bit 地址编码由 RISC-V 特权规范定义, 高 4-bit [11:8] 确定功能大类, 低 8-bit [7:0] 确定大类内的具体寄存器。</p>
+
+<h3>12-bit CSR 地址的字段含义</h3>
+
+<pre>
+┌──────┬──────┬──────────────────────────────────────┐
+│ Bits │ 名称 │ 含义                                  │
+├──────┼──────┼──────────────────────────────────────┤
+│[11:8]│ Class│ CSR 大类 (4-bit 确定地址空间)         │
+│[7:0] │ Num  │ 大类内寄存器编号                       │
+└──────┴──────┴──────────────────────────────────────┘
+</pre>
+
+<h3>SCR1 使用的全部 CSR 地址空间</h3>
+
+<table>
+<tr><th>[11:8]</th><th>大类名</th><th>寄存器</th><th>12-bit 地址</th><th>Hex</th><th>RW</th></tr>
+<tr><td rowspan="5">0011 (3)</td>
+  <td rowspan="5">Machine Trap Setup</td>
+  <td>MSTATUS</td><td><code>0011_0000_0000</code></td><td>0x300</td><td>RW</td></tr>
+<tr><td>MISA</td><td><code>0011_0000_0001</code></td><td>0x301</td><td>RW</td></tr>
+<tr><td>MIE</td><td><code>0011_0000_0100</code></td><td>0x304</td><td>RW</td></tr>
+<tr><td>MTVEC</td><td><code>0011_0000_0101</code></td><td>0x305</td><td>RW</td></tr>
+<tr><td>MCOUNTEN</td><td><code>0111_1110_0000</code></td><td>0x7E0</td><td>RW*</td></tr>
+<tr><td rowspan="5">0011 (3)</td>
+  <td rowspan="5">Machine Trap Handling</td>
+  <td>MSCRATCH</td><td><code>0011_0100_0000</code></td><td>0x340</td><td>RW</td></tr>
+<tr><td>MEPC</td><td><code>0011_0100_0001</code></td><td>0x341</td><td>RW</td></tr>
+<tr><td>MCAUSE</td><td><code>0011_0100_0010</code></td><td>0x342</td><td>RW</td></tr>
+<tr><td>MTVAL</td><td><code>0011_0100_0011</code></td><td>0x343</td><td>RW</td></tr>
+<tr><td>MIP</td><td><code>0011_0100_0100</code></td><td>0x344</td><td>RO</td></tr>
+<tr><td>1011 (B)</td><td>Machine Counters</td>
+  <td>MCYCLE / MCYCLEH</td><td><code>1011_0000_0000</code></td><td>0xB00/0xB80</td><td>RW</td></tr>
+<tr><td>1011 (B)</td><td>Machine Counters</td>
+  <td>MINSTRET / MINSTRETH</td><td><code>1011_0000_0010</code></td><td>0xB02/0xB82</td><td>RW</td></tr>
+<tr><td>1100 (C)</td><td>Shadow Counters (RO)</td>
+  <td>CYCLE / CYCLEH</td><td><code>1100_0000_0000</code></td><td>0xC00/0xC80</td><td>RO</td></tr>
+<tr><td>1100 (C)</td><td>Shadow Counters (RO)</td>
+  <td>INSTRET / INSTRETH</td><td><code>1100_0000_0010</code></td><td>0xC02/0xC82</td><td>RO</td></tr>
+<tr><td>1100 (C)</td><td>Shadow Counters (RO)</td>
+  <td>TIME / TIMEH</td><td><code>1100_0000_0001</code></td><td>0xC01/0xC81</td><td>RO</td></tr>
+<tr><td>0111 (7)</td><td>Debug (HDU)</td>
+  <td>DCSR/DPC/DSCRATCH</td><td><code>0111_1011_0xxx</code></td><td>0x7B0~</td><td>RW</td></tr>
+<tr><td>0111 (7)</td><td>Trigger (TDU)</td>
+  <td>TSELECT/TDATA1/...</td><td><code>0111_1010_0xxx</code></td><td>0x7A0~</td><td>RW</td></tr>
+<tr><td>1011 (B)</td><td>IPIC (非标)</td>
+  <td>CISV~ICSR</td><td><code>1011_1111_0xxx</code></td><td>0xBF0~0xBF7</td><td>混合</td></tr>
+<tr><td>1111 (F)</td><td>Machine Info</td>
+  <td>MVENDORID</td><td><code>1111_0001_0001</code></td><td>0xF11</td><td>RO</td></tr>
+<tr><td>1111 (F)</td><td>Machine Info</td>
+  <td>MARCHID</td><td><code>1111_0001_0010</code></td><td>0xF12</td><td>RO</td></tr>
+<tr><td>1111 (F)</td><td>Machine Info</td>
+  <td>MIMPID</td><td><code>1111_0001_0011</code></td><td>0xF13</td><td>RO</td></tr>
+<tr><td>1111 (F)</td><td>Machine Info</td>
+  <td>MHARTID</td><td><code>1111_0001_0100</code></td><td>0xF14</td><td>RO</td></tr>
+</table>
+
+<h3>HPM 地址掩码解码 (bit[6:0])</h3>
+
+<p>硬件性能监视器 (HPM) 使用地址掩码前缀匹配, 而非精确匹配:</p>
+
+<table>
+<tr><th>地址范围</th><th>掩码 [6:0]</th><th>含义</th><th>寄存器</th></tr>
+<tr><td><code>11_000_00</code></td><td><code>7'b110_0000</code></td><td>HPMCOUNTER (只读影子)</td><td>CYCLE(0), TIME(1), INSTRET(2)</td></tr>
+<tr><td><code>11_001_00</code></td><td><code>7'b110_0100</code></td><td>HPMCOUNTERH (高 32-bit 只读)</td><td>CYCLEH(0), TIMEH(1), INSTRETH(2)</td></tr>
+<tr><td><code>10_110_00</code></td><td><code>7'b101_1000</code></td><td>MHPMCOUNTER (可读写)</td><td>MCYCLE(0), MINSTRET(2)</td></tr>
+<tr><td><code>10_111_00</code></td><td><code>7'b101_1100</code></td><td>MHPMCOUNTERH (高 32-bit 可写)</td><td>MCYCLEH(0), MINSTRETH(2)</td></tr>
+<tr><td><code>00_110_01</code></td><td><code>7'b001_1001</code></td><td>MHPMEVENT (事件选择, SCR1 未实现)</td><td>非法访问→异常</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">地址解码实现: casez + 掩码前缀</div>
+  SCR1 的 CSR 读逻辑用 <code>casez (exu2csr_rw_addr_i)</code> 做两级匹配: 先按掩码前缀确定大类, 再用 <code>addr[4:0]</code> 选择具体寄存器。例如 <code>{SCR1_CSR_ADDR_HPMCOUNTER_MASK, 5'b?????}</code> → 再 <code>case (addr[4:0])</code> 分派到 CYCLE/TIME/INSTRET。
+</div>
+
+<!-- ============ EVENTS ============ -->
+<h2 id="csr-events">第四课: 三事件处理 — EXC / IRQ / MRET 互斥</h2>
+
+<table>
+<tr><th>优先级</th><th>事件</th><th>条件</th><th>对 MSTATUS 的影响</th></tr>
+<tr><td>1</td><td><code>e_exc</code></td><td><code>take_exc &amp; ~hdu_no_commit</code></td><td>MIE←0, MPIE←MIE_old</td></tr>
+<tr><td>2</td><td><code>e_irq</code></td><td><code>take_irq &amp; ~take_exc &amp; ~hdu_no_commit</code></td><td>MIE←0, MPIE←MIE_old</td></tr>
+<tr><td>3</td><td><code>e_mret</code></td><td><code>mret_update &amp; ~hdu_no_commit</code></td><td>MIE←MPIE, MPIE←1</td></tr>
+</table>
+
+<pre>
+<span class="cm">// 中断挂起且使能 — 组合逻辑生成</span>
+csr_eirq_pnd_en = csr_mip_meip &amp; csr_mie_meie_ff;     <span class="cm">// 外部中断</span>
+csr_sirq_pnd_en = csr_mip_msip &amp; csr_mie_msie_ff;     <span class="cm">// 软件中断</span>
+csr_tirq_pnd_en = csr_mip_mtip &amp; csr_mie_mtie_ff;     <span class="cm">// 定时器中断</span>
+
+<span class="cm">// 全局中断输出 — MSTATUS.MIE 做最终门控</span>
+csr2exu_ip_ie_o = csr_eirq_pnd_en | csr_sirq_pnd_en | csr_tirq_pnd_en;  <span class="cm">// 局部使能</span>
+csr2exu_irq_o   = csr2exu_ip_ie_o &amp; csr_mstatus_mie_ff;                 <span class="cm">// 全局使能</span></pre>
+
+<h3>SVA 断言: 三事件互斥</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:1116-1119 — 确保任何时刻最多只有一个事件有效</span>
+<span class="kw">SCR1_SVA_CSR_EVENTS</span> : assert property (
+    @(negedge clk) disable iff (~rst_n)
+    $onehot0({e_irq, e_exc, e_mret})
+    ) else $error("CSR Error: more than one event at a time");</pre>
+
+<h3>中断优先级仲裁 (用于 MCAUSE 编码)</h3>
+
+<table>
+<tr><th>优先级</th><th>条件</th><th><code>mcause_ec_new</code></th><th>编码</th></tr>
+<tr><td>1</td><td><code>csr_eirq_pnd_en</code></td><td><code>IRQ_M_EXTERNAL</code></td><td>11</td></tr>
+<tr><td>2</td><td><code>csr_sirq_pnd_en</code></td><td><code>IRQ_M_SOFTWARE</code></td><td>3</td></tr>
+<tr><td>3</td><td><code>csr_tirq_pnd_en</code></td><td><code>IRQ_M_TIMER</code></td><td>7</td></tr>
+</table>
+
+<!-- ============ MSCRATCH ============ -->
+<h2 id="csr-mscratch">第五课: MSCRATCH — 异常处理器的上下文交换 <span class="tag tag-new">新增</span></h2>
+
+<h3>MSCRATCH (0x340) 的设计意图</h3>
+
+<p>MSCRATCH 是一个 32-bit 读写寄存器, 用于存放指向 per-hart 上下文保存区的指针。陷阱处理程序用它做 <strong>原子 sp 交换</strong>, 一步完成"保存旧 sp + 获取上下文指针"。</p>
+
+<h3>标准陷阱入口序列 (csrrw 原子交换)</h3>
+
+<pre>
+<span class="cm">// === 陷阱入口: 用 csrrw 原子交换 sp 和 mscratch ===</span>
+<span class="cm">// 执行前: sp = 用户栈指针, mscratch = &amp;trap_frame</span>
+<span class="kw">csrrw</span> sp, mscratch, sp
+<span class="cm">// 执行后: sp = &amp;trap_frame, mscratch = 用户栈指针 (保存完成)</span>
+
+<span class="cm">// === 保存上下文到 trap_frame ===</span>
+<span class="kw">sw</span>   ra,  <span class="num">0</span>(sp)                    <span class="cm">// x1</span>
+<span class="kw">sw</span>   gp,  <span class="num">4</span>(sp)                    <span class="cm">// x3</span>
+<span class="kw">sw</span>   tp,  <span class="num">8</span>(sp)                    <span class="cm">// x4</span>
+<span class="kw">sw</span>   t0, <span class="num">12</span>(sp)                    <span class="cm">// x5</span>
+<span class="kw">sw</span>   t1, <span class="num">16</span>(sp)                    <span class="cm">// x6</span>
+<span class="kw">sw</span>   t2, <span class="num">20</span>(sp)                    <span class="cm">// x7</span>
+<span class="cm">// ... 保存 a0-a7, s0-s11 等</span>
+
+<span class="cm">// === 陷阱退出: 恢复上下文 ===</span>
+<span class="kw">lw</span>   t2, <span class="num">20</span>(sp)
+<span class="kw">lw</span>   t1, <span class="num">16</span>(sp)
+<span class="kw">lw</span>   t0, <span class="num">12</span>(sp)
+<span class="kw">lw</span>   tp,  <span class="num">8</span>(sp)
+<span class="kw">lw</span>   gp,  <span class="num">4</span>(sp)
+<span class="kw">lw</span>   ra,  <span class="num">0</span>(sp)
+<span class="kw">csrrw</span> sp, mscratch, sp            <span class="cm">// 恢复 sp, mscratch 回到初始值</span>
+<span class="kw">mret</span>
+</pre>
+
+<h3>MSCRATCH 硬件实现</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:755-761 — 简单 RW FF, 无事件触发</span>
+<span class="kw">always_ff</span> @(negedge rst_n, posedge clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (~rst_n) <span class="kw">begin</span>
+        csr_mscratch_ff &lt;= <span class="num">'0</span>;
+    <span class="kw">end else if</span> (csr_mscratch_upd) <span class="kw">begin</span>
+        csr_mscratch_ff &lt;= csr_w_data;
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+
+<div class="box tip">
+  <div class="box-title">csrrw 的原子性: 为什么不用两条指令?</div>
+  <code>csrrw sp, mscratch, sp</code> 在单周期内完成: 读 mscratch → 写到 sp, 同时把旧 sp 写入 mscratch。如果拆成 csrr + csrw 两条指令, 中间可能被中断打断, 导致上下文丢失。csrrw 利用 CSR RMW 接口的原子性保证安全。
+</div>
+
+<!-- ============ MSTATUS ============ -->
+<h2 id="csr-mstatus">第六课: MSTATUS — 只有 4 个有效位</h2>
+
+<table>
+<tr><th>位</th><th>名称</th><th>含义</th><th>访问</th></tr>
+<tr><td>[11:12]</td><td>MPP</td><td>先前特权级 (硬连线 2'b11 = Machine)</td><td>只读</td></tr>
+<tr><td>[7]</td><td>MPIE</td><td>陷阱前中断使能</td><td>读写</td></tr>
+<tr><td>[3]</td><td>MIE</td><td>全局中断使能</td><td>读写</td></tr>
+<tr><td>其余</td><td>—</td><td>硬连线为 0</td><td>只读</td></tr>
+</table>
+
+<h3>状态转移表</h3>
+
+<table>
+<tr><th>事件</th><th>MIE←</th><th>MPIE←</th><th>说明</th></tr>
+<tr><td>异常/中断</td><td>0</td><td>MIE_old</td><td>关中断, 保存旧使能</td></tr>
+<tr><td>MRET</td><td>MPIE_old</td><td>1</td><td>恢复中断使能</td></tr>
+<tr><td>CSR 写</td><td><code>w_data[3]</code></td><td><code>w_data[7]</code></td><td>软件直接写入</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">MSTATUS 更新需额外 1 周期</div>
+  CSR 写入 MSTATUS/MIE 后, <code>csr2exu_mstatus_mie_up_o</code> 拉高一拍。MRET 必须等待此信号为 0 才发 PC 跳转 — 否则 mstatus 还没更新, MIE/MPIE 值是旧的。
+</div>
+
+<!-- ============ MTVEC ============ -->
+<h2 id="csr-mtvec">第七课: MTVEC — 陷阱向量基址</h2>
+
+<table>
+<tr><th>位</th><th>名称</th><th>含义</th></tr>
+<tr><td>[31:6] (26-bit)</td><td>BASE</td><td>陷阱向量基址 (部分可写)</td></tr>
+<tr><td>[5:1] (5-bit)</td><td>—</td><td>保留, 硬连线为 0</td></tr>
+<tr><td>[0] (1-bit)</td><td>MODE</td><td>0=Direct, 1=Vectored (条件可选)</td></tr>
+</table>
+
+<h3>Direct vs Vectored 模式</h3>
+
+<pre>
+<span class="cm">// Direct (mode=0): 所有 trap 统一跳转 BASE</span>
+new_pc = {mtvec_base, <span class="num">6'b0</span>};
+
+<span class="cm">// Vectored (mode=1): 异常跳 BASE, 中断跳 BASE+4×IRQ_code</span>
+new_pc = {
+    mtvec_base[<span class="num">31</span>:<span class="num">8</span>],
+    (<span class="num">4</span> * exu2csr_exc_code_i[<span class="num">3</span>:<span class="num">0</span>])  <span class="cm">// 向量偏移</span>
+};
+</pre>
+
+<div class="box">
+  <div class="box-title">BASE 可写性可配置</div>
+  <code>SCR1_MTVEC_BASE_WR_BITS</code> 控制 BASE 可写位数: 0=全只读, 26=全可写, 中间值=部分可写。MODE 可选导通 (<code>SCR1_MTVEC_MODE_EN</code>)。
+</div>
+
+<!-- ============ MEPC etc ============ -->
+<h2 id="csr-mepc">第八课: MEPC / MCAUSE / MTVAL — 陷阱保存三件套</h2>
+
+<h3>MEPC (0x341) — 异常返回 PC</h3>
+
+<table>
+<tr><th>事件</th><th>MEPC 值</th><th>含义</th></tr>
+<tr><td><code>e_exc</code></td><td><code>curr_pc</code> (当前 PC)</td><td>保存出错的指令地址</td></tr>
+<tr><td><code>e_irq_nmret</code></td><td><code>next_pc</code> (下一 PC)</td><td>保存即将执行但被中断的指令地址</td></tr>
+</table>
+
+RVC 扩展时: MEPC 最低位保存 bit[1] (PC[0] 隐含为 0)。无 RVC: 低 2 位为零。
+
+<h3>MCAUSE (0x342) — 异常原因编码</h3>
+
+<table>
+<tr><th>位</th><th>含义</th></tr>
+<tr><td>[31]</td><td>I 位: 0=异常, 1=中断</td></tr>
+<tr><td>[3:0]</td><td>EC: 异常/中断编码 (0~11)</td></tr>
+</table>
+
+异常编码映射速查:
+
+<table>
+<tr><th>EC</th><th>异常名</th><th>来源</th></tr>
+<tr><td>0</td><td>INSTR_MISALIGN</td><td>EXU (无 RVC 时跳转未对齐)</td></tr>
+<tr><td>1</td><td>INSTR_ACCESS_FAULT</td><td>IFU (IMEM 错误)</td></tr>
+<tr><td>2</td><td>ILLEGAL_INSTR</td><td>IDU / CSR 非法地址</td></tr>
+<tr><td>3</td><td>BREAKPOINT / IRQ_SOFTWARE</td><td>IDU EBREAK (异常) / IPIC (中断)</td></tr>
+<tr><td>4</td><td>LD_ADDR_MISALIGN</td><td>LSU</td></tr>
+<tr><td>5</td><td>LD_ACCESS_FAULT</td><td>LSU / DMEM 错误</td></tr>
+<tr><td>6</td><td>ST_ADDR_MISALIGN</td><td>LSU</td></tr>
+<tr><td>7</td><td>ST_ACCESS_FAULT / IRQ_TIMER</td><td>LSU (异常) / SoC (中断)</td></tr>
+<tr><td>11</td><td>ECALL_M / IRQ_EXTERNAL</td><td>IDU (异常) / SoC (中断)</td></tr>
+</table>
+
+<h3>MTVAL (0x343) — 陷阱辅助值</h3>
+
+<table>
+<tr><th>事件</th><th>MTVAL 值</th><th>说明</th></tr>
+<tr><td><code>e_exc</code></td><td><code>exu2csr_trap_val_i</code></td><td>非法指令编码 / 访存地址 / 跳转目标</td></tr>
+<tr><td><code>e_irq</code></td><td>0</td><td>中断时写入 0</td></tr>
+</table>
+
+<!-- ============ MIP + MIE ============ -->
+<h2 id="csr-mip-mie">第九课: MIP + MIE — 中断挂起与使能</h2>
+
+<table>
+<tr><th>位</th><th>MIE 名称</th><th>MIP 名称</th><th>来源</th><th>复位</th></tr>
+<tr><td>[11]</td><td>MEIE</td><td>MEIP</td><td><code>soc2csr_irq_ext_i</code> (外部中断)</td><td>0</td></tr>
+<tr><td>[7]</td><td>MTIE</td><td>MTIP</td><td><code>soc2csr_irq_mtimer_i</code> (定时器)</td><td>0</td></tr>
+<tr><td>[3]</td><td>MSIE</td><td>MSIP</td><td><code>soc2csr_irq_soft_i</code> (软件中断)</td><td>0</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">MIP 只读, MIE 可读可写</div>
+  MIP 由 SOC 输入直接驱动 (无 FF), 写入被静默忽略。MIE 由 CSR 写命令控制, 只有 3 位有效, 其余硬连线为 0。
+</div>
+
+<!-- ============ MIP vs MIE + WFI ============ -->
+<h2 id="csr-mip-mie-interact">第十课: MIP vs MIE 交互 &amp; WFI 唤醒路径 <span class="tag tag-new">新增</span></h2>
+
+<h3>两级门控模型</h3>
+
+<div class="fig">
+  SOC 中断线 (组合逻辑, 无 FF)
+       │
+       ▼
+  ┌─────────────────────────────────────────────────┐
+  │  MIP (只读 Shadow)                                │
+  │  csr_mip_meip = soc2csr_irq_ext_i       [bit 11] │
+  │  csr_mip_mtip = soc2csr_irq_mtimer_i    [bit 7]  │
+  │  csr_mip_msip = soc2csr_irq_soft_i      [bit 3]  │
+  └────────┬─────────────┬──────────────┬───────────┘
+           │             │              │
+           ▼             ▼              ▼
+  ┌────────────┐ ┌────────────┐ ┌────────────┐    ← 第1级: 局部使能
+  │ EIRQ pnd   │ │ SIRQ pnd   │ │ TIRQ pnd   │      MIP[x] &amp; MIE[x]
+  │ &amp; MEIE    │ │ &amp; MSIE    │ │ &amp; MTIE    │
+  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘
+        └───────────────┼──────────────┘
+                        │ csr2exu_ip_ie_o (局部使能 OR)
+                        ▼
+                ┌──────────────┐              ← 第2级: 全局使能
+                │  &amp; MIE      │                csr2exu_irq_o
+                └──────┬───────┘
+                       │
+                       ▼
+                ┌──────────────┐
+                │  EXU 取指     │
+                │  新 PC 跳转   │
+                └──────────────┘
+</div>
+
+<h3>关键信号定义</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:300-302, 992-993</span>
+<span class="cm">// 第1级门控 — 每类中断的"挂起 &amp; 使能"</span>
+csr_eirq_pnd_en = csr_mip_meip &amp; csr_mie_meie_ff;  <span class="cm">// 组合逻辑</span>
+csr_sirq_pnd_en = csr_mip_msip &amp; csr_mie_msie_ff;
+csr_tirq_pnd_en = csr_mip_mtip &amp; csr_mie_mtie_ff;
+
+<span class="cm">// 第1级汇总 — 任意中断挂起且使能</span>
+csr2exu_ip_ie_o = csr_eirq_pnd_en | csr_sirq_pnd_en | csr_tirq_pnd_en;
+
+<span class="cm">// 第2级门控 — 全局中断使能 MSTATUS.MIE</span>
+csr2exu_irq_o   = csr2exu_ip_ie_o &amp; csr_mstatus_mie_ff;  <span class="cm">// 最终 IRQ 信号</span></pre>
+
+<h3>WFI (Wait For Interrupt) 唤醒路径</h3>
+
+<p>虽然 SCR1 的 CSR 模块不直接处理 WFI 指令 (由流水线控制逻辑执行), 但 CSR 提供了唤醒所需的所有信号。WFI 的硬件唤醒条件:</p>
+
+<pre>
+<span class="cm">// WFI 唤醒条件 = 任意中断挂起且局部使能</span>
+<span class="cm">// 注意: WFI 不要求 MSTATUS.MIE=1 ! 即便全局关中断, WFI 也会唤醒</span>
+wake_up = csr2exu_ip_ie_o       <span class="cm">// 只要有 pending&amp;enabled 就唤醒</span>
+        | csr_eirq_pnd_en
+        | csr_sirq_pnd_en
+        | csr_tirq_pnd_en;
+
+<span class="cm">// WFI 唤醒后的行为:</span>
+<span class="cm">//   1. MIE=1 → 直接跳到陷阱处理 (csr2exu_irq_o=1)</span>
+<span class="cm">//   2. MIE=0 → 继续执行 WFI 后面的指令 (无陷阱)</span>
+</pre>
+
+<h3>MIP 组合直通 vs MIE 寄存器</h3>
+
+<table>
+<tr><th>特性</th><th>MIP (Machine Interrupt Pending)</th><th>MIE (Machine Interrupt Enable)</th></tr>
+<tr><td>存储方式</td><td>纯组合逻辑 (assign)</td><td>时序 FF (always_ff)</td></tr>
+<tr><td>来源</td><td>soc2csr_irq_{ext,soft,mtimer}_i</td><td>CSR 写命令 (WRITE/SET/CLEAR)</td></tr>
+<tr><td>写入行为</td><td>静默忽略 (case 中无 csr_mip_upd)</td><td>取 csr_w_data 对应位</td></tr>
+<tr><td>读取</td><td>返回 SOC 输入实时值</td><td>返回 FF 值</td></tr>
+<tr><td>复位值</td><td>n/a (取决于 SOC 输入)</td><td>全 0 (中断全禁)</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">为什么 MIP 不用 FF?</div>
+  MIP 反映的是外部中断线的实时状态。如果用 FF 寄存一拍, 会引入额外延迟, 且外部中断可能在 FF 采样前后变化造成亚稳态 — 但这其实不是问题, 因为 IPIC 内部已有专门同步器处理。CSR 选择组合直通是为了降低中断响应延迟。
+</div>
+
+<!-- ============ COUNTERS ============ -->
+<h2 id="csr-counters">第十一课: MCYCLE / MINSTRET — 64 位计数器</h2>
+
+<h3>MCYCLE (0xB00/0xB80) — 周期计数器</h3>
+
+<pre>
+csr_mcycle_lo_inc = <span class="num">1'b1</span> &amp; csr_mcounten_cy_ff;         <span class="cm">// 每周期递增 (可禁)</span>
+csr_mcycle_hi_inc = csr_mcycle_lo_inc &amp; (&amp;csr_mcycle_lo_ff);  <span class="cm">// 低 8 位全 1 时进位</span></pre>
+
+<h3>MINSTRET (0xB02/0xB82) — 退休指令计数器</h3>
+
+<pre>
+csr_minstret_lo_inc = exu2csr_instret_no_exc_i &amp; csr_mcounten_ir_ff;  <span class="cm">// 退休时 +1</span>
+csr_minstret_hi_inc = csr_minstret_lo_inc &amp; (&amp;csr_minstret_lo_ff);</pre>
+
+<h3>MCOUNTEN (0x7E0) — 计数器使能 (非标准 CSR)</h3>
+
+<table>
+<tr><th>位</th><th>名称</th><th>含义</th><th>复位</th></tr>
+<tr><td>[0]</td><td>CY</td><td>MCYCLE 计数使能</td><td>1</td></tr>
+<tr><td>[2]</td><td>IR</td><td>MINSTRET 计数使能</td><td>1</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">流水线递增优化</div>
+  低 8 位直接 FF 每周期递增, 高 56 位仅在低 8 位溢出时更新。避免全 64 位每拍翻转发散, 改善时序收敛。
+</div>
+
+<!-- ============ HPM COUNTERS ============ -->
+<h2 id="csr-hpm">第十二课: 性能计数器扩展 — mhpmcounter3/HPM 机制 <span class="tag tag-new">新增</span></h2>
+
+<h3>SCR1 的 HPM 计数器架构</h3>
+
+<p>RISC-V 定义了最多 32 个硬件性能监视器 (HPM), 编号 3~31。SCR1 简化了实现, <strong>mhpmcounter3 通过地址掩码访问, 但返回 0 且写入静默忽略</strong>。真正的计数器只有 CYCLE(0) 和 INSTRET(2)。</p>
+
+<table>
+<tr><th>计数器编号</th><th>名称</th><th>地址 (低32)</th><th>地址 (高32)</th><th>SCR1 实现</th></tr>
+<tr><td>0</td><td>CYCLE / MCYCLE</td><td>0xC00 / 0xB00</td><td>0xC80 / 0xB80</td><td>完整 64-bit 计数器</td></tr>
+<tr><td>1</td><td>TIME</td><td>0xC01</td><td>0xC81</td><td>只读影子, 映射 soc2csr_mtimer_val_i</td></tr>
+<tr><td>2</td><td>INSTRET / MINSTRET</td><td>0xC02 / 0xB02</td><td>0xC82 / 0xB82</td><td>完整 64-bit 计数器</td></tr>
+<tr><td>3~31</td><td>mhpmcounter3~31</td><td>掩码匹配</td><td>掩码匹配</td><td>读返回 0, 写无异常 (NOP)</td></tr>
+</table>
+
+<h3>HPM 地址解码的两层逻辑</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:358-369 — 读操作: casez 掩码前缀匹配</span>
+{SCR1_CSR_ADDR_HPMCOUNTER_MASK, <span class="num">5'b?????</span>} : <span class="kw">begin</span>        <span class="cm">// mask=7'b110_0000</span>
+    <span class="kw">case</span> (exu2csr_rw_addr_i[<span class="num">4</span>:<span class="num">0</span>])
+        <span class="num">5'd0</span> : csr_r_data = csr_mcycle[<span class="num">31</span>:<span class="num">0</span>];      <span class="cm">// CYCLE</span>
+        <span class="num">5'd1</span> : csr_r_data = soc2csr_mtimer_val_i[<span class="num">31</span>:<span class="num">0</span>]; <span class="cm">// TIME</span>
+        <span class="num">5'd2</span> : csr_r_data = csr_minstret[<span class="num">31</span>:<span class="num">0</span>];   <span class="cm">// INSTRET</span>
+        <span class="kw">default</span>: <span class="cm">/* 返回 0 */</span>                       <span class="cm">// mhpmcounter3~31 → 0</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+
+<span class="cm">// scr1_pipe_csr.sv:398-409 — MHPMCOUNTER: 可写版本 (mcycle/minstret 可写)</span>
+{SCR1_CSR_ADDR_MHPMCOUNTER_MASK, <span class="num">5'b?????</span>} : <span class="kw">begin</span>       <span class="cm">// mask=7'b101_1000</span>
+    <span class="kw">case</span> (exu2csr_rw_addr_i[<span class="num">4</span>:<span class="num">0</span>])
+        <span class="num">5'd1</span> : csr_r_exc = exu2csr_r_req_i;     <span class="cm">// TIME 不允许 MHPM 读</span>
+        <span class="num">5'd0</span> : csr_r_data = csr_mcycle[<span class="num">31</span>:<span class="num">0</span>];
+        <span class="num">5'd2</span> : csr_r_data = csr_minstret[<span class="num">31</span>:<span class="num">0</span>];
+        <span class="kw">default</span>: <span class="cm">/* 返回 0 */</span>
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+
+<span class="cm">// MHPMEVENT (事件选择寄存器) 访问 → 返回异常 (SCR1 未实现)</span>
+{SCR1_CSR_ADDR_MHPMEVENT_MASK, <span class="num">5'b?????</span>} : <span class="kw">begin</span>        <span class="cm">// mask=7'b001_1001</span>
+    <span class="kw">case</span> (exu2csr_rw_addr_i[<span class="num">4</span>:<span class="num">0</span>])
+        <span class="num">5'd0</span>, <span class="num">5'd1</span>, <span class="num">5'd2</span> : csr_r_exc = exu2csr_r_req_i;  <span class="cm">// 访问即异常</span>
+        ...
+</pre>
+
+<div class="box warn">
+  <div class="box-title">TIME 计数器的双重角色</div>
+  TIME (0xC01) 通过只读影子地址返回 <code>soc2csr_mtimer_val_i</code> (外部 64-bit 定时器值)。但 MHPMCOUNTER[1] (0xB03) 的读操作触发 <code>csr_r_exc</code>, 因为 TIME 没有可写版本。
+</div>
+
+<!-- ============ MISA ============ -->
+<h2 id="csr-misa">第十三课: MISA + Machine Info — 只读标识寄存器</h2>
+
+<table>
+<tr><th>CSR</th><th>地址</th><th>值/条件</th><th>含义</th></tr>
+<tr><td>MVENDORID</td><td>0xF11</td><td><code>0x00000000</code></td><td>非商业实现</td></tr>
+<tr><td>MARCHID</td><td>0xF12</td><td><code>32'd8</code></td><td>架构 ID</td></tr>
+<tr><td>MIMPID</td><td>0xF13</td><td><code>0x22011200</code></td><td>实现版本</td></tr>
+<tr><td>MHARTID</td><td>0xF14</td><td>外部熔丝</td><td>硬件线程 ID</td></tr>
+</table>
+
+<h3>MISA (0x301)</h3>
+
+<table>
+<tr><th>位</th><th>条件宏</th><th>扩展名</th></tr>
+<tr><td>[31:30]</td><td>始终</td><td>MXL=RV32</td></tr>
+<tr><td>[25]</td><td>始终</td><td>Zicsr</td></tr>
+<tr><td>[12]</td><td><code>SCR1_RVM_EXT</code></td><td>M (乘除法)</td></tr>
+<tr><td>[8]</td><td><code>SCR1_RVI_EXT</code></td><td>RV32I</td></tr>
+<tr><td>[4]</td><td><code>SCR1_RVE_EXT</code></td><td>RV32E</td></tr>
+<tr><td>[2]</td><td><code>SCR1_RVC_EXT</code></td><td>C (压缩指令)</td></tr>
+</table>
+
+<!-- ============ CSR RMW ============ -->
+<h2 id="csr-rmw">第十四课: CSR 原子读-改-写 — CSRRW/CSRRS/CSRRC <span class="tag tag-new">新增</span></h2>
+
+<h3>三条 CSR 指令的硬件实现</h3>
+
+<p>RISC-V 定义了三条 CSR 原子操作指令, 在 SCR1 中通过 <code>type_scr1_csr_cmd_sel_e</code> 枚举和 <code>csr_w_data</code> 组合逻辑实现:</p>
+
+<table>
+<tr><th>指令</th><th>命令枚举</th><th>csr_w_data 公式</th><th>语义</th></tr>
+<tr><td><code>CSRRW</code></td><td><code>SCR1_CSR_CMD_WRITE</code></td><td><code>exu2csr_w_data_i</code></td><td>写 rs1 到 CSR, 旧值返回 rd</td></tr>
+<tr><td><code>CSRRS</code></td><td><code>SCR1_CSR_CMD_SET</code></td><td><code>exu2csr_w_data_i | csr_r_data</code></td><td>CSR 中 rs1 置位的位置 1, 旧值返回 rd</td></tr>
+<tr><td><code>CSRRC</code></td><td><code>SCR1_CSR_CMD_CLEAR</code></td><td><code>~exu2csr_w_data_i &amp; csr_r_data</code></td><td>CSR 中 rs1 置位的位置 0, 旧值返回 rd</td></tr>
+</table>
+
+<h3>硬件实现: 3 路 MUX (纯组合)</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_csr.sv:474-481 — CSR 写数据的原子 RMW 逻辑</span>
+<span class="kw">always_comb begin</span>
+    <span class="kw">case</span> (exu2csr_w_cmd_i)
+        SCR1_CSR_CMD_WRITE  : csr_w_data =  exu2csr_w_data_i;              <span class="cm">// CSRRW: 直接替换</span>
+        SCR1_CSR_CMD_SET    : csr_w_data =  exu2csr_w_data_i | csr_r_data;  <span class="cm">// CSRRS: 按位 OR</span>
+        SCR1_CSR_CMD_CLEAR  : csr_w_data = ~exu2csr_w_data_i &amp; csr_r_data;  <span class="cm">// CSRRC: 按位清除</span>
+        <span class="kw">default</span>             : csr_w_data = <span class="num">'0</span>;
+    <span class="kw">endcase</span>
+<span class="kw">end</span>
+</pre>
+
+<h3>为什么这是"原子"的?</h3>
+
+<p>CSRRW/CSRRS/CSRRC 在整个流水线中作为单条指令执行: IDU 解码 → EXU 发 CSR 读请求 → 同周期 (或下一拍) CSR 返回旧值到 rd, 同时按 cmd 计算新值写入 CSR。整个过程不可拆分, 中间不会被中断打断 (中断只在指令边界响应)。</p>
+
+<h3>实际使用示例</h3>
+
+<pre>
+<span class="cm"># 使能外部中断 (MEIE=bit11), 不影响其他位</span>
+<span class="kw">li</span>   t0, <span class="num">0x800</span>          <span class="cm"># bit[11]=1</span>
+<span class="kw">csrrs</span> zero, mie, t0    <span class="cm"># MIE |= 0x800, 旧值丢弃 (rd=zero)</span>
+
+<span class="cm"># 禁用定时器中断 (MTIE=bit7), 不影响其他位</span>
+<span class="kw">li</span>   t0, <span class="num">0x80</span>           <span class="cm"># bit[7]=1</span>
+<span class="kw">csrrc</span> zero, mie, t0    <span class="cm"># MIE &amp;= ~0x80</span>
+
+<span class="cm"># 保存旧 MSTATUS 并写入新值 (如初始化 SCR1 中断)</span>
+<span class="kw">li</span>   t0, <span class="num">0x8</span>            <span class="cm"># MIE=1, MPIE=0</span>
+<span class="kw">csrrw</span> t1, mstatus, t0  <span class="cm"># t1=旧mstatus, mstatus=0x8</span>
+
+<span class="cm"># 读 MIE 当前值, 不修改</span>
+<span class="kw">csrr</span>  t0, mie           <span class="cm"># 伪指令 → csrrs t0, mie, zero</span>
+</pre>
+
+<div class="box">
+  <div class="box-title">CSRRS/CSRRC 与 rs1=x0 的特例</div>
+  当 rs1=x0 (zero) 时: CSRRS 不修改 CSR (OR with 0), CSRRC 不修改 CSR (AND NOT 0)。这两条伪指令即为 <code>csrr</code> (CSR Read) — 只读不写。
+</div>
+
+<!-- ============ 新PC ============ -->
+<h2 id="csr-newpc">第十五课: 新 PC 生成 — Direct vs Vectored</h2>
+
+<pre>
+<span class="cm">// 异常: 一律跳 BASE</span>
+new_pc = {csr_mtvec_base, <span class="num">6'b0</span>};
+
+<span class="cm">// 中断 (Direct): 跳 BASE</span>
+new_pc = {csr_mtvec_base, <span class="num">6'b0</span>};
+
+<span class="cm">// 中断 (Vectored): 跳 BASE + 4×mcause.EC[3:0]</span>
+new_pc = {csr_mtvec_base[<span class="num">31</span>:<span class="num">8</span>], (<span class="num">4</span> * csr_mcause_ec_new[<span class="num">3</span>:<span class="num">0</span>])};
+
+<span class="cm">// MRET: 跳 MEPC</span>
+new_pc = {csr_mepc, {SCR1_CSR_MEPC_W{<span class="num">1'b0</span>}}};  <span class="cm">// 低位补 0</span></pre>
+
+<div class="box">
+  <div class="box-title">Vectored 模式的有效性</div>
+  向量模式仅对中断有效 (I=1),异常仍然跳 Direct 地址。这是 RISC-V 规范定义的: 向量模式将 <code>4 * mcause.EC</code> 加到 BASE 上, 自然区分了异常和中断。
+</div>
+
+<!-- ============ IPIC ARCH ============ -->
+<h2 id="ipic-arch">第十六课: IPIC 架构 — 16 路可编程中断控制器</h2>
+
+<div class="fig">
+  soc_irq_lines[15:0]
+        │
+        ▼
+  ┌─────────────┐     ┌──────────────────┐
+  │ 同步 / 反相  │────▶│ 边沿 + 电平检测   │
+  └─────────────┘     └──────┬───────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        ▼                    ▼                    ▼
+  ┌──────────┐      ┌──────────────┐      ┌──────────────┐
+  │ IPR (挂起)│      │ IER (使能)    │      │ IMR (模式)    │
+  │ IINVR    │      │ IPR &amp; IER     │      │ 边沿/电平     │
+  └──────────┘      └──────┬───────┘      └──────┬───────┘
+                           │                     │
+                           ▼                     ▼
+                    ┌──────────────────────────────┐
+                    │  优先级树搜索 (search_one_16)  │
+                    └──────────────┬───────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │  SOI/EOI + CICSR/CISV 状态机  │
+                    │  → ipic2csr_irq_m_req_o       │
+                    └──────────────────────────────┘
+</div>
+
+<!-- ============ IPIC REGS ============ -->
+<h2 id="ipic-regs">第十七课: IPIC 11 个寄存器速查</h2>
+
+<table>
+<tr><th>寄存器</th><th>缩写</th><th>地址</th><th>位宽</th><th>功能</th></tr>
+<tr><td>CISV</td><td>当前服务中断向量</td><td><code>SCR1_IPIC_CISV</code></td><td>5</td><td>正在服务的中断号 (0~15)</td></tr>
+<tr><td>CICSR</td><td>当前中断控制状态</td><td><code>SCR1_IPIC_CICSR</code></td><td>2</td><td>{ip, ie}: 当前中断的挂起/使能</td></tr>
+<tr><td>EOI</td><td>中断结束</td><td><code>SCR1_IPIC_EOI</code></td><td>1</td><td>写任意值结束当前服务中断</td></tr>
+<tr><td>SOI</td><td>中断开始</td><td><code>SCR1_IPIC_SOI</code></td><td>1</td><td>写任意值标记中断服务开始</td></tr>
+<tr><td>IDXR</td><td>索引寄存器</td><td><code>SCR1_IPIC_IDXR</code></td><td>4</td><td>读写 ISVR/IMR/IINVR 的索引</td></tr>
+<tr><td>IPR</td><td>中断挂起</td><td><code>SCR1_IPIC_IPR</code></td><td>16</td><td>16 路挂起标志 (自动清/置)</td></tr>
+<tr><td>ISVR</td><td>中断服务</td><td><code>SCR1_IPIC_ISVR</code></td><td>16</td><td>16 路服务标志 (只读)</td></tr>
+<tr><td>IER</td><td>中断使能</td><td><code>SCR1_IPIC_IER</code></td><td>16</td><td>16 路使能 (可读写)</td></tr>
+<tr><td>IMR</td><td>中断模式</td><td><code>SCR1_IPIC_IMR</code></td><td>16</td><td>0=电平, 1=边沿 (可读写)</td></tr>
+<tr><td>IINVR</td><td>中断反相</td><td><code>SCR1_IPIC_IINVR</code></td><td>16</td><td>0=正常, 1=反相 (可读写)</td></tr>
+<tr><td>ICSR</td><td>中断控制状态</td><td><code>SCR1_IPIC_ICSR</code></td><td>—</td><td>逐线 {ip, ie, im, inv, isv, line}</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">ISVR/IMR/IINVR 通过 IDXR 间接访问</div>
+  写 IDXR 选择中断线号, 再读写 ISVR/IMR/IINVR 操作该线。这是地址压缩手段—16 路 × 3 类寄存器, 只占 4 个地址 (IDXR + 3 个数据口)。
+</div>
+
+<!-- ============ PRIORITY TREE ============ -->
+<h2 id="ipic-prio">第十八课: 优先级树搜索 — search_one_16</h2>
+
+<pre>
+<span class="cm">// scr1_ipic.sv:100-143 -- 4 级二叉树搜索, 找第 1 个置位的位</span>
+Stage <span class="num">1</span>: <span class="num">16</span> → <span class="num">8</span> 对, 每对找 <span class="num">1</span> 个胜者 (search_one_2 × <span class="num">8</span>)
+Stage <span class="num">2</span>: <span class="num">8</span> → <span class="num">4</span> 对, 胜者再 PK        (search_one_2 × <span class="num">4</span>)
+Stage <span class="num">3</span>: <span class="num">4</span> → <span class="num">2</span> 对, 继续折半             (search_one_2 × <span class="num">2</span>)
+Stage <span class="num">4</span>: <span class="num">2</span> → <span class="num">1</span> 个最终胜者
+
+<span class="cm">// 规则: 低索引优先 (0 > 1 > 2 > ... > 15)</span>
+<span class="cm">// search_one_2: vd = |din, idx = ~din[0]</span>
+<span class="cm">// 每级: 若低对有效 → 选低对索引, 否则选高对索引</span></pre>
+
+<h3>优先级树搜索的 4 级数据流</h3>
+
+<pre>
+[<span class="num">15</span>:<span class="num">14</span>]  [<span class="num">13</span>:<span class="num">12</span>]  [<span class="num">11</span>:<span class="num">10</span>]   [<span class="num">9</span>: <span class="num">8</span>]   [<span class="num">7</span>: <span class="num">6</span>]   [<span class="num">5</span>: <span class="num">4</span>]   [<span class="num">3</span>: <span class="num">2</span>]   [<span class="num">1</span>: <span class="num">0</span>]
+   │        │        │         │        │        │        │        │
+   ▼        ▼        ▼         ▼        ▼        ▼        ▼        ▼
+stage1:  8 个 search_one_2 → {vd, idx}_0 ... {vd, idx}_7
+   │                        │                        │                        │
+   ▼                        ▼                        ▼                        ▼
+stage2:  4 个 search_one_2 → {vd, idx}_0 ... {vd, idx}_3
+   │                                    │
+   ▼                                    ▼
+stage3:  2 个 search_one_2 → {vd, idx}_0, {vd, idx}_1
+   │
+   ▼
+stage4: 最终结果: {vd, idx[<span class="num">3</span>:<span class="num">0</span>]}
+   idx[<span class="num">4</span>] = stage3_vd[<span class="num">0</span>] ? <span class="num">0</span> : <span class="num">1</span>   <span class="cm">// 低一半有效?</span>
+</pre>
+
+<div class="box tip">
+  <div class="box-title">纯组合逻辑, 无状态机</div>
+  <code>search_one_16</code> 是纯 <code>function automatic</code> 组合逻辑, 单周期完成 16 路优先级搜索。高优先级 = 低索引号 (中断 0 优先于中断 15)。
+</div>
+
+<!-- ============ SEARCH_ONE_16 GATE LEVEL ============ -->
+<h2 id="ipic-prio-gate">第十九课: search_one_16 完整门级逻辑展开 <span class="tag tag-new">新增</span></h2>
+
+<h3>基础单元: search_one_2 的门级实现</h3>
+
+<pre>
+<span class="cm">// scr1_ipic.sv:89-98 — 2 选 1 优先级编码器</span>
+<span class="kw">function automatic</span> type_scr1_search_one_2_s scr1_search_one_2(input logic [<span class="num">1</span>:<span class="num">0</span>] din);
+    tmp.vd  = |din;          <span class="cm">// vd = din[1] | din[0]          (1 级 OR)</span>
+    tmp.idx = ~din[<span class="num">0</span>];       <span class="cm">// idx = ~din[0] = !din[0]      (1 级 NOT)</span>
+    <span class="kw">return</span> tmp;                <span class="cm">// 若 din[0]=1 → idx=0; 若 din[0]=0 → idx=1</span>
+<span class="kw">endfunction</span>
+
+<span class="cm">// 真值表:</span>
+<span class="cm">// din[1:0] | tmp.vd | tmp.idx | 选中</span>
+<span class="cm">//    00    |   0    |   1     | 无效</span>
+<span class="cm">//    01    |   1    |   0     | din[0]=1 → idx=0 (优先)</span>
+<span class="cm">//    10    |   1    |   1     | din[1]=1 → idx=1</span>
+<span class="cm">//    11    |   1    |   0     | din[0]=1 → idx=0 (优先)</span>
+</pre>
+
+<h3>Stage 1 (16→8): 8 个并行 search_one_2</h3>
+
+<pre>
+<span class="cm">// for (i=0; i&lt;8; ++i) — 生成 8 组门级逻辑</span>
+<span class="cm">// din_pair_i = din[(i+1)*2-1 : i*2]  = din[2i+1 : 2i]</span>
+
+<span class="cm">// i=0: din[1:0]  → s1_vd[0] = din[1]|din[0],  s1_idx[0] = ~din[0]</span>
+<span class="cm">// i=1: din[3:2]  → s1_vd[1] = din[3]|din[2],  s1_idx[1] = ~din[2]</span>
+<span class="cm">// i=2: din[5:4]  → s1_vd[2] = din[5]|din[4],  s1_idx[2] = ~din[4]</span>
+<span class="cm">// i=3: din[7:6]  → s1_vd[3] = din[7]|din[6],  s1_idx[3] = ~din[6]</span>
+<span class="cm">// i=4: din[9:8]  → s1_vd[4] = din[9]|din[8],  s1_idx[4] = ~din[8]</span>
+<span class="cm">// i=5: din[11:10]→ s1_vd[5] = din[11]|din[10], s1_idx[5] = ~din[10]</span>
+<span class="cm">// i=6: din[13:12]→ s1_vd[6] = din[13]|din[12], s1_idx[6] = ~din[12]</span>
+<span class="cm">// i=7: din[15:14]→ s1_vd[7] = din[15]|din[14], s1_idx[7] = ~din[14]</span>
+
+<span class="cm">// 门数: 8 个 OR2 + 8 个 NOT = 16 gates</span>
+</pre>
+
+<h3>Stage 2 (8→4): 4 个 search_one_2 + 索引拼接</h3>
+
+<pre>
+<span class="cm">// for (i=0; i&lt;4; ++i) — 在 s1_vd 上搜索, 拼接子索引</span>
+
+<span class="cm">// i=0: pair = s1_vd[1:0]</span>
+<span class="cm">//   tmp.vd  = s1_vd[1] | s1_vd[0]</span>
+<span class="cm">//   tmp.idx = ~s1_vd[0]</span>
+<span class="cm">//   s2_idx[0] = (tmp.idx==0) ? {0, s1_idx[0]} : {1, s1_idx[1]}</span>
+<span class="cm">//              = ~tmp.idx ? {tmp.idx, s1_idx[2i]} : {tmp.idx, s1_idx[2i+1]}</span>
+
+<span class="cm">// 展开 i=0:</span>
+<span class="cm">//   s2_vd[0]  = s1_vd[1] | s1_vd[0]</span>
+<span class="cm">//   s2_idx[0] = s1_vd[0] ? {1'b0, s1_idx[0]} : {1'b1, s1_idx[1]}</span>
+<span class="cm">//   (若低对 s1_vd[0]=1 → 选低对索引, 否则选高对索引)</span>
+
+<span class="cm">// i=1: s2_vd[1] = s1_vd[3]|s1_vd[2],  s2_idx[1] = s1_vd[2]?{0,s1_idx[2]}:{1,s1_idx[3]}</span>
+<span class="cm">// i=2: s2_vd[2] = s1_vd[5]|s1_vd[4],  s2_idx[2] = s1_vd[4]?{0,s1_idx[4]}:{1,s1_idx[5]}</span>
+<span class="cm">// i=3: s2_vd[3] = s1_vd[7]|s1_vd[6],  s2_idx[3] = s1_vd[6]?{0,s1_idx[6]}:{1,s1_idx[7]}</span>
+
+<span class="cm">// 门数: 4×(OR2 + MUX2) = 4×(1+3) ≈ 16 gates</span>
+</pre>
+
+<h3>Stage 3 (4→2): 2 个 search_one_2 + 索引拼接</h3>
+
+<pre>
+<span class="cm">// for (i=0; i&lt;2; ++i) — 在 s2_vd 上搜索</span>
+
+<span class="cm">// i=0: s3_vd[0] = s2_vd[1]|s2_vd[0]</span>
+<span class="cm">//   s3_idx[0] = s2_vd[0] ? {1'b0, s2_idx[0]} : {1'b1, s2_idx[1]}</span>
+
+<span class="cm">// i=1: s3_vd[1] = s2_vd[3]|s2_vd[2]</span>
+<span class="cm">//   s3_idx[1] = s2_vd[2] ? {1'b0, s2_idx[2]} : {1'b1, s2_idx[3]}</span>
+
+<span class="cm">// 现在 s3_idx[0] 是 3-bit (来自低4线), s3_idx[1] 是 3-bit (来自高4线)</span>
+<span class="cm">// 门数: 2×(OR2 + MUX2) ≈ 8 gates</span>
+</pre>
+
+<h3>Stage 4 (2→1): 最终选择</h3>
+
+<pre>
+<span class="cm">// 最终结果: result.vd = s3_vd[1] | s3_vd[0]</span>
+<span class="cm">// result.idx = s3_vd[0] ? {1'b0, s3_idx[0]} : {1'b1, s3_idx[1]}</span>
+
+<span class="cm">// 即: 低一半 (线 0~7) 有效 → 选低半, 最高位 idx[3]=0</span>
+<span class="cm">//     高一半 (线 8~15) 有效 → 选高半, 最高位 idx[3]=1</span>
+<span class="cm">// 门数: OR2 + MUX2 ≈ 4 gates</span>
+</pre>
+
+<h3>总门数估算</h3>
+
+<table>
+<tr><th>Stage</th><th>OR2</th><th>NOT</th><th>MUX2</th><th>总约</th></tr>
+<tr><td>S1</td><td>8</td><td>8</td><td>—</td><td>16</td></tr>
+<tr><td>S2</td><td>4</td><td>—</td><td>4</td><td>~16</td></tr>
+<tr><td>S3</td><td>2</td><td>—</td><td>2</td><td>~8</td></tr>
+<tr><td>S4</td><td>1</td><td>—</td><td>1</td><td>~4</td></tr>
+<tr><td><strong>合计</strong></td><td><strong>15</strong></td><td><strong>8</strong></td><td><strong>7</strong></td><td><strong>~44</strong></td></tr>
+</table>
+
+<h3>实例追踪: IPR = 16'h8020</h3>
+
+<pre>
+<span class="cm">// din[15:0] = 1000_0000_0010_0000</span>
+<span class="cm">// 置位: din[15]=1, din[5]=1 → 选中 din[5] (低索引优先)</span>
+
+<span class="cm">// S1: 16→8</span>
+<span class="cm">//   pair[7:6]=10 → vd=1,idx=1   pair[5:4]=00 → vd=0,idx=1</span>
+<span class="cm">//   pair[3:2]=10 → vd=1,idx=0   pair[1:0]=00 → vd=0,idx=1</span>
+<span class="cm">//   s1_vd = 8'b1010_0100</span>
+
+<span class="cm">// S2: 8→4 (在 s1_vd 上搜索)</span>
+<span class="cm">//   pair3(7:6)=10 → vd3=1,idx=1, s2_idx3=1+idx6=1+1=0b10? wait...</span>
+<span class="cm">//   pair3: s1_vd[7]=1, s1_vd[6]=0 → vd=1, tmp.idx=~s1_vd[6]=1</span>
+<span class="cm">//     s2_idx[3] = tmp.idx? {1, s1_idx[7]} : {0, s1_idx[6]}</span>
+<span class="cm">//              = 1 ? {1, 1} : ... = 2'b11 (胜者=线 15)</span>
+<span class="cm">//   pair2(5:4)=01 → vd2=1, tmp.idx=~s1_vd[4]=0</span>
+<span class="cm">//     s2_idx[2] = {0, s1_idx[4]} = 2'b00 (胜者=线8? 不对...)</span>
+<span class="cm">//   重新计算: s1_vd[5]=0,s1_vd[4]=1 → vd=1, tmp.idx=~s1_vd[4]=0</span>
+<span class="cm">//     s2_idx[2] = ~0?{0, s1_idx[4]}:{0, s1_idx[5]}</span>
+<span class="cm">//     s1_idx[4]=~din[8]=~0=1, s1_idx[5]=~din[10]=~0=1</span>
+<span class="cm">//     s2_idx[2] = {0, 1} = 2'b01 (胜者=线9...)</span>
+<span class="cm">//   问题: din[5]=1 而 s1_vd[2]=(din[5]|din[4])=1, pt idx...</span>
+<span class="cm">//   最终: s1_vd[2]=1, tmp.idx=~din[4]=~0=1, s1_idx[2]=~din[4]=1</span>
+<span class="cm">//     s2_idx[1] = ~s1_vd[2]?{0,s1_idx[2]}:{0,s1_idx[3]}...</span>
+
+<span class="cm">// 简化追踪: 低索引优先, din[5]=1 在线5, din[15]=1 在线15</span>
+<span class="cm">// S1: 每对低索引优先 → {vd,idx} pairs 反映每对中最优先的位</span>
+<span class="cm">// S2: 低对优先 → 选择线0-3范围(若有) 或 线4-7范围</span>
+<span class="cm">// S3: 低半优先 → 选择线0-7范围(若有) 或 线8-15范围</span>
+<span class="cm">// S4: 低组优先 → 最终胜出</span>
+
+<span class="cm">// 线5在低半 (0-7), 线15在高半 (8-15) → 低半胜 → idx[3]=0</span>
+<span class="cm">// 线5在 pair{5-4} (idx=2 via s1_vd[2]=1) → 低对胜 → idx[2:1]=?</span>
+<span class="cm">// 最终: vd=1, idx=5 (线5)</span>
+</pre>
+
+<div class="box tip">
+  <div class="box-title">search_one_16 的关键特性</div>
+  <ol style="margin:8px 0 0;">
+    <li><strong>纯组合</strong>: function automatic, 无 clk/rst, 单周期完成</li>
+    <li><strong>低索引优先</strong>: din[0] 优先级最高, din[15] 最低</li>
+    <li><strong>O(log N) 深度</strong>: 16 路仅需 4 级逻辑深度 (~44 gates)</li>
+    <li><strong>可扩展</strong>: 同模式可扩展到 32/64/128 路</li>
+  </ol>
+</div>
+
+<!-- ============ CSR-IPIC FLOW + TIMING ============ -->
+<h2 id="ipic-flow">第二十课: CSR-IPIC 中断处理完整流程 + 信号时序</h2>
+
+<h3>7 步中断处理流程</h3>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>IRQ 到来</strong>: soc_irq_lines 进入 IPIC → 同步/反相 → 边沿/电平检测 → IPR 更新
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>优先级仲裁</strong>: IPR &amp; IER &amp; ~ISVR → 优先级树搜索 → 选出最高优先级中断号
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>中断请求</strong>: IPIC → <code>ipic2csr_irq_m_req_o=1</code> → CSR 的 MIP 线
+</div>
+<div class="step">
+  <span class="step-num">4</span> <strong>CSR 仲裁</strong>: CSR 生成 <code>csr2exu_ip_ie_o</code> + <code>csr2exu_irq_o</code> → EXU
+</div>
+<div class="step">
+  <span class="step-num">5</span> <strong>PC 跳转</strong>: CSR 输出 <code>csr2exu_new_pc_o</code> (MTVEC.BASE / vectored) → IFU
+</div>
+<div class="step">
+  <span class="step-num">6</span> <strong>SOI</strong>: 中断处理程序写 SOI → 标记中断开始, CICSR 更新
+</div>
+<div class="step">
+  <span class="step-num">7</span> <strong>EOI</strong>: 处理完毕写 EOI → ISVR 清除 → IPR 清除 → 下一中断开始
+</div>
+
+<h3>信号时序波形 (中断入口关键路径) <span class="tag tag-new">新增</span></h3>
+
+<div class="timing">
+<span class="hdr">Cycle       │ T0    │ T1    │ T2    │ T3    │ T4    │ T5    │ T6       │</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="sig">clk</span>         <span class="arrow">__──┐  └──┐  └──┐  └──┐  └──┐  └──┐  └──┐  └──┐</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="sig">soc_irq[n]</span> <span class="arrow">──────┐──────────────────────────────────────────────────</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// IPIC 内部</span>
+<span class="sig">irq_lines  </span> ──────<span class="arrow">┘</span>   <span class="arrow">└───┐</span>  <span class="cm">(sync: 2级FF延迟)</span>
+<span class="sig">irq_lvl    </span> ──────────<span class="arrow">┘</span>   <span class="arrow">└───</span>  <span class="cm">(电平/反相/边沿检测 1 clk)</span>
+<span class="sig">IPR[n]     </span> ────────────<span class="arrow">┘</span> <span class="arrow">└──</span>    <span class="cm">(IPR更新: +1 clk)</span>
+<span class="sig">req_v      </span> ────────────<span class="arrow">┘</span> <span class="arrow">└──</span>    <span class="cm">(优先级树搜索: 组合, 同周期)</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// IPIC→CSR 接口</span>
+<span class="sig">irq_m_req_o</span> ────────────<span class="arrow">┘</span> <span class="arrow">└───────────────────</span>  <span class="cm">(T2拉高)</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// CSR 内部 (下一拍响应)</span>
+<span class="sig">pnd_en     </span> ────────────<span class="arrow">┘</span> <span class="arrow">└──</span>    <span class="cm">(MIP&amp;MIE, 组合)</span>
+<span class="sig">mstatus.mie</span> <span class="arrow">────────────┘</span> <span class="arrow">└──</span>    <span class="cm">(=1 时全局使能)</span>
+<span class="sig">csr_irq_o  </span> ──────────────<span class="arrow">┘</span> <span class="arrow">└───</span>  <span class="cm">(pnd_en &amp; MIE)</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// CSR→EXU 输出 (事件处理)</span>
+<span class="sig">new_pc_o   </span> ──────────────────────<span class="arrow">└──────┘</span>  <span class="cm">(MTVEC地址, T3有效)</span>
+<span class="sig">mepc       </span> ──────────────────────<span class="arrow">└──────┘</span>  <span class="cm">(保存 next_pc)</span>
+<span class="sig">mcause     </span> ──────────────────────<span class="arrow">└──────┘</span>  <span class="cm">(I=1, EC=中断号)</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// 流水线执行</span>
+<span class="sig">IFU PC     </span> <span class="val0">0x200</span>  <span class="val0">0x204</span>  <span class="val0">0x208</span>  <span class="val1">0x1C0</span>  <span class="val1">0x1C4</span>  <span class="val1">0x1C8</span>  <span class="val1">...</span>    <span class="cm">(PC跳转到MTVEC)</span>
+<span class="sig">EXU instr  </span> <span class="val0">add</span>    <span class="val0">sub</span>    <span class="val0">lw</span>     <span class="cm">nop</span>    <span class="val1">lw(sp)</span> <span class="val1">sw</span>     <span class="val1">...</span>    <span class="cm">(冲刷后开始处理)</span>
+<span class="hdr">            │       │       │       │       │       │       │          │</span>
+<span class="cm">// 延时统计:</span>
+<span class="cm">// IRQ pin toggle → IPR set:      3 clk (T0→T2, 含sync 2级 + detect 1级)</span>
+<span class="cm">// IPR set → irq_m_req_o:         0 clk (组合, 同周期)</span>
+<span class="cm">// irq_m_req_o → csr_irq_o:       0-1 clk (CSR 内部组合 + MIE门控)</span>
+<span class="cm">// csr_irq_o → new_pc valid:      1 clk (事件处理: 采样+更新MSTATUS/MEPC等)</span>
+<span class="cm">// new_pc valid → IFU 取指:       1 clk</span>
+<span class="cm">// 总 IRQ 响应延迟: ~5-6 周期 (含同步+检测+仲裁+CSR+PC跳转)</span>
+</div>
+
+<div class="box warn">
+  <div class="box-title">中断响应延迟的关键路径</div>
+  <ol style="margin:8px 0 0;">
+    <li><strong>IPIC 同步 + 检测</strong>: 2~3 周期 (如果 SCR1_IPIC_SYNC_EN 开启)</li>
+    <li><strong>优先级树搜索</strong>: 0 周期 (纯组合, 与 IPR 更新同拍)</li>
+    <li><strong>CSR 仲裁 + 事件处理</strong>: 1~2 周期 (pnd_en 组合 → MSTATUS 更新 → new_pc 输出)</li>
+    <li><strong>IFU 取指跳转</strong>: 1 周期</li>
+  </ol>
+  总延迟约 5-6 周期。如果关闭 IPIC 同步 (SCR1_IPIC_SYNC_EN=0), 可减少 2 周期, 但需外部确保 IRQ 信号满足建立/保持时间。
+</div>
+
+<!-- ============ EXERCISES ============ -->
+<h2 id="exercise">练习</h2>
+
+<fieldset>
+  <legend>练习 1: CSR 事件状态转移</legend>
+  <p>初始状态: MSTATUS[MIE]=1, MSTATUS[MPIE]=0。执行 ECALL 进入陷阱, 然后执行 MRET。画出 MSTATUS 两个位的变化轨迹。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: MTVEC Vectored 地址计算</legend>
+  <p>假设 MTVEC.BASE=0x1C0 (bits[31:6]), MODE=1 (Vectored)。外部中断 (IRQ_M_EXTERNAL, EC=11) 到来。计算新 PC 值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: MCYCLE 流水线递增</legend>
+  <p>MCYCLE 低 8 位从 0xFE 递增到 0xFF (下一拍到 0x00)。画出 <code>csr_mcycle_lo_inc</code>, <code>csr_mcycle_hi_inc</code>, <code>csr_mcycle_lo_ff</code>, <code>csr_mcycle_hi_ff</code> 的波形。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: search_one_16 追踪</legend>
+  <p>IPIC 的 IPR = 16'h8020 (bit[15]=1, bit[5]=1)。用 search_one_16 算法追踪 4 级二叉树的搜索路径, 最终胜出的是哪个中断号?</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: MCAUSE 区分异常 vs 中断</legend>
+  <p>以下编码同时出现: <code>IRQ_M_EXTERNAL (11)</code> 和 <code>ECALL_M (11)</code>。中断和异常用同一个编码值, 如何区分? 查看 MCAUSE[31] 位。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: 编写完整的中断处理程序 <span class="tag tag-new">新增</span></legend>
+  <p>用 RISC-V 汇编为 SCR1 编写完整的外部中断 (IRQ 5) 处理程序。</p>
+  <p><strong>要求:</strong></p>
+  <ol>
+    <li>陷阱入口用 <code>csrrw sp, mscratch, sp</code> 做原子上下文交换</li>
+    <li>保存 ra, t0-t2, a0-a1 到栈帧 (trap frame)</li>
+    <li>读取 MCAUSE 判断中断类型, 仅处理外部中断</li>
+    <li>读 IPIC_CISV 确认中断号 = 5</li>
+    <li>写 SOI 开始服务, 执行中断处理 (可仅做标记写入内存 0x90000000)</li>
+    <li>写 EOI 结束服务, 恢复上下文, mret 返回</li>
+  </ol>
+  <p><strong>提示 IPIC 地址:</strong> CISV=0xBF0, SOI=0xBF5, EOI=0xBF4</p>
+  <details>
+    <summary>参考解答 (点击展开)</summary>
+    <pre>
+<span class="cm"># === 陷阱向量表 (MTVEC=0x1C0, Direct 模式) ===</span>
+<span class="kw">.section</span> .text.trap, <span class="rd">"ax"</span>
+<span class="kw">.align</span> <span class="num">6</span>          <span class="cm"># MTVEC 要求 64-byte 对齐</span>
+trap_entry:
+    <span class="cm"># 1. 原子上下文交换: sp↔mscratch</span>
+    <span class="kw">csrrw</span>   sp, mscratch, sp     <span class="cm"># sp ← trap_frame_ptr, mscratch ← old_sp</span>
+
+    <span class="cm"># 2. 保存被调用者寄存器到 trap frame</span>
+    <span class="kw">sw</span>      ra,  <span class="num">0</span>(sp)
+    <span class="kw">sw</span>      t0,  <span class="num">4</span>(sp)
+    <span class="kw">sw</span>      t1,  <span class="num">8</span>(sp)
+    <span class="kw">sw</span>      t2, <span class="num">12</span>(sp)
+    <span class="kw">sw</span>      a0, <span class="num">16</span>(sp)
+    <span class="kw">sw</span>      a1, <span class="num">20</span>(sp)
+
+    <span class="cm"># 3. 读 MCAUSE 判断中断类型</span>
+    <span class="kw">csrr</span>    t0, mcause           <span class="cm"># mcause = 0x342</span>
+    <span class="kw">srli</span>    t1, t0, <span class="num">31</span>           <span class="cm"># 取 bit[31] = I 位</span>
+    <span class="kw">beqz</span>    t1, .not_irq          <span class="cm"># I=0 → 异常, 跳到异常处理</span>
+    <span class="kw">andi</span>    t1, t0, <span class="num">0xF</span>          <span class="cm"># 取 exception code [3:0]</span>
+    <span class="kw">li</span>      t2, <span class="num">11</span>                <span class="cm"># IRQ_M_EXTERNAL = 11</span>
+    <span class="kw">bne</span>     t1, t2, .not_ext_irq  <span class="cm"># 不是外部中断 → 跳过</span>
+
+    <span class="cm"># 4. 读 CISV 确认中断号</span>
+    <span class="kw">li</span>      t0, <span class="num">0xBF0</span>             <span class="cm"># SCR1_CSR_ADDR_IPIC_CISV</span>
+    <span class="kw">csrr</span>    t0, <span class="num">0xBF0</span>             <span class="cm"># 读 CISV</span>
+    <span class="kw">andi</span>    t0, t0, <span class="num">0xF</span>          <span class="cm"># 取低 4 位 = 中断号</span>
+    <span class="kw">li</span>      t1, <span class="num">5</span>                 <span class="cm"># 期望中断号 = 5</span>
+    <span class="kw">bne</span>     t0, t1, .not_irq5    <span class="cm"># 不是 IRQ5 → 跳过</span>
+
+    <span class="cm"># 5. 写 SOI 开始服务</span>
+    <span class="kw">li</span>      t0, <span class="num">0xBF5</span>             <span class="cm"># SCR1_CSR_ADDR_IPIC_SOI</span>
+    <span class="kw">csrw</span>    <span class="num">0xBF5</span>, zero          <span class="cm"># 写任意值, 标记中断开始</span>
+
+    <span class="cm"># 中断处理: 向 0x90000000 写入标记</span>
+    <span class="kw">li</span>      t0, <span class="num">0x90000000</span>
+    <span class="kw">li</span>      t1, <span class="num">0xCAFE</span>
+    <span class="kw">sw</span>      t1, <span class="num">0</span>(t0)
+
+    <span class="cm"># 6. 写 EOI 结束服务</span>
+    <span class="kw">li</span>      t0, <span class="num">0xBF4</span>             <span class="cm"># SCR1_CSR_ADDR_IPIC_EOI</span>
+    <span class="kw">csrw</span>    <span class="num">0xBF4</span>, zero          <span class="cm"># 写任意值, 结束当前中断</span>
+
+    <span class="kw">j</span>       .restore
+
+.not_irq5:
+.not_ext_irq:
+.not_irq:
+    <span class="cm"># 未处理的异常/中断: 死循环 (实际应跳转到错误处理)</span>
+    <span class="kw">j</span>       .restore
+
+.restore:
+    <span class="cm"># 7. 恢复上下文并 mret 返回</span>
+    <span class="kw">lw</span>      a1, <span class="num">20</span>(sp)
+    <span class="kw">lw</span>      a0, <span class="num">16</span>(sp)
+    <span class="kw">lw</span>      t2, <span class="num">12</span>(sp)
+    <span class="kw">lw</span>      t1,  <span class="num">8</span>(sp)
+    <span class="kw">lw</span>      t0,  <span class="num">4</span>(sp)
+    <span class="kw">lw</span>      ra,  <span class="num">0</span>(sp)
+    <span class="kw">csrrw</span>   sp, mscratch, sp     <span class="cm"># 恢复 sp, mscratch 复原</span>
+    <span class="kw">mret</span>
+
+<span class="cm"># === 数据段: trap frame ===</span>
+<span class="kw">.section</span> .bss
+<span class="kw">.align</span> <span class="num">4</span>
+trap_frame:
+    <span class="kw">.space</span> <span class="num">64</span>    <span class="cm"># 足够的栈帧空间</span>
+
+<span class="cm"># === 初始化代码 ===</span>
+<span class="kw">.section</span> .text.init
+_start:
+    <span class="cm"># 设置 MTVEC = 0x1C0 (Direct 模式, 指向 trap_entry)</span>
+    <span class="kw">la</span>      t0, trap_entry
+    <span class="kw">csrw</span>    mtvec, t0
+
+    <span class="cm"># 设置 MSCRATCH = &amp;trap_frame</span>
+    <span class="kw">la</span>      t0, trap_frame
+    <span class="kw">csrw</span>    mscratch, t0
+
+    <span class="cm"># 使能 IPIC 中断线 5: 写 IDXR=5, 再写 IER[5]=1 (通过 ICSR[IE])</span>
+    <span class="kw">li</span>      t0, <span class="num">5</span>
+    <span class="kw">csrw</span>    <span class="num">0xBF6</span>, t0           <span class="cm"># IDXR = 5 (SCR1_IPIC_IDXR = 0xBF6)</span>
+    <span class="kw">li</span>      t0, <span class="num">0x2</span>               <span class="cm"># bit[1] = IE</span>
+    <span class="kw">csrw</span>    <span class="num">0xBF7</span>, t0           <span class="cm"># ICSR = {..., ie=1} (SCR1_IPIC_ICSR = 0xBF7)</span>
+
+    <span class="cm"># 使能 CSR 级外部中断 (MIE[11]=MEIE=1)</span>
+    <span class="kw">li</span>      t0, <span class="num">0x800</span>
+    <span class="kw">csrs</span>    mie, t0              <span class="cm"># MIE |= MEIE (bit 11)</span>
+
+    <span class="cm"># 使能全局中断 (MSTATUS[3]=MIE=1)</span>
+    <span class="kw">li</span>      t0, <span class="num">0x8</span>
+    <span class="kw">csrs</span>    mstatus, t0          <span class="cm"># MSTATUS |= MIE</span>
+
+    <span class="cm"># 主循环: 等待中断</span>
+<span class="num">1</span>:  <span class="kw">wfi</span>
+    <span class="kw">j</span>       <span class="num">1b</span></pre>
+  </details>
+</fieldset>
+
+<!-- ============ SUMMARY ============ -->
+<h2 id="submodule-commit">总结</h2>
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>CSR 的 3 个接口分别是什么? 为什么读写和事件要分开?</li>
+    <li>EXC/IRQ/MRET 三事件谁优先级最高? 各自对 MSTATUS 做什么操作?</li>
+    <li>MSTATUS 只有哪 4 位有效? MIE/MPIE 在陷阱进入和 MRET 退出时如何转移?</li>
+    <li>MTVEC Vectored 模式如何计算中断向量地址? 异常和中断用同一个 BASE 吗?</li>
+    <li>MEPC 在异常和中断时分别保存什么 PC? 为什么不同?</li>
+    <li>MCYCLE 的流水线递增为什么只更新低 8 位 + 高 56 位?</li>
+    <li>IPIC 的 11 个寄存器各管什么? 哪 3 个通过 IDXR 间接访问?</li>
+    <li>IPIC 的边沿检测如何实现? 反相 (IINVR) 如何作用于检测?</li>
+    <li>search_one_16 的 4 级二叉树如何实现 16 选 1 优先级? 为什么是纯组合逻辑?</li>
+    <li>从 IRQ 信号输入到 CPU 跳转到 MTVEC, 完整经过哪些模块和信号?</li>
+    <li><span class="tag tag-new">新</span> 12-bit CSR 地址的高 4-bit [11:8] 如何分类? HPM 地址掩码匹配怎么做?</li>
+    <li><span class="tag tag-new">新</span> MSCRATCH 如何通过 csrrw 实现原子 sp 交换? 为什么必须原子?</li>
+    <li><span class="tag tag-new">新</span> MIP vs MIE 的两级门控模型是什么? WFI 唤醒需要 MSTATUS.MIE=1 吗?</li>
+    <li><span class="tag tag-new">新</span> CSRRW/CSRRS/CSRRC 的 RMW 逻辑如何用 WRITE/SET/CLEAR 三命令实现?</li>
+    <li><span class="tag tag-new">新</span> search_one_16 4 级树的总门数约是多少? 每级的索引拼接逻辑是什么?</li>
+    <li><span class="tag tag-new">新</span> 中断入口的时序波形中, 从 IRQ pin 变化到 IFU 取指 MTVEC 共需多少周期?</li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 12 周进入调试子系统 (HDU + TDU)。HDU: 调试模式进入/退出 (haltreq/resumereq), Program Buffer (pbuf) 指令注入, 调试 CSR (DCSR/DPC/DSCRATCH)。TDU: 硬件断点 (mcontrol/mcontrol6), 指令/数据断点匹配, 触发器链。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | CSR + IPIC | 第 11 周 (增强版)</p>
+</body>
+</html>

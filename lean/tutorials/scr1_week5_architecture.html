@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCR1 整体架构初探 -- 从顶层到流水线的全景图（增强版）</title>
+<style>
+  :root {
+    --blue: #1a73e8;
+    --blue-light: #e8f0fe;
+    --gray: #5f6368;
+    --border: #dadce0;
+    --code-bg: #f1f3f4;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.7; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 40px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #2d3748; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.9em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.85em; line-height: 1.5; }
+  pre .kw { color: #569cd6; }
+  pre .num { color: #b5cea8; }
+  pre .cm { color: #6a9955; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; }
+  .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; }
+  .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 220px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; }
+  .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
+  .highlight { background: #fff3cd; padding: 2px 4px; border-radius: 3px; }
+  .hierarchy { margin: 16px 0; padding-left: 20px; border-left: 3px solid var(--blue); }
+  .hierarchy .l0 { font-weight: 700; font-size: 1.05em; color: #1a365d; }
+  .hierarchy .l1 { margin-left: 16px; font-weight: 600; color: var(--blue); }
+  .hierarchy .l2 { margin-left: 32px; color: #2d3748; }
+  .hierarchy .l3 { margin-left: 48px; color: var(--gray); font-size: 0.9em; }
+  .conf-table td:first-child { font-weight: 700; font-family: monospace; background: var(--code-bg); }
+  .data-path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; margin: 16px 0; font-size: 0.85em; }
+  .data-path > div { border: 2px solid var(--blue); border-radius: 6px; padding: 8px 12px; background: var(--blue-light); font-weight: 600; text-align: center; min-width: 80px; }
+  .data-path > span { font-size: 1.3em; color: var(--blue); }
+  .cfg-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700; margin-right: 6px; }
+  .cfg-min  { background: #d4edda; color: #155724; }
+  .cfg-base { background: #cfe2ff; color: #084298; }
+  .cfg-max  { background: #f8d7da; color: #721c24; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 12px 0; }
+  legend { font-weight: 700; color: var(--blue); padding: 0 6px; }
+  .timing { font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.8em; white-space: pre; background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; line-height: 1.4; margin: 12px 0; border: 1px solid var(--border); }
+  .dep-graph { font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 0.82em; white-space: pre; background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; line-height: 1.3; margin: 12px 0; border: 1px solid var(--border); }
+  .enhanced-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; font-weight: 700; background: #e8f0fe; color: #1a73e8; vertical-align: middle; margin-left: 6px; }
+  .field-table td:nth-child(1) { font-family: monospace; font-size: 0.85em; white-space: nowrap; }
+  .field-table td:nth-child(2) { font-family: monospace; font-size: 0.8em; color: var(--gray); }
+</style>
+</head>
+<body>
+
+<h1>SCR1 整体架构初探 -- 从顶层到流水线的全景图 <span class="enhanced-badge">增强版</span></h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#why">为什么先看架构？</a>
+  <a href="#positioning">SCR1 的市场定位</a>
+  <a href="#harvard">哈佛架构：双总线体系</a>
+  <a href="#repo">仓库目录结构</a>
+  <a href="#hierarchy">模块层次树</a>
+  <a href="#pipe-top">scr1_pipe_top 内部信号连线</a>
+  <a href="#core-top">scr1_core_top 包裹层</a>
+  <a href="#three-configs">三种预定义配置</a>
+  <a href="#config-macros-detail">配置宏源码级详解</a> <span class="enhanced-badge">新</span>
+  <a href="#eight-stages">8 个功能阶段</a>
+  <a href="#pipeline-config">2/3/4 级流水线的切换原理</a>
+  <a href="#dep-graph">模块依赖关系图</a> <span class="enhanced-badge">新</span>
+  <a href="#pipeline-timing">流水线时序与寄存器放置</a> <span class="enhanced-badge">新</span>
+  <a href="#data-path">关键数据通路</a>
+  <a href="#signal-interface">流水级信号接口详情</a> <span class="enhanced-badge">新</span>
+  <a href="#module-roles">七大模块角色速览</a>
+  <a href="#mprf-exu-cmd">MPRF 与 EXU 的 18 字段命令结构</a> <span class="enhanced-badge">新</span>
+  <a href="#config-opts">可配置选项全景</a>
+  <a href="#bus-if">外部总线接口</a>
+  <a href="#memory-map">SCR1 内存映射</a> <span class="enhanced-badge">新</span>
+  <a href="#clk-rst">时钟与复位架构</a> <span class="enhanced-badge">新</span>
+  <a href="#exercise">动手练习</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="why">第一课: 为什么先看架构？</h2>
+<!-- ============================================================ -->
+
+<div class="box">
+  <div class="box-title">本课程目标</div>
+  建立对 SCR1 处理器 <strong>整体架构</strong> 的全局认知：知道它长什么样（哈佛架构 + 顺序流水线），由哪些模块拼成（IFU/IDU/EXU/MPRF/CSR/LSU/IPIC），三种配置（MIN/BASE/MAX）如何通过几个宏决定一切，以及一条指令从 PC 出发经过哪些模块最终写回寄存器。
+</div>
+
+<div class="box tip">
+  <div class="box-title">学习建议</div>
+  本周不求深入每个模块的源码，重点是 <strong>建立心理地图（mental map）</strong>。遇到新缩写就翻 <code>SCR1_abbreviations.txt</code>。建议 5 天学完前 10 课，周末做练习巩固。
+</div>
+
+<div class="warn box">
+  <div class="box-title">前置知识检查</div>
+  需要你已掌握：RISC-V 六大指令格式（第 3 周），以及 M-mode CSR 的核心功能（第 4 周）。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="positioning">第二课: SCR1 的市场定位</h2>
+<!-- ============================================================ -->
+
+<table>
+<tr><th>维度</th><th>SCR1 的特征</th><th>对比桌面 CPU</th></tr>
+<tr><td>目标市场</td><td>MCU（微控制器）级嵌入式核心</td><td>应用处理器（Application Processor）</td></tr>
+<tr><td>指令集</td><td>RV32I/E + 可选 M/C</td><td>RV64GC + 浮点 + 向量</td></tr>
+<tr><td>流水线</td><td>2~4 级顺序（in-order）</td><td>10+ 级乱序（out-of-order）</td></tr>
+<tr><td>特权模式</td><td>仅 M-mode</td><td>M+S+U 全模式</td></tr>
+<tr><td>总线接口</td><td>32 位 AXI4 / AHB-Lite</td><td>64 位 AXI / CHI</td></tr>
+<tr><td>面积</td><td>&lt; 20K 门（最小配置）</td><td>数百万门</td></tr>
+<tr><td>功耗</td><td>极低</td><td>瓦级</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">顺序流水线 = 简单可靠</div>
+  SCR1 的指令 <strong>严格按程序顺序</strong> 执行，没有乱序发射、没有推测执行、没有分支预测器。这意味着：
+  <ul style="margin:8px 0 0;">
+    <li>无数据冲突（操作数获取和结果提交在同一阶段执行）</li>
+    <li>代码就是时间线：你写的顺序就是 CPU 执行的顺序</li>
+    <li>调试友好：PC 永远指向正在执行的指令</li>
+  </ul>
+  代价是：分支和跳转必须等待前序指令全部完成，无法像桌面 CPU 那样提前"猜测"。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="harvard">第三课: 哈佛架构 -- 双总线体系</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 采用经典 <strong>哈佛架构</strong>：指令存储器和数据存储器使用独立的物理总线。</p>
+
+<div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin:20px 0;">
+<div style="border:2px solid #1a73e8;border-radius:8px;padding:14px 20px;text-align:center;background:#e8f0fe;min-width:200px;">
+  <div style="font-weight:700;font-size:1.1em;color:#1a365d;margin-bottom:8px;">IMEM 总线</div>
+  <div style="font-family:monospace;font-size:0.85em;">core2imem_req_o<br>core2imem_addr_o<br>core2imem_cmd_o<br><br>imem2core_rdata_i<br>imem2core_resp_i</div>
+  <div style="margin-top:8px;color:var(--gray);font-size:0.85em;">只读（取指令）</div>
+</div>
+<div style="align-self:center;font-size:2em;font-weight:700;color:var(--blue);">&#8800;</div>
+<div style="border:2px solid #e37400;border-radius:8px;padding:14px 20px;text-align:center;background:#fef7e0;min-width:200px;">
+  <div style="font-weight:700;font-size:1.1em;color:#7a4700;margin-bottom:8px;">DMEM 总线</div>
+  <div style="font-family:monospace;font-size:0.85em;">core2dmem_req_o<br>core2dmem_addr_o<br>core2dmem_cmd_o<br>core2dmem_wdata_o<br><br>dmem2core_rdata_i<br>dmem2core_resp_i</div>
+  <div style="margin-top:8px;color:var(--gray);font-size:0.85em;">读写（LOAD/STORE）</div>
+</div>
+</div>
+
+<div class="box">
+  <div class="box-title">哈佛架构的优势</div>
+  指令和数据走不同的总线，意味着取指和访存 <strong>可以同时进行</strong>，不会互相阻塞。源文件 <code>src/core/scr1_core_top.sv</code> 的端口列表中能清楚看到两套独立的总线信号。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="repo">第四课: 仓库目录结构</h2>
+<!-- ============================================================ -->
+
+<table>
+<tr><th>目录</th><th>内容</th><th>学习阶段</th></tr>
+<tr><td><code>src/includes/</code></td><td>头文件：CSR 地址宏、异常编码、IPIC 寄存器定义等</td><td>第 2-4 周</td></tr>
+<tr><td><code>src/core/</code></td><td>核心 RTL：scr1_core_top + scr1_pipe_top + 各流水级模块</td><td>第 5-10 周</td></tr>
+<tr><td><code>src/top/</code></td><td>集群顶层：AHB/AXI 桥接、TCM、定时器包装</td><td>第 11 周</td></tr>
+<tr><td><code>src/tb/</code></td><td>仿真测试平台</td><td>进阶</td></tr>
+<tr><td><code>sim/tests/</code></td><td>ISA 合规测试、Dhrystone/CoreMark 基准、中断示例</td><td>进阶</td></tr>
+<tr><td><code>docs/</code></td><td>官方 PDF 文档（EAS、User Manual）</td><td>全程</td></tr>
+<tr><td><code>lean/</code></td><td>我们生成的中文技术分析文档</td><td>全程</td></tr>
+</table>
+
+<h3>文件清单的入口</h3>
+
+<p>项目根目录的 <code>src/core.files</code> 列出所有需要综合的 RTL 源文件。学习时从这里开始能快速定位所有关键模块。</p>
+
+<!-- ============================================================ -->
+<h2 id="hierarchy">第五课: 模块层次树</h2>
+<!-- ============================================================ -->
+
+<div class="hierarchy">
+<div class="l0">scr1_top_ahb / scr1_top_axi（集群顶层）</div>
+<div class="l1">&#9500;&#9472; scr1_core_top（核心顶层：复位逻辑 + 调试子系统 + 时钟门控）</div>
+<div class="l2">  &#9500;&#9472; scr1_pipe_top（流水线顶层：所有流水级模块的互联中枢）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_ifu（指令取指单元 -- Instruction Fetch Unit）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_idu（指令译码单元 -- Instruction Decode Unit）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_exu（执行单元 -- Execution Unit）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_mprf（多端口寄存器文件 -- Multi-Port Register File）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_csr（控制状态寄存器 -- Control Status Registers）</div>
+<div class="l3">      &#9500;&#9472; scr1_pipe_lsu（加载存储单元 -- Load-Store Unit，在 exu 内实例化）</div>
+<div class="l3">      &#9500;&#9472; scr1_ipic（可编程中断控制器 -- 可选）</div>
+<div class="l3">      &#9492;&#9472; scr1_tdu（触发调试单元 -- 可选）</div>
+<div class="l2">  &#9500;&#9472; scr1_scu（系统控制单元 -- 仅在 SCR1_DBG_EN）</div>
+<div class="l2">  &#9500;&#9472; scr1_tapc（JTAG TAP 控制器 -- 仅在 SCR1_DBG_EN）</div>
+<div class="l2">  &#9492;&#9472; scr1_dm（调试模块 -- 仅在 SCR1_DBG_EN）</div>
+<div class="l1">&#9492;&#9472; scr1_tcm（紧耦合存储器 -- 可选）</div>
+<div class="l1">&#9492;&#9472; scr1_timer（内存映射定时器）</div>
+</div>
+
+<div class="box tip">
+  <div class="box-title">关键理解</div>
+  上图中 <code>scr1_pipe_top</code> 是真正的"流水线核心"，它只是一个连线容器，通过实例化 7 个子模块并将它们互联。判断一个信号属于哪个模块，看 <code>scr1_pipe_top.sv</code> 中该信号连到了哪个模块的端口。
+</div>
+
+<h3>SCR1 源码中的模块实例化</h3>
+
+<pre>
+<span class="cm">// scr1_pipe_top.sv:300-584 -- 流水线内部模块实例化顺序</span>
+scr1_pipe_ifu   <span class="kw">i_pipe_ifu</span>  (...);   <span class="cm">// Line 300</span>
+scr1_pipe_idu   <span class="kw">i_pipe_idu</span>  (...);   <span class="cm">// Line 340</span>
+scr1_pipe_exu   <span class="kw">i_pipe_exu</span>  (...);   <span class="cm">// Line 365</span>
+scr1_pipe_mprf  <span class="kw">i_pipe_mprf</span> (...);   <span class="cm">// Line 477</span>
+scr1_pipe_csr   <span class="kw">i_pipe_csr</span>  (...);   <span class="cm">// Line 496</span>
+scr1_ipic       <span class="kw">i_pipe_ipic</span> (...);   <span class="cm">// Line 581 (仅在 SCR1_IPIC_EN)</span></pre>
+
+<!-- ============================================================ -->
+<h2 id="pipe-top">第六课: scr1_pipe_top 内部信号连线</h2>
+<!-- ============================================================ -->
+
+<p><code>scr1_pipe_top.sv</code> 本身<strong>不存在任何逻辑</strong>，它是 7 个子模块之间的"接线板"。看懂它的关键在于理解信号组。</p>
+
+<table>
+<tr><th>信号组</th><th>连接方向</th><th>说明</th></tr>
+<tr><td><code>curr_pc / next_pc / new_pc</code></td><td>EXU &rarr; IFU</td><td>PC 值从 EXU 传回 IFU，控制下一条取哪条指令</td></tr>
+<tr><td><code>ifu2idu_*</code></td><td>IFU &rarr; IDU</td><td>指令字（32/16 位）、有效标志、错误标志</td></tr>
+<tr><td><code>idu2ifu_rdy</code></td><td>IDU &rarr; IFU</td><td>IDU 是否准备好接收下一条指令（反压信号）</td></tr>
+<tr><td><code>idu2exu_cmd / idu2exu_req</code></td><td>IDU &rarr; EXU</td><td>译码后的 EXU 命令结构体 + 有效请求</td></tr>
+<tr><td><code>exu2idu_rdy</code></td><td>EXU &rarr; IDU</td><td>EXU 是否接受新指令（反压信号）</td></tr>
+<tr><td><code>exu2mprf_* / mprf2exu_*</code></td><td>EXU &harr; MPRF</td><td>读 rs1/rs2 数据 + 写 rd 数据</td></tr>
+<tr><td><code>exu2csr_* / csr2exu_*</code></td><td>EXU &harr; CSR</td><td>CSR 读写请求 + 事件信号（exc/irq/mret）</td></tr>
+<tr><td><code>pipe2imem_* / imem2pipe_*</code></td><td>IFU &harr; IMEM</td><td>指令存储器接口（取指请求/地址/读数据/响应）</td></tr>
+<tr><td><code>pipe2dmem_* / dmem2pipe_*</code></td><td>LSU(EXU内) &harr; DMEM</td><td>数据存储器接口（通过 EXU 透传到 LSU）</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">命名规律小结</div>
+  信号名遵循 <code>源2目标_信号名_方向</code> 的格式：<code>ifu2idu_vd</code> = IFU 到 IDU 的有效数据信号；<code>idu2ifu_rdy</code> = IDU 到 IFU 的就绪信号。方向后缀 <code>_i</code>（输入）、<code>_o</code>（输出）让每个模块的端口声明自洽。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="core-top">第七课: scr1_core_top 包裹层</h2>
+<!-- ============================================================ -->
+
+<p><code>scr1_core_top</code> 在 <code>scr1_pipe_top</code> 之外额外提供三个关键功能：</p>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>复位逻辑</strong>：当 <code>SCR1_DBG_EN</code> 使能时，由 SCU（系统控制单元）管理上电复位/系统复位/CPU 复位/调试复位的多级复位链。无调试时使用精简的两级同步器。
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>调试子系统集成</strong>：TAPC（JTAG 接口）→ DM（调试模块）→ HDU（硬件调试单元）→ scr1_pipe_top 的调试端口。走 JTAG 的 DMI 通道实现非侵入式调试。
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>时钟门控</strong>：当 <code>SCR1_CLKCTRL_EN</code> 使能时，根据 WFI 暂停状态和 IMEM 事务是否待处理来控制 <code>clk_pipe</code> 门控，降低动态功耗。
+</div>
+
+<h3>core_top 的关键模块实例化关系</h3>
+
+<pre>
+<span class="cm">// scr1_core_top.sv 中的关键连线</span>
+<span class="kw">scr1_scu</span>  i_scu (...);       <span class="cm">// 复位管理</span>
+<span class="kw">scr1_tapc</span> i_tapc (...);      <span class="cm">// JTAG 物理层</span>
+<span class="kw">scr1_dm</span>   i_dm (...);        <span class="cm">// 调试模块</span>
+<span class="kw">scr1_pipe_top</span> i_pipe_top (  <span class="cm">// 流水线核心</span>
+    .pipe_rst_n         (core_rst_n),
+    .clk                (clk_pipe),         <span class="cm">// 可门控时钟</span>
+    .pipe2imem_req_o    (core2imem_req_o),  <span class="cm">// 透传到顶层端口</span>
+    .pipe2dmem_req_o    (core2dmem_req_o),  <span class="cm">// 透传到顶层端口</span>
+    ...
+);</pre>
+
+<!-- ============================================================ -->
+<h2 id="three-configs">第八课: 三种预定义配置</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 通过 <code>src/includes/scr1_arch_description.svh</code> 中的 define 宏来切换配置，无需改动 RTL 代码。</p>
+
+<table class="conf-table">
+<tr><th>选项</th><th><span class="cfg-badge cfg-min">MIN</span> SCR1_CFG_RV32EC_MIN</th><th><span class="cfg-badge cfg-base">BASE</span> SCR1_CFG_RV32IC_BASE</th><th><span class="cfg-badge cfg-max">MAX</span> SCR1_CFG_RV32IMC_MAX</th></tr>
+<tr><td>指令集</td><td>RV32EC</td><td>RV32IC</td><td>RV32IMC</td></tr>
+<tr><td>流水线级数</td><td>2</td><td>3</td><td>4</td></tr>
+<tr><td>通用寄存器数量</td><td>16</td><td>32</td><td>32</td></tr>
+<tr><td>硬件乘法器</td><td>无</td><td>无</td><td>有（快速单周期）</td></tr>
+<tr><td>压缩指令 RVC</td><td>有</td><td>有</td><td>有</td></tr>
+<tr><td>MTVEC 基址可写位</td><td>0（全硬连线）</td><td>16</td><td>26（几乎全可写）</td></tr>
+<tr><td>MTVEC 向量模式</td><td>无</td><td>有</td><td>有</td></tr>
+<tr><td>外部 IRQ 线数</td><td>1</td><td>16</td><td>16</td></tr>
+<tr><td>调试子系统</td><td>无</td><td>有</td><td>有</td></tr>
+<tr><td>硬件触发器数</td><td>0</td><td>2</td><td>4</td></tr>
+<tr><td>TCM</td><td>有</td><td>有</td><td>有</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">配置怎么选？</div>
+  <strong>MIN</strong> 用于极致面积和功耗的 IoT 传感器节点；<strong>BASE</strong> 是常规 MCU 配置（对标 Cortex-M0/M3）；<strong>MAX</strong> 用于需要乘法加速和高级调试的场合。核心选择因素：加法运算交给软件还是硬件乘法器。
+</div>
+
+<h3>配置控制宏一览</h3>
+
+<table>
+<tr><th>宏</th><th>效果</th></tr>
+<tr><td><code>SCR1_RVE_EXT</code></td><td>启用 RV32E（16 个 GPR）替代 RV32I（32 个 GPR）</td></tr>
+<tr><td><code>SCR1_RVM_EXT</code></td><td>启用 M 扩展（整数乘除法硬件）</td></tr>
+<tr><td><code>SCR1_RVC_EXT</code></td><td>启用 C 扩展（16 位压缩指令）</td></tr>
+<tr><td><code>SCR1_NO_DEC_STAGE</code></td><td>去掉 IFU 和 IDU 之间的寄存器级（减一级流水）</td></tr>
+<tr><td><code>SCR1_NO_EXE_STAGE</code></td><td>去掉 IDU 和 EXU 之间的寄存器级（减一级流水）</td></tr>
+<tr><td><code>SCR1_FAST_MUL</code></td><td>单周期乘法器（否则 32 周期迭代乘法）</td></tr>
+<tr><td><code>SCR1_DBG_EN</code></td><td>启用完整调试子系统（JTAG + DM + HDU）</td></tr>
+<tr><td><code>SCR1_IPIC_EN</code></td><td>启用 16 路可编程中断控制器</td></tr>
+<tr><td><code>SCR1_CLKCTRL_EN</code></td><td>启用全局时钟门控</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 8.5 - Config Macros Source-Level Detail -->
+<h2 id="config-macros-detail">第八课（补）: 配置宏的源码级详解</h2>
+<!-- ============================================================ -->
+
+<p>以下是 <code>src/includes/scr1_arch_description.svh</code> 中三种预定义配置的完整宏展开。这些代码决定了整个处理器的一切特征。</p>
+
+<h3>MIN 配置（SCR1_CFG_RV32EC_MIN）的完整宏集合</h3>
+
+<pre>
+<span class="cm">// MIN - 2级流水线，RV32EC，无调试，无乘法，无中断控制器</span>
+<span class="num">`define</span> SCR1_RVE_EXT                        <span class="cm">// RV32E: 16个GPR</span>
+<span class="num">`define</span> SCR1_RVC_EXT                        <span class="cm">// C扩展: 16位压缩指令</span>
+<span class="kw">parameter</span> <span class="kw">int unsigned</span> SCR1_MTVEC_BASE_WR_BITS = <span class="num">0</span>;   <span class="cm">// MTVEC全硬连线</span>
+<span class="num">`define</span> SCR1_NO_DEC_STAGE                   <span class="cm">// 去掉 IFU→IDU 寄存器</span>
+<span class="num">`define</span> SCR1_NO_EXE_STAGE                   <span class="cm">// 去掉 IDU→EXU 寄存器</span>
+<span class="num">`define</span> SCR1_TCM_EN                         <span class="cm">// 紧耦合存储器</span>
+<span class="cm">// 注意: 无 SCR1_DBG_EN, 无 SCR1_IPIC_EN, 无 SCR1_RVM_EXT</span></pre>
+
+<h3>BASE 配置（SCR1_CFG_RV32IC_BASE）的完整宏集合</h3>
+
+<pre>
+<span class="cm">// BASE - 3级流水线，RV32IC，有调试，有IPIC，无乘法</span>
+<span class="num">`define</span> SCR1_RVI_EXT                        <span class="cm">// RV32I: 32个GPR</span>
+<span class="num">`define</span> SCR1_RVC_EXT                        <span class="cm">// C扩展</span>
+<span class="kw">parameter</span> <span class="kw">int unsigned</span> SCR1_MTVEC_BASE_WR_BITS = <span class="num">16</span>;
+<span class="num">`define</span> SCR1_MTVEC_MODE_EN                  <span class="cm">// 支持向量中断模式</span>
+<span class="num">`define</span> SCR1_NO_DEC_STAGE                   <span class="cm">// IFU+IDU 合并，去掉 DEC 寄存器</span>
+<span class="num">`define</span> SCR1_MPRF_RST_EN                    <span class="cm">// MPRF复位使能</span>
+<span class="num">`define</span> SCR1_MCOUNTEN_EN                    <span class="cm">// 计数器使能CSR</span>
+<span class="num">`define</span> SCR1_DBG_EN                         <span class="cm">// 完整调试子系统</span>
+<span class="num">`define</span> SCR1_TDU_EN                         <span class="cm">// 硬件断点/触发器</span>
+<span class="kw">parameter</span> <span class="kw">int unsigned</span> SCR1_TDU_TRIG_NUM = <span class="num">2</span>;
+<span class="num">`define</span> SCR1_TDU_ICOUNT_EN                   <span class="cm">// 指令计数器触发器</span>
+<span class="num">`define</span> SCR1_IPIC_EN                        <span class="cm">// 16路可编程中断控制器</span>
+<span class="num">`define</span> SCR1_IPIC_SYNC_EN                   <span class="cm">// IPIC同步器</span>
+<span class="num">`define</span> SCR1_TCM_EN
+<span class="cm">// 注意: BASE 没有 `define SCR1_NO_EXE_STAGE -- 保留了 IDU→EXU 寄存器</span></pre>
+
+<h3>MAX 配置（SCR1_CFG_RV32IMC_MAX）的完整宏集合</h3>
+
+<pre>
+<span class="cm">// MAX - 4级流水线，RV32IMC，全功能</span>
+<span class="num">`define</span> SCR1_RVI_EXT
+<span class="num">`define</span> SCR1_RVM_EXT                        <span class="cm">// M扩展: 硬件乘除法</span>
+<span class="num">`define</span> SCR1_RVC_EXT
+<span class="kw">parameter</span> <span class="kw">int unsigned</span> SCR1_MTVEC_BASE_WR_BITS = <span class="num">26</span>;  <span class="cm">// 几乎全可写</span>
+<span class="num">`define</span> SCR1_MTVEC_MODE_EN
+<span class="num">`define</span> SCR1_FAST_MUL                       <span class="cm">// 单周期组合逻辑乘法器</span>
+<span class="num">`define</span> SCR1_MPRF_RST_EN
+<span class="num">`define</span> SCR1_MCOUNTEN_EN
+<span class="num">`define</span> SCR1_DBG_EN
+<span class="num">`define</span> SCR1_TDU_EN
+<span class="kw">parameter</span> <span class="kw">int unsigned</span> SCR1_TDU_TRIG_NUM = <span class="num">4</span>;
+<span class="num">`define</span> SCR1_TDU_ICOUNT_EN
+<span class="num">`define</span> SCR1_IPIC_EN
+<span class="num">`define</span> SCR1_IPIC_SYNC_EN
+<span class="num">`define</span> SCR1_TCM_EN
+<span class="cm">// 注意: MAX 两者都不定义 → 4级流水线</span></pre>
+
+<h3>互斥关系与自动检测</h3>
+
+<pre>
+<span class="cm">// 如果没有定义 SCR1_RVE_EXT，自动定义 SCR1_RVI_EXT</span>
+<span class="kw">`ifndef</span> SCR1_RVE_EXT
+  <span class="num">`define</span> SCR1_RVI_EXT
+<span class="kw">`endif</span>
+
+<span class="cm">// 如果使用 RAM 型 MPRF，必须保留 EXE 寄存器级</span>
+<span class="kw">`ifdef</span> SCR1_MPRF_RAM
+  <span class="kw">`undef</span>  SCR1_NO_EXE_STAGE       <span class="cm">// 强制保留 IDU→EXU 寄存器</span>
+  <span class="kw">`undef</span>  SCR1_MPRF_RST_EN        <span class="cm">// 禁用 MPRF 寄存器复位</span>
+<span class="kw">`endif</span></pre>
+
+<div class="box tip">
+  <div class="box-title">为什么 RAM MPRF 强制保留 EXE 寄存器？</div>
+  RAM 模块本身有一级读延迟。如果 IDU 到 EXU 不加寄存器，组合逻辑路径会走过 IDU 译码 + MPRF RAM 读访问 + IALU 运算，时序很难收敛。增加 <code>SCR1_NO_EXE_STAGE</code> 把 RAM 读延迟切分为独立流水级。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="eight-stages">第九课: 8 个功能阶段</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 的指令执行在 <strong>逻辑上</strong> 分为 8 个功能阶段（摘自官方 EAS 文档第 6.1 节），在实际硬件中被合并为 2/3/4 个物理流水级。</p>
+
+<table>
+<tr><th>#</th><th>功能阶段</th><th>实现模块</th><th>做什么</th></tr>
+<tr><td>1</td><td>指令请求</td><td>IFU</td><td>用 IMEM_ADDR 寄存器中的地址向指令存储器发起读请求</td></tr>
+<tr><td>2</td><td>指令接收</td><td>IFU</td><td>接收指令字，放入取指队列；处理跨边界未对齐 RVI 指令的拼接</td></tr>
+<tr><td>3</td><td>指令译码</td><td>IDU</td><td>解析指令字段（opcode/funct3/rd/rs1/rs2/imm），生成控制信号</td></tr>
+<tr><td>4</td><td>操作数获取</td><td>EXU(MPRF)</td><td>从通用寄存器文件读取 rs1 和 rs2 的值</td></tr>
+<tr><td>5</td><td>算术逻辑操作</td><td>EXU(IALU)</td><td>执行 ALU 运算：加减、逻辑、移位、乘法、除法</td></tr>
+<tr><td>6</td><td>加载/存储操作</td><td>EXU(LSU)</td><td>向数据存储器发起 LOAD/STORE 请求，等待响应</td></tr>
+<tr><td>7</td><td>指令流控制</td><td>EXU</td><td>判断分支/跳转/异常/中断/MRET/WFI/调试事件，生成新 PC</td></tr>
+<tr><td>8</td><td>写回</td><td>MPRF + CSR</td><td>将计算结果写入目的寄存器（GPR 或 CSR）</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">阶段 vs 物理流水级的区别</div>
+  功能阶段是逻辑概念，物理流水级是实际的寄存器边界。MIN 配置把 1-2-8 全部合并到同一级，MAX 配置用寄存器把它们隔开。关键是：无论几级流水，<strong>阶段 5-8 永远在 EXU 内部一起完成</strong>，这就是 SCR1 "无数据冲突" 的根本原因。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="pipeline-config">第十课: 2/3/4 级流水线的切换原理</h2>
+<!-- ============================================================ -->
+
+<h3>两个关键宏决定一切</h3>
+
+<table>
+<tr><th>配置</th><th>SCR1_NO_DEC_STAGE</th><th>SCR1_NO_EXE_STAGE</th><th>物理流水级</th></tr>
+<tr><td>2 级（MIN）</td><td style="background:#d4edda;text-align:center;">&#10003;</td><td style="background:#d4edda;text-align:center;">&#10003;</td><td>IFU | IDU+EXU（合并）</td></tr>
+<tr><td>3 级（BASE）</td><td style="background:#d4edda;text-align:center;">&#10003;</td><td style="background:#f8d7da;text-align:center;">&#10007;</td><td>IFU+IDU | EXU</td></tr>
+<tr><td>4 级（MAX）</td><td style="background:#f8d7da;text-align:center;">&#10007;</td><td style="background:#f8d7da;text-align:center;">&#10007;</td><td>IFU | IDU | EXU</td></tr>
+</table>
+
+<pre>
+<span class="cm">// scr1_arch_description.svh 中的配置切换</span>
+<span class="cm">// MIN (2级):</span>
+<span class="num">`define</span> SCR1_NO_DEC_STAGE      <span class="cm">// IFU 直接连 IDU，无中间寄存器</span>
+<span class="num">`define</span> SCR1_NO_EXE_STAGE      <span class="cm">// IDU 直接连 EXU，无中间寄存器</span>
+
+<span class="cm">// BASE (3级):</span>
+<span class="num">`define</span> SCR1_NO_DEC_STAGE      <span class="cm">// IFU-&gt;IDU 合并</span>
+<span class="cm">// `define SCR1_NO_EXE_STAGE   // IDU-&gt;EXU 保留寄存器（注释掉）</span>
+
+<span class="cm">// MAX (4级): 两个都注释掉</span>
+<span class="cm">// `define SCR1_NO_DEC_STAGE</span>
+<span class="cm">// `define SCR1_NO_EXE_STAGE</span></pre>
+
+<h3>各配置的指令延迟对比（以 LOAD 为例）</h3>
+
+<table>
+<tr><th>配置</th><th>LOAD 延迟</th><th>LOAD 吞吐量</th><th>MRET 延迟</th></tr>
+<tr><td>2 级</td><td>3 + DMEM 延迟</td><td>2 + DMEM 延迟</td><td>3</td></tr>
+<tr><td>3 级</td><td>4 + DMEM 延迟</td><td>2 + DMEM 延迟</td><td>4</td></tr>
+<tr><td>4 级</td><td>5 + DMEM 延迟</td><td>2 + DMEM 延迟</td><td>5</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">注意吞吐量不变</div>
+  增加流水级数增加的是 <strong>延迟</strong>（第一条指令从发起到完成的时间），但 <strong>吞吐量</strong>（连续多条指令的间距）基本不变。因为 SCR1 是顺序核心，流水级增加主要为了切分长组合逻辑路径以提高 fmax，而非提高 IPC。
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 10.5 - Module Dependency Graph -->
+<h2 id="dep-graph">第十课（补）: 模块依赖关系图</h2>
+<!-- ============================================================ -->
+
+<p>以下是有向依赖图，箭头表示"谁调用谁"（从调用方指向被调用方），即模块间的 valid/ready 握手或请求/响应通信方向。</p>
+
+<div class="dep-graph">
+模块依赖关系图 (调用方 → 被调用方)
+====================================
+
+   ┌────────────┐       ┌────────────┐       ┌──────────────┐
+   │   IFU      │──────→│   IDU      │──────→│    EXU       │
+   │  (取指)    │instr  │  (译码)    │cmd   │   (执行)     │
+   └─────┬──────┘       └────────────┘       └───┬──┬──┬───┘
+         │                                       │  │  │
+         │  pipe2imem_req                        │  │  │ exu2dmem_req
+         ↓                                       │  │  ↓
+   ┌────────────┐                                │  │  ┌────────────┐
+   │   IMEM     │                                │  │  │    DMEM    │
+   │  (外部)   │                                │  │  │  (外部)   │
+   └────────────┘                                │  │  └────────────┘
+                                                 │  │
+                              exu2mprf_* ┌───────┘  └──────┐ exu2csr_*
+                                         ↓                  ↓
+                                  ┌────────────┐    ┌────────────┐
+                                  │   MPRF     │    │    CSR     │
+                                  │ (寄存器文件)│    │ (控制状态) │
+                                  └────────────┘    └─────┬──────┘
+                                                          │
+                                          ┌───────────────┼───────────────┐
+                                          ↓               ↓               ↓
+                                   ┌────────────┐  ┌────────────┐  ┌────────────┐
+                                   │   IPIC     │  │    TDU     │  │    HDU     │
+                                   │ (中断控制) │  │ (断点触发) │  │ (调试单元) │
+                                   └────────────┘  └────────────┘  └────────────┘
+
+  控制流闭环:
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  EXU 决定 new_pc → 传回 IFU → IFU 取下一条指令                    │
+  │  EXU 决定 new_pc_req → IFU 刷新取指队列                          │
+  │  IDU 驱动 idu2ifu_rdy → IFU 反压（IDU 忙则暂停取指）              │
+  │  EXU 驱动 exu2idu_rdy → IDU 反压（EXU 忙则暂停译码）              │
+  └──────────────────────────────────────────────────────────────────┘
+
+  实例化层次（从顶层到叶模块）:
+  scr1_top_ahb.sv
+   ├── i_core_top (scr1_core_top.sv)
+   │    ├── i_scu (scr1_scu.sv)           — 仅在 SCR1_DBG_EN
+   │    ├── i_tapc (scr1_tapc.sv)         — 仅在 SCR1_DBG_EN
+   │    ├── i_dm (scr1_dm.sv)             — 仅在 SCR1_DBG_EN
+   │    ├── i_clk_ctrl (scr1_clk_ctrl.sv) — 仅在 SCR1_CLKCTRL_EN
+   │    └── i_pipe_top (scr1_pipe_top.sv)
+   │         ├── i_pipe_ifu
+   │         ├── i_pipe_idu
+   │         ├── i_pipe_exu
+   │         │    └── i_pipe_lsu (scr1_pipe_lsu.sv)
+   │         ├── i_pipe_mprf
+   │         ├── i_pipe_csr
+   │         ├── i_pipe_ipic              — 仅在 SCR1_IPIC_EN
+   │         ├── i_pipe_tdu               — 仅在 SCR1_TDU_EN
+   │         └── i_pipe_hdu               — 仅在 SCR1_DBG_EN
+   ├── i_tcm (scr1_tcm.sv)                — 仅在 SCR1_TCM_EN
+   ├── i_timer (scr1_timer.sv)
+   ├── i_imem_router (scr1_imem_router.sv)
+   ├── i_dmem_router (scr1_dmem_router.sv)
+   ├── i_imem_ahb (scr1_imem_ahb.sv)
+   └── i_dmem_ahb (scr1_dmem_ahb.sv)
+</div>
+
+<div class="box">
+  <div class="box-title">EXU 是流水线的核心枢纽</div>
+  EXU 是唯一同时连接 IFU（PC）、IDU（命令）、MPRF（寄存器）、CSR（控制）、LSU（访存）、DMEM（存储）、HDU（调试）、TDU（断点）的模块。理解 EXU 的数据通路就等于理解了整条流水线。
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 10.6 - Pipeline Timing Diagrams -->
+<h2 id="pipeline-timing">第十课（补二）: 流水线时序与寄存器放置</h2>
+<!-- ============================================================ -->
+
+<h3>2 级流水线（MIN）：IFU | IDU+EXU</h3>
+
+<p>IFU 和 IDU+EXU 在两个不同的物理流水级中。IDU、EXU、MPRF、CSR 在同一个周期内完成。DEC 和 EXE 寄存器都被旁路。</p>
+
+<div class="timing">
+周期     Cycle 0      Cycle 1      Cycle 2      Cycle 3
+      ───────────────────────────────────────────────────
+IFU    [取指 insn0]  [取指 insn1]  [取指 insn2]  [取指 insn3]
+       │
+       └── ifu2idu_instr ──┐ (无 DEC 寄存器，直接连线)
+                           ↓
+IDU/EXU                    [译码+执行 insn0]  [译码+执行 insn1]
+                             ├─ 读 MPRF
+                             ├─ IALU 运算
+                             ├─ LSU 访存
+                             ├─ PC 控制
+                             └─ 写回 MPRF
+
+关键: IDU和EXU之间没有寄存器隔开，指令在IDU译码的同时就开始在EXU中执行。
+DEC寄存器: SCR1_NO_DEC_STAGE = 定义 → 旁路
+EXE寄存器: SCR1_NO_EXE_STAGE = 定义 → 旁路</div>
+
+<h3>3 级流水线（BASE）：IFU+IDU | EXU</h3>
+
+<p>IFU 和 IDU 在同一个物理级，EXU 在下一级。DEC 寄存器被旁路，EXE 寄存器保留。</p>
+
+<div class="timing">
+周期     Cycle 0            Cycle 1            Cycle 2            Cycle 3
+      ────────────────────────────────────────────────────────────────────
+IFU/IDU [取指+译码 insn0]  [取指+译码 insn1]  [取指+译码 insn2]
+         │
+         └── idu2exu_cmd ──[EXE_REG]──┐ (EXE 寄存器延迟一拍)
+                                      ↓
+EXU                                   [执行 insn0]       [执行 insn1]
+                                        ├─ 读 MPRF
+                                        ├─ IALU 运算
+                                        ├─ LSU 访存
+                                        ├─ PC 控制
+                                        └─ 写回 MPRF
+
+关键: DEC 被旁路(IFU直接连IDU)，EXE 寄存器保留。
+DEC寄存器: SCR1_NO_DEC_STAGE = 定义 → 旁路
+EXE寄存器: SCR1_NO_EXE_STAGE = 未定义 → 保留</div>
+
+<h3>4 级流水线（MAX）：IFU | IDU | EXU</h3>
+
+<p>三个物理级各有一个模块。DEC 寄存器和 EXE 寄存器都保留。</p>
+
+<div class="timing">
+周期     Cycle 0      Cycle 1      Cycle 2      Cycle 3      Cycle 4
+      ───────────────────────────────────────────────────────────────
+IFU    [取指 insn0]  [取指 insn1]  [取指 insn2]  [取指 insn3]
+       │
+       └── ifu2idu_instr ──[DEC_REG]──┐ (DEC 寄存器延迟一拍)
+                                      ↓
+IDU                                   [译码 insn0]  [译码 insn1]  [译码 insn2]
+                                        │
+                                        └── idu2exu_cmd ──[EXE_REG]──┐
+                                                                     ↓
+EXU                                                                  [执行 insn0]  [执行 insn1]
+                                                                       ├─ 读 MPRF
+                                                                       ├─ IALU 运算
+                                                                       ├─ LSU 访存
+                                                                       ├─ PC 控制
+                                                                       └─ 写回 MPRF
+
+关键: DEC 和 EXE 寄存器都保留，三个模块各独立一级。
+DEC寄存器: SCR1_NO_DEC_STAGE = 未定义 → 保留
+EXE寄存器: SCR1_NO_EXE_STAGE = 未定义 → 保留</div>
+
+<h3>寄存器放置对 ifdef 的影响</h3>
+
+<table>
+<tr><th>宏</th><th>定义了</th><th>未定义</th></tr>
+<tr><td><code>SCR1_NO_DEC_STAGE</code></td><td>IFU 的输出直接连到 IDU 的输入（组合逻辑直通）</td><td>IFU→IDU 之间有寄存器级，<code>ifu2idu_instr</code> 延迟一拍</td></tr>
+<tr><td><code>SCR1_NO_EXE_STAGE</code></td><td>IDU 的输出直接连到 EXU 的输入；<code>idu2exu_use_rd</code> 和 <code>idu2exu_use_imm</code> 信号不声明</td><td>IDU→EXU 之间有寄存器级，<code>idu2exu_use_rd</code> 和 <code>idu2exu_use_imm</code> 参与寄存器打包</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="data-path">第十一课: 关键数据通路（一条 ADD 指令的旅程）</h2>
+<!-- ============================================================ -->
+
+<p>以 <code>add x5, x1, x2</code> 为例，追踪在 SCR1 各模块间的完整数据流：</p>
+
+<div class="data-path">
+  <div style="background:#e8f0fe;">PC<br><small style="font-weight:400;">0x200</small></div>
+  <span>&#8594;</span>
+  <div style="background:#fef7e0;">IFU<br><small style="font-weight:400;">发 IMEM 请求</small></div>
+  <span>&#8594;</span>
+  <div style="background:#e8f0fe;">IMEM<br><small style="font-weight:400;">返回指令字</small></div>
+  <span>&#8594;</span>
+  <div style="background:#fef7e0;">IFU<br><small style="font-weight:400;">取指队列</small></div>
+  <span>&#8594;</span>
+  <div style="background:#d4edda;">IDU<br><small style="font-weight:400;">译码为 EXU 命令</small></div>
+  <span>&#8594;</span>
+  <div style="background:#f8d7da;">EXU<br><small style="font-weight:400;">读 x1=5, x2=3</small></div>
+  <span>&#8594;</span>
+  <div style="background:#f8d7da;">IALU<br><small style="font-weight:400;">5+3=8</small></div>
+  <span>&#8594;</span>
+  <div style="background:#d4edda;">MPRF<br><small style="font-weight:400;">x5=8 写回</small></div>
+</div>
+
+<h3>每一步的模块职责</h3>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>IFU -- 取指</strong>：EXU 传来 <code>new_pc=0x200</code> &rarr; IFU 向 IMEM 发读请求 &rarr; 收到指令字 <code>0x002082B3</code>
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>IDU -- 译码</strong>：解析 <code>0x002082B3</code>：opcode=<code>0110011</code>(OP), funct3=<code>000</code>(ADD), rd=<code>x5</code>, rs1=<code>x1</code>, rs2=<code>x2</code> &rarr; 生成 <code>idu2exu_cmd</code> 结构体
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>EXU -- 执行</strong>：收到 <code>idu2exu_cmd</code> &rarr; 从 MPRF 读 <code>x1=5</code>、<code>x2=3</code> &rarr; IALU 输出 <code>5+3=8</code> &rarr; 写回 MPRF 的 <code>x5</code> 位置 &rarr; 新 PC <code>=0x204</code> 发给 IFU
+</div>
+
+<pre>
+<span class="cm">// ADD 指令的硬件路径（信号级追踪）</span>
+<span class="cm">// IFU &rarr; IDU:</span>
+ifu2idu_instr = <span class="num">32'h002082B3</span>   <span class="cm">// 从 IMEM 取到的指令字</span>
+ifu2idu_vd    = <span class="num">1'b1</span>              <span class="cm">// 有效标志</span>
+
+<span class="cm">// IDU &rarr; EXU:</span>
+idu2exu_cmd.ialu_cmd = SCR1_IALU_CMD_ADD  <span class="cm">// ALU 操作码</span>
+idu2exu_cmd.rs1_addr = <span class="num">5'd1</span>             <span class="cm">// 源寄存器 1</span>
+idu2exu_cmd.rs2_addr = <span class="num">5'd2</span>             <span class="cm">// 源寄存器 2</span>
+idu2exu_cmd.rd_addr  = <span class="num">5'd5</span>             <span class="cm">// 目标寄存器</span>
+
+<span class="cm">// MPRF &rarr; EXU (读取):</span>
+mprf2exu_rs1_data = <span class="num">32'd5</span>            <span class="cm">// x1 的值</span>
+mprf2exu_rs2_data = <span class="num">32'd3</span>            <span class="cm">// x2 的值</span>
+
+<span class="cm">// EXU &rarr; MPRF (写回):</span>
+exu2mprf_w_req  = <span class="num">1'b1</span>              <span class="cm">// 写请求</span>
+exu2mprf_rd_addr = <span class="num">5'd5</span>             <span class="cm">// 写回 x5</span>
+exu2mprf_rd_data = <span class="num">32'd8</span>            <span class="cm">// 5 + 3 = 8</span>
+
+<span class="cm">// EXU &rarr; IFU (新 PC):</span>
+new_pc_req = <span class="num">1'b1</span>                  <span class="cm">// 新 PC 请求</span>
+new_pc     = <span class="num">32'h204</span>               <span class="cm">// PC + 4</span></pre>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 11.5 - Signal Interface Between Pipeline Stages -->
+<h2 id="signal-interface">第十一课（补）: 流水级间信号接口详情</h2>
+<!-- ============================================================ -->
+
+<p>以下是 <code>scr1_pipe_top.sv</code> 中连接每个流水级模块的完整信号列表，按接口分组。</p>
+
+<h3>IFU → IDU 接口（4 个信号）</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>位宽</th><th>含义</th></tr>
+<tr><td><code>ifu2idu_vd</code></td><td>IFU→IDU</td><td>1</td><td>当前周期指令字有效</td></tr>
+<tr><td><code>ifu2idu_instr</code></td><td>IFU→IDU</td><td>32</td><td>指令字（RVI=32位, RVC=低16位有效）</td></tr>
+<tr><td><code>ifu2idu_imem_err</code></td><td>IFU→IDU</td><td>1</td><td>取指访问错误</td></tr>
+<tr><td><code>ifu2idu_err_rvi_hi</code></td><td>IFU→IDU</td><td>1</td><td>未对齐RVI指令后半字取指错误</td></tr>
+<tr><td><code>idu2ifu_rdy</code></td><td>IDU→IFU</td><td>1</td><td>IDU 就绪，可接收下一条指令</td></tr>
+</table>
+
+<pre>
+<span class="cm">// scr1_pipe_top.sv:329-335 -- IFU到IDU的连接</span>
+.i_pipe_ifu(
+    .idu2ifu_rdy_i            (idu2ifu_rdy        ),
+    .ifu2idu_instr_o          (ifu2idu_instr      ),
+    .ifu2idu_imem_err_o       (ifu2idu_imem_err   ),
+    .ifu2idu_err_rvi_hi_o     (ifu2idu_err_rvi_hi ),
+    .ifu2idu_vd_o             (ifu2idu_vd         )
+);
+
+.i_pipe_idu(
+    .ifu2idu_instr_i          (ifu2idu_instr      ),
+    .ifu2idu_imem_err_i       (ifu2idu_imem_err   ),
+    .ifu2idu_err_rvi_hi_i     (ifu2idu_err_rvi_hi ),
+    .ifu2idu_vd_i             (ifu2idu_vd         ),
+    .idu2ifu_rdy_o            (idu2ifu_rdy        )
+);</pre>
+
+<h3>IDU → EXU 接口（6+2 个信号）</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>位宽</th><th>含义</th></tr>
+<tr><td><code>idu2exu_req</code></td><td>IDU→EXU</td><td>1</td><td>IDU 译码完成，EXU 命令有效</td></tr>
+<tr><td><code>idu2exu_cmd</code></td><td>IDU→EXU</td><td>struct</td><td>18字段的完整EXU命令结构体（见下文）</td></tr>
+<tr><td><code>idu2exu_use_rs1</code></td><td>IDU→EXU</td><td>1</td><td>指令使用源寄存器1</td></tr>
+<tr><td><code>idu2exu_use_rs2</code></td><td>IDU→EXU</td><td>1</td><td>指令使用源寄存器2</td></tr>
+<tr><td><code>idu2exu_use_rd</code>*</td><td>IDU→EXU</td><td>1</td><td>指令使用目的寄存器（仅EXE寄存器存在时）</td></tr>
+<tr><td><code>idu2exu_use_imm</code>*</td><td>IDU→EXU</td><td>1</td><td>指令使用立即数（仅EXE寄存器存在时）</td></tr>
+<tr><td><code>exu2idu_rdy</code></td><td>EXU→IDU</td><td>1</td><td>EXU 就绪，可接收下一条命令</td></tr>
+</table>
+
+<p>* 当 <code>SCR1_NO_EXE_STAGE</code> 定义时，<code>idu2exu_use_rd</code> 和 <code>idu2exu_use_imm</code> 不存在于 IDU 输出端口中 -- 它们随着 EXE 寄存器的移除被直接吸收进 EXU。</p>
+
+<h3>EXU ↔ MPRF 接口（7 个信号）</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>位宽</th><th>含义</th></tr>
+<tr><td><code>exu2mprf_rs1_addr</code></td><td>EXU→MPRF</td><td>4/5</td><td>源寄存器 1 读地址</td></tr>
+<tr><td><code>mprf2exu_rs1_data</code></td><td>MPRF→EXU</td><td>32</td><td>源寄存器 1 读数据</td></tr>
+<tr><td><code>exu2mprf_rs2_addr</code></td><td>EXU→MPRF</td><td>4/5</td><td>源寄存器 2 读地址</td></tr>
+<tr><td><code>mprf2exu_rs2_data</code></td><td>MPRF→EXU</td><td>32</td><td>源寄存器 2 读数据</td></tr>
+<tr><td><code>exu2mprf_w_req</code></td><td>EXU→MPRF</td><td>1</td><td>写请求（写使能）</td></tr>
+<tr><td><code>exu2mprf_rd_addr</code></td><td>EXU→MPRF</td><td>4/5</td><td>目的寄存器写地址</td></tr>
+<tr><td><code>exu2mprf_rd_data</code></td><td>EXU→MPRF</td><td>32</td><td>目的寄存器写数据</td></tr>
+</table>
+
+<p>MPRF 地址宽度：<code>SCR1_MPRF_AWIDTH</code> = 4 (RV32E, 16个寄存器) 或 5 (RV32I, 32个寄存器)。x0 硬连线为 0，写被忽略。</p>
+
+<h3>EXU ↔ CSR 接口（10 个信号 + 8 个事件信号）</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>含义</th></tr>
+<tr><td><code>exu2csr_rw_addr</code></td><td>EXU→CSR</td><td>CSR 读写地址（12 位）</td></tr>
+<tr><td><code>exu2csr_r_req</code></td><td>EXU→CSR</td><td>CSR 读请求</td></tr>
+<tr><td><code>csr2exu_r_data</code></td><td>CSR→EXU</td><td>CSR 读数据</td></tr>
+<tr><td><code>exu2csr_w_req</code></td><td>EXU→CSR</td><td>CSR 写请求</td></tr>
+<tr><td><code>exu2csr_w_cmd</code></td><td>EXU→CSR</td><td>写命令（WRITE/SET/CLEAR）</td></tr>
+<tr><td><code>exu2csr_w_data</code></td><td>EXU→CSR</td><td>CSR 写数据</td></tr>
+<tr><td><code>csr2exu_rw_exc</code></td><td>CSR→EXU</td><td>CSR 访问异常</td></tr>
+<tr><td colspan="3"><strong>事件接口:</strong></td></tr>
+<tr><td><code>exu2csr_take_irq</code></td><td>EXU→CSR</td><td>触发中断陷阱</td></tr>
+<tr><td><code>exu2csr_take_exc</code></td><td>EXU→CSR</td><td>触发异常陷阱</td></tr>
+<tr><td><code>exu2csr_exc_code</code></td><td>EXU→CSR</td><td>异常编码（0=非法指令, 1=取指错误等）</td></tr>
+<tr><td><code>exu2csr_trap_val</code></td><td>EXU→CSR</td><td>陷阱值（写入 mtval）</td></tr>
+<tr><td><code>csr2exu_new_pc</code></td><td>CSR→EXU</td><td>CSR 决定的新 PC（mtvec / mepc）</td></tr>
+<tr><td><code>csr2exu_irq</code></td><td>CSR→EXU</td><td>挂起的中断请求</td></tr>
+<tr><td><code>csr2exu_ip_ie</code></td><td>CSR→EXU</td><td>中断挂起且全局使能</td></tr>
+</table>
+
+<h3>EXU ↔ IFU (PC 控制接口，3 个信号)</h3>
+
+<table>
+<tr><th>信号名</th><th>方向</th><th>含义</th></tr>
+<tr><td><code>exu2pipe_pc_curr_o</code> (<code>curr_pc</code>)</td><td>EXU→IFU/CSR</td><td>当前正在执行的指令 PC</td></tr>
+<tr><td><code>exu2csr_pc_next_o</code> (<code>next_pc</code>)</td><td>EXU→CSR</td><td>下一条指令的 PC（异常时写入 mepc）</td></tr>
+<tr><td><code>exu2ifu_pc_new_req_o</code> (<code>new_pc_req</code>)</td><td>EXU→IFU</td><td>新 PC 请求有效</td></tr>
+<tr><td><code>exu2ifu_pc_new_o</code> (<code>new_pc</code>)</td><td>EXU→IFU</td><td>新 PC 值</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">三条 PC 环路的完整路径</div>
+  <ol style="margin:8px 0 0;">
+    <li><strong>正常递增</strong>: EXU(curr_pc + 4) → new_pc → IFU.IMEM_ADDR → IMEM → ifu2idu_instr → IDU → EXU</li>
+    <li><strong>分支/跳转</strong>: EXU(分支目标地址) → new_pc → IFU（刷新取指队列） → 从新地址取指</li>
+    <li><strong>异常/中断/MRET</strong>: EXU(触发事件) → CSR(mtvec/mepc) → csr2exu_new_pc → EXU → new_pc → IFU</li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="module-roles">第十二课: 七大模块角色速览</h2>
+<!-- ============================================================ -->
+
+<table>
+<tr><th>模块</th><th>源码文件</th><th>一句话职责</th><th>关键输出</th></tr>
+<tr><td>IFU</td><td><code>scr1_pipe_ifu.sv</code></td><td>从 IMEM 取指令，管理 PC 地址</td><td>指令字 + 有效标志</td></tr>
+<tr><td>IDU</td><td><code>scr1_pipe_idu.sv</code></td><td>解析指令字节，生成控制信号</td><td>EXU 命令结构体</td></tr>
+<tr><td>EXU</td><td><code>scr1_pipe_exu.sv</code></td><td>指令执行 + PC 控制 + 异常判断</td><td>新 PC、异常请求、计算结果</td></tr>
+<tr><td>MPRF</td><td><code>scr1_pipe_mprf.sv</code></td><td>32/16 个通用寄存器的存储</td><td>rs1/rs2 读数据</td></tr>
+<tr><td>CSR</td><td><code>scr1_pipe_csr.sv</code></td><td>M-mode CSR + 事件处理 + 新 PC</td><td>CSR 读数据、异常/中断新 PC</td></tr>
+<tr><td>LSU</td><td><code>scr1_pipe_lsu.sv</code></td><td>LOAD/STORE 访存，连 DMEM</td><td>DMEM 请求/写数据</td></tr>
+<tr><td>IPIC</td><td><code>scr1_ipic.sv</code></td><td>16 路 IRQ 仲裁与管理</td><td>中断请求</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">LSU 的特殊性</div>
+  LSU 是在 EXU 内部实例化的（<code>scr1_pipe_exu.sv</code> 中有 <code>scr1_pipe_lsu i_lsu</code>），但功能上它是一个独立的流水级子模块。EXU 只是把 LSU 的 DMEM 信号透传到 <code>scr1_pipe_top</code> 端口。
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 12.5 - MPRF ↔ EXU 18-field Command Structure -->
+<h2 id="mprf-exu-cmd">第十二课（补）: MPRF 与 EXU 的 18 字段命令结构</h2>
+<!-- ============================================================ -->
+
+<p>IDU 译码后，将指令的全部信息打包为一个 <code>type_scr1_exu_cmd_s</code> 结构体（定义在 <code>scr1_riscv_isa_decoding.svh:161-182</code>），通过 <code>idu2exu_cmd</code> 信号传给 EXU。这个结构体包含 EXU 执行一条指令所需的全部控制信息。</p>
+
+<h3>18 字段详解</h3>
+
+<table class="field-table">
+<tr><th>#</th><th>字段名</th><th>类型</th><th>含义</th><th>示例值</th></tr>
+<tr><td>1</td><td><code>instr_rvc</code></td><td>logic</td><td>指令是否是 16 位压缩指令</td><td>1'b0 (RVI) / 1'b1 (RVC)</td></tr>
+<tr><td>2</td><td><code>ialu_op</code></td><td>enum</td><td>IALU 操作数来源：REG_IMM(rs1+imm) 或 REG_REG(rs1+rs2)</td><td>SCR1_IALU_OP_REG_REG</td></tr>
+<tr><td>3</td><td><code>ialu_cmd</code></td><td>enum</td><td>IALU 运算命令：ADD/SUB/AND/OR/XOR/SLL/MUL 等 15~23 种</td><td>SCR1_IALU_CMD_ADD</td></tr>
+<tr><td>4</td><td><code>sum2_op</code></td><td>enum</td><td>SUM2 操作数：PC_IMM(AUIPC/分支) 或 REG_IMM(JALR/访存地址)</td><td>SCR1_SUM2_OP_PC_IMM</td></tr>
+<tr><td>5</td><td><code>lsu_cmd</code></td><td>enum</td><td>LSU 命令：LB/LH/LW/LBU/LHU/SB/SH/SW/NONE</td><td>SCR1_LSU_CMD_NONE</td></tr>
+<tr><td>6</td><td><code>csr_op</code></td><td>enum</td><td>CSR 操作类型：CSR_OP_IMM(CSRRW/CSRRS/CSRRC) 或 CSR_OP_REG</td><td>SCR1_CSR_OP_IMM</td></tr>
+<tr><td>7</td><td><code>csr_cmd</code></td><td>enum</td><td>CSR 写命令：WRITE/SET/CLEAR/NONE</td><td>SCR1_CSR_CMD_WRITE</td></tr>
+<tr><td>8</td><td><code>rd_wb_sel</code></td><td>enum</td><td>目的寄存器写回源选择：IALU/SUM2/IMM/INC_PC/LSU/CSR/NONE</td><td>SCR1_RD_WB_IALU</td></tr>
+<tr><td>9</td><td><code>jump_req</code></td><td>logic</td><td>是否需要无条件跳转（JAL/JALR）</td><td>1'b0</td></tr>
+<tr><td>10</td><td><code>branch_req</code></td><td>logic</td><td>是否需要条件分支（BEQ/BNE/BLT 等）</td><td>1'b0</td></tr>
+<tr><td>11</td><td><code>mret_req</code></td><td>logic</td><td>是否是 MRET 指令</td><td>1'b0</td></tr>
+<tr><td>12</td><td><code>fencei_req</code></td><td>logic</td><td>是否是 FENCE.I 指令</td><td>1'b0</td></tr>
+<tr><td>13</td><td><code>wfi_req</code></td><td>logic</td><td>是否是 WFI 指令</td><td>1'b0</td></tr>
+<tr><td>14</td><td><code>rs1_addr</code></td><td>logic [4:0]</td><td>源寄存器 1 地址（5位）</td><td>5'd1 (x1)</td></tr>
+<tr><td>15</td><td><code>rs2_addr</code></td><td>logic [4:0]</td><td>源寄存器 2 地址（5位）</td><td>5'd2 (x2)</td></tr>
+<tr><td>16</td><td><code>rd_addr</code></td><td>logic [4:0]</td><td>目的寄存器地址（5位）</td><td>5'd5 (x5)</td></tr>
+<tr><td>17</td><td><code>imm</code></td><td>logic [31:0]</td><td>32 位立即数（已符号扩展到 32 位）</td><td>32'd0（ADD 不用立即数）</td></tr>
+<tr><td>18</td><td><code>exc_req + exc_code</code></td><td>logic + enum</td><td>是否需要触发异常 + 异常代码</td><td>1'b0, 4'd0</td></tr>
+</table>
+
+<h3>rd_wb_sel 的 7 种写回源</h3>
+
+<table>
+<tr><th>枚举值</th><th>写回数据来源</th><th>典型指令</th></tr>
+<tr><td><code>SCR1_RD_WB_IALU</code></td><td>IALU 主结果（op1 op op2）</td><td>ADD, SUB, AND, OR, MUL, DIV</td></tr>
+<tr><td><code>SCR1_RD_WB_SUM2</code></td><td>SUM2 加法器结果</td><td>AUIPC, LOAD/STORE 地址生成</td></tr>
+<tr><td><code>SCR1_RD_WB_IMM</code></td><td>立即数直通</td><td>LUI</td></tr>
+<tr><td><code>SCR1_RD_WB_INC_PC</code></td><td>PC+4</td><td>JAL, JALR（保存返回地址）</td></tr>
+<tr><td><code>SCR1_RD_WB_LSU</code></td><td>LSU 从 DMEM 读回的数据</td><td>LW, LH, LB, LBU, LHU</td></tr>
+<tr><td><code>SCR1_RD_WB_CSR</code></td><td>CSR 寄存器读回的数据</td><td>CSRRW, CSRRS, CSRRC</td></tr>
+<tr><td><code>SCR1_RD_WB_NONE</code></td><td>不写回</td><td>STORE, BRANCH, FENCE, ECALL, EBREAK</td></tr>
+</table>
+
+<h3>以 ADD 指令为例</h3>
+
+<pre>
+<span class="cm">// add x5, x1, x2 → idu2exu_cmd 各字段的填充值:</span>
+idu2exu_cmd = '{
+    instr_rvc:  <span class="num">1'b0</span>,
+    ialu_op:    SCR1_IALU_OP_REG_REG,   <span class="cm">// rs1 + rs2</span>
+    ialu_cmd:   SCR1_IALU_CMD_ADD,      <span class="cm">// 加法</span>
+    sum2_op:    SCR1_SUM2_OP_REG_IMM,   <span class="cm">// 默认值（不关心）</span>
+    lsu_cmd:    SCR1_LSU_CMD_NONE,      <span class="cm">// 不访存</span>
+    csr_op:     SCR1_CSR_OP_IMM,        <span class="cm">// 默认值（不关心）</span>
+    csr_cmd:    SCR1_CSR_CMD_NONE,      <span class="cm">// 不写 CSR</span>
+    rd_wb_sel:  SCR1_RD_WB_IALU,        <span class="cm">// 写回 IALU 结果</span>
+    jump_req:   <span class="num">1'b0</span>,
+    branch_req: <span class="num">1'b0</span>,
+    mret_req:   <span class="num">1'b0</span>,
+    fencei_req: <span class="num">1'b0</span>,
+    wfi_req:    <span class="num">1'b0</span>,
+    rs1_addr:   <span class="num">5'd1</span>,                   <span class="cm">// x1</span>
+    rs2_addr:   <span class="num">5'd2</span>,                   <span class="cm">// x2</span>
+    rd_addr:    <span class="num">5'd5</span>,                   <span class="cm">// x5</span>
+    imm:        <span class="num">32'd0</span>,                   <span class="cm">// 不使用</span>
+    exc_req:    <span class="num">1'b0</span>,
+    exc_code:   <span class="num">4'd0</span>
+};</pre>
+
+<div class="box">
+  <div class="box-title">命令结构体如何在 EXU 中驱动执行</div>
+  EXU 收到 <code>idu2exu_cmd</code> 后做三件事并行执行：
+  <ol style="margin:8px 0 0;">
+    <li>将 <code>rs1_addr</code>/<code>rs2_addr</code> 发给 MPRF 读端口，下周期收到 <code>mprf2exu_rs1_data</code>/<code>mprf2exu_rs2_data</code></li>
+    <li>将 <code>ialu_cmd</code>/<code>ialu_op</code> 送给 IALU，选择操作数和运算函数</li>
+    <li>根据 <code>rd_wb_sel</code> 选择写回 MPRF 的数据源（wdata mux），通过 <code>exu2mprf_w_req</code> + <code>exu2mprf_rd_data</code> 写回</li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="config-opts">第十三课: 可配置选项全景</h2>
+<!-- ============================================================ -->
+
+<h3>RISC-V ISA 选项</h3>
+
+<table>
+<tr><th>宏</th><th>默认</th><th>效果</th></tr>
+<tr><td><code>SCR1_RVE_EXT</code></td><td>关闭</td><td>RV32E：指令集不变，GPR 从 32 个减为 16 个</td></tr>
+<tr><td><code>SCR1_RVM_EXT</code></td><td>关闭</td><td>8 条 M 扩展指令（MUL/DIV/REM 等）硬件实现</td></tr>
+<tr><td><code>SCR1_RVC_EXT</code></td><td>关闭</td><td>27 条 16 位压缩指令，提升代码密度</td></tr>
+<tr><td><code>SCR1_MTVEC_BASE_WR_BITS</code></td><td>0</td><td>陷阱向量基址可写位数（0=全硬连线，26=全可写）</td></tr>
+<tr><td><code>SCR1_MTVEC_MODE_EN</code></td><td>关闭</td><td>允许 Vectored 中断模式</td></tr>
+</table>
+
+<h3>流水线优化选项</h3>
+
+<table>
+<tr><th>宏</th><th>默认</th><th>效果</th></tr>
+<tr><td><code>SCR1_NO_DEC_STAGE</code></td><td>定义</td><td>去掉 IFU&rarr;IDU 寄存器级</td></tr>
+<tr><td><code>SCR1_NO_EXE_STAGE</code></td><td>定义</td><td>去掉 IDU&rarr;EXU 寄存器级</td></tr>
+<tr><td><code>SCR1_NEW_PC_REG</code></td><td>关闭</td><td>新 PC 加一级寄存器（以频率换跳转惩罚）</td></tr>
+<tr><td><code>SCR1_FAST_MUL</code></td><td>关闭</td><td>用组合逻辑实现单周期乘法（面积换速度）</td></tr>
+<tr><td><code>SCR1_CLKCTRL_EN</code></td><td>关闭</td><td>WFI 时门控流水线时钟</td></tr>
+</table>
+
+<h3>可选子系统</h3>
+
+<table>
+<tr><th>宏</th><th>默认</th><th>效果</th></tr>
+<tr><td><code>SCR1_DBG_EN</code></td><td>关闭</td><td>JTAG 调试：TAPC + DM + HDU + SCU</td></tr>
+<tr><td><code>SCR1_TDU_EN</code></td><td>关闭</td><td>硬件断点/触发器（依赖 SCR1_DBG_EN）</td></tr>
+<tr><td><code>SCR1_IPIC_EN</code></td><td>关闭</td><td>16 路可编程中断控制器</td></tr>
+<tr><td><code>SCR1_MCOUNTEN_EN</code></td><td>关闭</td><td>计数器使能/禁用 CSR（0x7E0）</td></tr>
+</table>
+
+<h3>集成选项（地址常量）</h3>
+
+<table>
+<tr><th>宏</th><th>默认值</th><th>含义</th></tr>
+<tr><td><code>SCR1_ARCH_RST_VECTOR</code></td><td><code>0x200</code></td><td>复位后第一条指令的地址</td></tr>
+<tr><td><code>SCR1_ARCH_MTVEC_BASE</code></td><td><code>0x1C0</code></td><td>陷阱向量基址复位值</td></tr>
+<tr><td><code>SCR1_TCM_ADDR_MASK</code></td><td><code>0xFFFF0000</code></td><td>TCM 地址掩码（决定大小 = ~MASK + 1）</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="bus-if">第十四课: 外部总线接口</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 提供两种外部总线封装，在 <code>src/top/</code> 目录中实现，面向不同的 SoC 集成场景：</p>
+
+<table>
+<tr><th>特性</th><th>AHB-Lite</th><th>AXI4</th></tr>
+<tr><td>复杂度</td><td>低（2 通道）</td><td>高（5 通道）</td></tr>
+<tr><td>吞吐量</td><td>每周期 1 次传输</td><td>支持乱序、突发传输</td></tr>
+<tr><td>适用场景</td><td>简单 MCU SoC</td><td>高性能嵌入式 SoC</td></tr>
+<tr><td>源码</td><td><code>src/top/scr1_top_ahb.sv</code></td><td><code>src/top/scr1_top_axi.sv</code></td></tr>
+<tr><td>文件清单</td><td><code>src/ahb_top.files</code></td><td><code>src/axi_top.files</code></td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">总线桥接旁路选项</div>
+  通过 <code>SCR1_IMEM_AHB_IN_BP</code> / <code>SCR1_DMEM_AXI_RESP_BP</code> 等 8 个旁路宏，可以去掉总线桥接中的缓冲寄存器级，进一步降低访存延迟（代价是降低 fmax）。
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 14.5 - Memory Map -->
+<h2 id="memory-map">第十四课（补）: SCR1 内存映射</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 通过 <code>scr1_dmem_router</code> 和 <code>scr1_imem_router</code> 将 32 位地址空间中的不同区域路由到不同外设。以下是默认内存映射：</p>
+
+<h3>地址空间分配</h3>
+
+<table>
+<tr><th>地址范围</th><th>设备</th><th>接口</th><th>宏/常量</th></tr>
+<tr><td><code>0x00480000 ~ 0x0048FFFF</code></td><td>TCM（指令+数据）</td><td>DMEM 路由器 Port1 + IMEM 路由器 Port1</td><td><code>SCR1_TCM_ADDR_PATTERN=0x00480000</code><br><code>SCR1_TCM_ADDR_MASK=0xFFFF0000</code></td></tr>
+<tr><td><code>0x00490000 ~ 0x0049001F</code></td><td>Timer（内存映射定时器）</td><td>DMEM 路由器 Port2</td><td><code>SCR1_TIMER_ADDR_PATTERN=0x00490000</code><br><code>SCR1_TIMER_ADDR_MASK=0xFFFFFFE0</code></td></tr>
+<tr><td><code>0x00000200</code></td><td>复位向量（第一条指令）</td><td>IMEM</td><td><code>SCR1_ARCH_RST_VECTOR=0x200</code></td></tr>
+<tr><td><code>0x000001C0</code></td><td>陷阱向量基址（默认）</td><td>CSR mtvec.base 复位值</td><td><code>SCR1_ARCH_MTVEC_BASE=0x1C0</code></td></tr>
+<tr><td>其他地址</td><td>外部 AHB/AXI 总线</td><td>DMEM/IMEM 路由器 Port0</td><td>所有不匹配 TCM/Timer 的地址</td></tr>
+</table>
+
+<h3>TCM 地址匹配逻辑（源码级）</h3>
+
+<pre>
+<span class="cm">// TCM 大小 = ~SCR1_TCM_ADDR_MASK + 1 = 0x10000 = 64KB</span>
+<span class="cm">// 地址匹配: (addr & MASK) == PATTERN</span>
+<span class="cm">// 即 (addr[31:16] == 16'h0048)</span>
+
+<span class="cm">// scr1_top_ahb.sv:289-291 -- TCM 实例化时计算大小</span>
+scr1_tcm <span class="kw">#</span>(
+    .SCR1_TCM_SIZE  (`SCR1_DMEM_AWIDTH'(~SCR1_TCM_ADDR_MASK + <span class="num">1'b1</span>))
+) i_tcm (...);
+
+<span class="cm">// Timer 地址匹配: (addr & 0xFFFFFFE0) == 0x00490000</span>
+<span class="cm">// Timer 占用 32 字节地址空间 (0x00490000 ~ 0x0049001F)</span></pre>
+
+<h3>DMEM 路由器三端口调度</h3>
+
+<div class="dep-graph">
+  DMEM 路由器优先级: Port2(Timer) > Port1(TCM) > Port0(AHB/AXI)
+
+  core_dmem_*  ──→ ┌──────────────────┐
+                    │  scr1_dmem_router │
+                    │                   │──→ Port0: AHB/AXI bridge (外部设备)
+                    │  端口仲裁        │──→ Port1: TCM (紧耦合存储器)
+                    │  (固定优先级)    │──→ Port2: Timer (内存映射定时器)
+                    └──────────────────┘
+</div>
+
+<h3>IMEM 路由器双端口调度</h3>
+
+<div class="dep-graph">
+  IMEM 路由器: TCM 优先，外部 AHB 兜底
+
+  core_imem_*  ──→ ┌──────────────────┐
+                    │ scr1_imem_router  │
+                    │                   │──→ Port0: AHB bridge (外部IMEM)
+                    │  Port1 > Port0    │──→ Port1: TCM (片上IMEM)
+                    └──────────────────┘
+
+  当 TCM_EN 使能时，若取指地址落在 TCM 范围，走 Port1；
+  否则走 Port0 到外部 AHB 总线取指。
+</div>
+
+<div class="box tip">
+  <div class="box-title">仿真专用地址</div>
+  测试平台中还有三个特殊地址（定义在 scr1_arch_description.svh:210-213）：
+  <ul style="margin:8px 0 0;">
+    <li><code>SCR1_SIM_EXIT_ADDR = 0x000000F8</code> -- 写入此地址触发仿真退出</li>
+    <li><code>SCR1_SIM_PRINT_ADDR = 0xF0000000</code> -- 写入此地址打印到仿真日志</li>
+    <li><code>SCR1_SIM_EXT_IRQ_ADDR = 0xF0000100</code> -- 写入触发外部中断</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- NEW: Lesson 14.6 - Clock and Reset Architecture -->
+<h2 id="clk-rst">第十四课（补二）: 时钟与复位架构</h2>
+<!-- ============================================================ -->
+
+<h3>时钟树</h3>
+
+<p>SCR1 使用统一的系统时钟 <code>clk</code>，但通过 <code>scr1_clk_ctrl</code> 模块（仅在 <code>SCR1_CLKCTRL_EN</code> 使能时）产生门控时钟 <code>clk_pipe</code>。调试子系统使用独立的不门控时钟 <code>clk_dbgc</code>。</p>
+
+<h3>scr1_clk_ctrl 模块（src/core/scr1_clk_ctrl.sv）</h3>
+
+<pre>
+<span class="cm">// 时钟控制器输出 4 路时钟/控制信号</span>
+<span class="kw">assign</span> clkctl2pipe_clk_alw_on_o = clk;           <span class="cm">// 始终运行: 给 IPIC 和 CSR 计数器</span>
+<span class="kw">assign</span> clkctl2pipe_clk_dbgc_o   = clk;           <span class="cm">// 调试时钟: 给 HDU</span>
+
+<span class="cm">// clk_pipe_en 状态机 (scr1_clk_ctrl.sv:30-44):</span>
+<span class="kw">always_ff</span> @(posedge clk, negedge ctrl_rst_n) begin
+    <span class="kw">if</span> (~ctrl_rst_n) begin
+        clkctl2pipe_clk_en_o &lt;= <span class="num">1'b1</span>;              <span class="cm">// 复位后时钟使能</span>
+    <span class="kw">end else begin</span>
+        <span class="kw">if</span> (clkctl2pipe_clk_en_o) begin
+            <span class="cm">// 当前时钟开着: 仅当 sleep_req 有效且 wake_req 无效时关断</span>
+            <span class="kw">if</span> (pipe2clkctl_sleep_req_i &amp; ~pipe2clkctl_wake_req_i) begin
+                clkctl2pipe_clk_en_o &lt;= <span class="num">1'b0</span>;
+            <span class="kw">end</span>
+        <span class="kw">end else begin</span>
+            <span class="cm">// 当前时钟关着: wake_req 有效即恢复</span>
+            <span class="kw">if</span> (pipe2clkctl_wake_req_i) begin
+                clkctl2pipe_clk_en_o &lt;= <span class="num">1'b1</span>;
+            <span class="kw">end</span>
+        <span class="kw">end</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="cm">// 时钟门控单元</span>
+scr1_cg i_scr1_cg_pipe (
+    .clk        (clk                 ),
+    .clk_en     (clkctl2pipe_clk_en_o),
+    .test_mode  (test_mode           ),
+    .clk_out    (clkctl2pipe_clk_o   )     <span class="cm">// → clk_pipe</span>
+);</pre>
+
+<h3>睡眠/唤醒机制</h3>
+
+<table>
+<tr><th>信号</th><th>来源</th><th>含义</th></tr>
+<tr><td><code>pipe2clkctl_sleep_req_o</code></td><td>pipe_top</td><td>WFI 已暂停 + 无待处理 IMEM 事务 → 请求关断时钟</td></tr>
+<tr><td><code>pipe2clkctl_wake_req_o</code></td><td>pipe_top</td><td>有挂起中断且全局使能 → 请求恢复时钟</td></tr>
+<tr><td><code>clkctl2pipe_clk_alw_on_i</code></td><td>clk_ctrl</td><td>始终运行的时钟（给 IPIC / CSR 计数器）</td></tr>
+<tr><td><code>clkctl2pipe_clk_en_i</code></td><td>clk_ctrl</td><td>当前时钟是开着的标志（给 EXU 判断）</td></tr>
+<tr><td><code>clkctl2pipe_clk_dbgc_i</code></td><td>clk_ctrl</td><td>调试时钟（给 HDU）</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">WFI 到时钟关断的完整流程</div>
+  <ol style="margin:8px 0 0;">
+    <li>EXU 执行 WFI 指令 → <code>wfi_run2halt</code> 拉高</li>
+    <li>pipe_top 中 WFI 暂停状态机进入 halted → <code>wfi_halted=1</code></li>
+    <li>当所有待处理 IMEM 事务完成 → <code>imem_txns_pending=0</code></li>
+    <li><code>pipe2clkctl_sleep_req = wfi_halted & ~imem_txns_pending</code> → 发给 clk_ctrl</li>
+    <li>clk_ctrl 在下一个周期关断 <code>clk_pipe_en</code> → <code>clk_pipe</code> 停止翻转</li>
+    <li>中断到达 → CSR 检测 <code>ip_ie</code> → <code>pipe2clkctl_wake_req</code> → clk_ctrl 恢复时钟</li>
+  </ol>
+</div>
+
+<h3>复位架构（src/core/primitives/scr1_reset_cells.sv）</h3>
+
+<p>SCR1 定义了 6 种复位处理原语，在 <code>scr1_core_top.sv</code> 和 <code>scr1_top_ahb.sv</code> 中被实例化使用：</p>
+
+<table>
+<tr><th>原语模块</th><th>功能</th><th>使用场景</th></tr>
+<tr><td><code>scr1_reset_sync_cell</code></td><td>复位同步器（可配级数 STAGES_AMOUNT），消除亚稳态</td><td>顶层复位输入同步（2 级）</td></tr>
+<tr><td><code>scr1_reset_buf_cell</code></td><td>复位缓冲器：寄存器打拍 + 状态输出 + test_mode 支持</td><td>复位输出缓冲、qualifier 适配</td></tr>
+<tr><td><code>scr1_reset_qlfy_adapter_cell_sync</code></td><td>复位限定适配器：前级同步 + 缓冲输出 + RDC 限定器</td><td>无调试时的 core_rst_n 生成</td></tr>
+<tr><td><code>scr1_data_sync_cell</code></td><td>数据同步器（可配级数）</td><td>跨复位域状态信号同步</td></tr>
+<tr><td><code>scr1_reset_and2_cell</code></td><td>双输入复位与门</td><td>TAPC 复位 = trst_n & pwrup_rst_n</td></tr>
+<tr><td><code>scr1_reset_and3_cell</code></td><td>三输入复位与门</td><td>SCU 内部多源复位组合</td></tr>
+<tr><td><code>scr1_reset_mux2_cell</code></td><td>二选一复位多路器</td><td>调试复位源切换</td></tr>
+</table>
+
+<h3>两种复位策略</h3>
+
+<div class="timing">
+有调试 (SCR1_DBG_EN) -- SCU 集中管理:
+  pwrup_rst_n ─┐
+  rst_n       ─┤                     ┌─ core_rst_n  (流水线)
+  cpu_rst_n   ─┤→ scr1_scu → 多级 ──┼─ sys_rst_n   (系统复位输出)
+  ndm_rst_n   ─┤    (SCU)    复位链 ─┼─ dm_rst_n    (调试模块)
+  hart_rst_n  ─┘                     └─ hdu_rst_n   (硬件调试单元)
+
+无调试 -- 两级同步器:
+  rst_n & cpu_rst_n → scr1_reset_qlfy_adapter_cell_sync → core_rst_n
+                       (前级同步 + 缓冲 + RDC限定器)
+                          ↓
+                       scr1_data_sync_cell → core_rst_status</div>
+
+<div class="box warn">
+  <div class="box-title">所有复位单元的关键特性</div>
+  <ul style="margin:8px 0 0;">
+    <li>全部支持 <code>test_mode</code> + <code>test_rst_n</code> DFT 测试模式</li>
+    <li>异步复位（negedge rst_n）、同步释放（posedge clk）</li>
+    <li>复位同步器默认 2 级触发器（可配置 STAGES_AMOUNT）</li>
+    <li>复位输出在 DFT 模式下 bypass 到 test_rst_n</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="exercise">第十五课: 动手练习</h2>
+<!-- ============================================================ -->
+
+<fieldset>
+  <legend>练习 1: 画出模块层次树</legend>
+  <p>用纸笔画出从 <code>scr1_top_ahb</code> 到 <code>scr1_pipe_ifu</code> 的完整模块层次树，标注每个模块的源码文件名和关键端口。然后对比第五课的层次树，看看你漏了什么。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 2: 配置宏推理</legend>
+  <p>如果看到这样一段代码出现在 <code>scr1_arch_description.svh</code> 中，推断这是哪种配置？</p>
+  <pre>`define SCR1_NO_DEC_STAGE
+// `define SCR1_NO_EXE_STAGE
+`define SCR1_RVC_EXT
+// `define SCR1_RVM_EXT
+// `define SCR1_RVE_EXT
+`define SCR1_DBG_EN
+`define SCR1_IPIC_EN</pre>
+</fieldset>
+
+<fieldset>
+  <legend>练习 3: 信号追踪</legend>
+  <p>打开 <code>src/core/pipeline/scr1_pipe_top.sv</code>，找到信号 <code>ifu2idu_instr</code> 的完整路径：</p>
+  <ol>
+    <li>它在 <code>scr1_pipe_top</code> 中被声明为什么类型？</li>
+    <li>它连接到 <code>i_pipe_ifu</code> 的哪个输出端口？</li>
+    <li>它连接到 <code>i_pipe_idu</code> 的哪个输入端口？</li>
+    <li>你能在 IDU 源码中找到这个信号被使用的位置吗？（提示：搜索 <code>ifu2idu_instr_i</code>）</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 4: 用一句话说出每个配置的区别</legend>
+  <p>不看任何参考资料，用自己的话说出 MIN、BASE、MAX 三种配置的核心区别。<br>
+  提示：想一想"如果有乘法运算，哪个配置需要软件模拟？"</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 5: 追踪 LOAD 指令的数据通路</legend>
+  <p>以 <code>lw x6, 4(x1)</code>（假设 x1=0x1000）为例，画出它经过以下模块的完整数据流，标注每一步涉及的关键信号名：</p>
+  <ol>
+    <li>IFU 取指</li>
+    <li>IDU 译码</li>
+    <li>EXU 从 MPRF 读 x1 + 地址加法（x1 + 4）</li>
+    <li>LSU 向 DMEM 发读请求</li>
+    <li>DMEM 返回数据后写回 MPRF 的 x6</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 6: 填充 EXU 命令结构体 <span class="enhanced-badge">新</span></legend>
+  <p>以 <code>lui x10, 0x12345</code> 为例，填充 <code>idu2exu_cmd</code> 的 18 个字段。提示：LUI 指令只需要 8 个字段有意义，其余为默认值。</p>
+</fieldset>
+
+<fieldset>
+  <legend>练习 7: 追踪信号穿越流水级 <span class="enhanced-badge">新</span></legend>
+  <p>以 <code>csrrw x5, mstatus, x1</code> 为例，追踪以下信号在 IFU → IDU → EXU → CSR 之间的逐级传递：</p>
+  <ol>
+    <li><code>ifu2idu_instr</code> 的值是多少？（查 RISC-V 手册 csrrw 的编码）</li>
+    <li>IDU 译码后 <code>idu2exu_cmd.csr_op</code> 和 <code>idu2exu_cmd.csr_cmd</code> 分别是什么？</li>
+    <li>EXU 向 CSR 发出什么读写请求？地址是多少（mstatus = 0x300）？</li>
+    <li>CSR 返回什么数据？最终写回 MPRF 的 <code>rd_wb_sel</code> 是什么？</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 8: 流水线时序分析 <span class="enhanced-badge">新</span></legend>
+  <p>假设 SCR1 运行在 4 级流水线（MAX）配置下，IMEM 和 DMEM 都是 0 等待。回答以下问题：</p>
+  <ol>
+    <li>一条 ADD 指令从 IFU 取指到 MPRF 写回，一共经过几个时钟周期？</li>
+    <li>连续执行两条 ADD 指令，第二条的结果在第几个周期写回？</li>
+    <li>如果第三条是 <code>beq x1, x2, label</code>（条件分支，假设不跳转），分支判断在哪个周期的哪个模块完成？</li>
+    <li>如果是 <code>lw x5, 0(x1)</code>（LOAD），写回 MPRF 比 ADD 多花几个周期？</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 9: 复位链信号追踪 <span class="enhanced-badge">新</span></legend>
+  <p>在 <code>scr1_top_ahb.sv</code> 中追踪 <code>pwrup_rst_n</code> 信号的完整路径：</p>
+  <ol>
+    <li>经过哪个同步器原语？阶段数是多少？</li>
+    <li>输出的 <code>pwrup_rst_n_sync</code> 连到了 <code>i_core_top</code> 的哪个端口？</li>
+    <li>在 <code>scr1_core_top.sv</code> 中（无 SCR1_DBG_EN 时），它如何影响 <code>core_rst_n</code> 的生成？</li>
+    <li>如果不在测试模式下（test_mode=0），<code>core_rst_n_status</code> 在复位释放后多少周期变为 0？</li>
+  </ol>
+</fieldset>
+
+<fieldset>
+  <legend>练习 10: 内存映射解码 <span class="enhanced-badge">新</span></legend>
+  <p>给定默认内存映射，判断以下地址的访问被路由到哪里：</p>
+  <ol>
+    <li><code>0x00480000</code> 的指令取指请求 → 到 IMEM 路由器的哪个端口？</li>
+    <li><code>0x00490004</code> 的 STORE 操作 → 到 DMEM 路由器的哪个端口？</li>
+    <li><code>0x00000200</code> 的指令取指请求（不在 TCM 范围内时）→ 到哪个端口？</li>
+    <li><code>0x10000000</code> 的 LOAD 操作 → 走哪条路径最终到外部 AHB 总线？</li>
+  </ol>
+</fieldset>
+
+<!-- ============================================================ -->
+<h2 id="summary">总结</h2>
+<!-- ============================================================ -->
+
+<div class="box">
+  <div class="box-title">学完本周你应该能回答</div>
+  <ol style="margin:8px 0 0;">
+    <li>SCR1 的市场定位是什么？为什么说它是 "MCU 级" 核心？</li>
+    <li>哈佛架构中 IMEM 总线和 DMEM 总线分别做什么？有什么优势？</li>
+    <li>从 <code>scr1_top_ahb</code> 到 <code>scr1_pipe_ifu</code> 经过哪几层模块？</li>
+    <li><code>scr1_pipe_top</code> 实例化了哪 7 个子模块？它们的实例名是什么？</li>
+    <li>MIN、BASE、MAX 三种配置分别对应几级流水线？由哪两个宏控制？</li>
+    <li>8 个功能阶段分别对应哪些模块？</li>
+    <li>增加流水线级数后，延迟和吞吐量分别如何变化？</li>
+    <li>一条 ADD 指令从 PC 出发到写回寄存器，依次经过哪些模块？</li>
+    <li><code>SCR1_FAST_MUL</code> 和 <code>SCR1_IPIC_EN</code> 各自控制什么？</li>
+    <li><code>SCR1_ARCH_RST_VECTOR</code> 默认值是多少？代表什么含义？</li>
+    <li>SCR1_MIN/BASE/MAX 三种配置在 scr1_arch_description.svh 中分别定义了哪些宏？<span class="enhanced-badge">新</span></li>
+    <li>IFU→IDU 和 IDU→EXU 之间的完整信号接口包含哪些信号？<span class="enhanced-badge">新</span></li>
+    <li><code>type_scr1_exu_cmd_s</code> 结构体的 18 个字段分别控制什么？<span class="enhanced-badge">新</span></li>
+    <li>SCR1 的时钟门控是如何通过 WFI 睡眠/中断唤醒机制工作的？<span class="enhanced-badge">新</span></li>
+    <li>SCR1 有哪些复位原语？两种复位策略（有调试/无调试）的区别是什么？<span class="enhanced-badge">新</span></li>
+    <li>TCM、Timer、外部 AHB 在 32 位地址空间中分别占据什么地址范围？<span class="enhanced-badge">新</span></li>
+    <li><code>rd_wb_sel</code> 的 7 种写回源分别对应哪些指令类型？<span class="enhanced-badge">新</span></li>
+    <li>一条指令的新 PC 可以来自哪三种环路？<span class="enhanced-badge">新</span></li>
+  </ol>
+</div>
+
+<div class="box tip">
+  <div class="box-title">下一周预告</div>
+  第 6 周将进入数据通路追踪：以 ADD、LOAD、BRANCH 三条指令为例，逐周期追踪它们在 IFU/IDU/EXU/LSU/MPRF 之间的完整旅程。配合 IFU 状态机、IDU 译码表、EXU PC 多路器等源码级讲解。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 整体架构初探 -- 从顶层到流水线的全景图 | 第 5 周 | 增强版</p>
+
+</body>
+</html>

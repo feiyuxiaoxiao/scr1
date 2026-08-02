@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仿真三种方式对比：A / B / C</title>
+<style>
+  :root {
+    --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0;
+    --code-bg: #f1f3f4; --red: #d93025; --green: #188038; --yellow: #f9ab00;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.9; font-size: 16px; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 48px; padding: 10px 16px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); font-size: 1.25em; }
+  h3 { color: #2d3748; margin-top: 32px; font-size: 1.1em; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.85em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .str { color: #ce9178; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; }
+  .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .method-card { border-radius: 10px; padding: 18px 22px; margin: 18px 0; border: 2px solid; }
+  .method-card .mc-tag { display: inline-block; color: white; padding: 3px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85em; margin-bottom: 8px; }
+  .method-a { border-color: var(--green); background: #f0faf0; }
+  .method-a .mc-tag { background: var(--green); }
+  .method-b { border-color: var(--yellow); background: #fffaf0; }
+  .method-b .mc-tag { background: #e08e00; }
+  .method-c { border-color: var(--red); background: #fef2f0; }
+  .method-c .mc-tag { background: var(--red); }
+  .mc-title { font-size: 1.15em; font-weight: 700; color: #1a365d; }
+  .compare-table td:first-child { font-weight: 700; color: #1a365d; white-space: nowrap; }
+  .check { color: var(--green); font-weight: 700; }
+  .cross { color: var(--red); font-weight: 700; }
+  .arrow { color: var(--blue); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>仿真三种方式对比：A / B / C</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">一、三种方式一句话</a>
+  <a href="#compare">二、核心对比表</a>
+  <a href="#method-a">三、方式 A：跑现成测试</a>
+  <a href="#method-b">四、方式 B：改现成程序</a>
+  <a href="#method-c">五、方式 C：新建测试</a>
+  <a href="#workflow">六、三者的共同链路</a>
+  <a href="#path">七、推荐学习路径</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="overview">一、三种方式一句话</h2>
+<!-- ============================================================ -->
+
+<div class="method-card method-a">
+  <span class="mc-tag">方式 A</span>
+  <div class="mc-title">跑现成测试 -- 零编写，验证环境</div>
+  仓库自带 hello / isr_sample / riscv_isa 等测试，一条 make 命令跑完。<br>
+  适合：刚开始，熟悉流程，确认环境正常。
+</div>
+
+<div class="method-card method-b">
+  <span class="mc-tag">方式 B</span>
+  <div class="mc-title">改现成程序 -- 改几行，验证概念</div>
+  拿 hello.c 或 isr_sample.S 改几行，观察行为变化。<br>
+  适合：学到某个概念（分支/中断/访存）后，动手验证。
+</div>
+
+<div class="method-card method-c">
+  <span class="mc-tag">方式 C</span>
+  <div class="mc-title">新建测试 -- 从零编写，理解最深</div>
+  在 sim/tests/ 下建新目录，仿照 hello 模板写自己的程序。<br>
+  适合：系统性地验证你对 SCR1 某个模块的理解。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="compare">二、核心对比表</h2>
+<!-- ============================================================ -->
+
+<table class="compare-table">
+<tr><th>对比项</th><th>方式 A：跑现成测试</th><th>方式 B：改现成程序</th><th>方式 C：新建测试</th></tr>
+<tr><td>一句话</td><td>直接用仓库测试</td><td>改现成的 C/汇编</td><td>自己建测试目录</td></tr>
+<tr><td>要不要写代码</td><td class="cross">完全不用</td><td>改几行</td><td>从零写</td></tr>
+<tr><td>要创建新文件吗</td><td class="cross">不用</td><td class="cross">不用</td><td class="check">要（新建目录 + Makefile + 源码）</td></tr>
+<tr><td>启动难度</td><td>极低</td><td>低</td><td>中等</td></tr>
+<tr><td>理解深度</td><td>低（只是看结果）</td><td>中（改=思考差异）</td><td>高（全流程掌控）</td></tr>
+<tr><td>典型命令</td><td><code>make TARGETS=hello run_verilator</code></td><td><code>make TARGETS=hello run_verilator</code>（同一命令，改的是源码）</td><td><code>make TARGETS=my_prog run_verilator</code></td></tr>
+<tr><td>修改位置</td><td>无</td><td><code>sim/tests/hello/hello.c</code> 或 <code>isr_sample.S</code></td><td><code>sim/tests/&lt;新目录&gt;/</code></td></tr>
+<tr><td>适用阶段</td><td>第 1 步：熟悉流程</td><td>第 2 步：验证每个知识点</td><td>第 3 步：系统验证模块理解</td></tr>
+<tr><td>适合验证</td><td>环境是否正常</td><td>单个概念（分支/中断/访存）</td><td>一组相关概念的组合行为</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="method-a">三、方式 A：跑现成测试</h2>
+<!-- ============================================================ -->
+
+<p>仓库自带 4 类测试，命令都一样：</p>
+
+<pre>
+<span class="cm"># 每个测试独立运行</span>
+<span class="kw">make</span> TARGETS=hello run_verilator        <span class="cm"># 串口打印 "Hello from SCR1!"</span>
+<span class="kw">make</span> TARGETS=isr_sample run_verilator   <span class="cm"># 三种中断：定时器/外部/软件</span>
+<span class="kw">make</span> TARGETS=riscv_isa run_verilator    <span class="cm"># 几百条指令逐一验证（较慢）</span>
+
+<span class="cm"># 也可以一次跑多个</span>
+<span class="kw">make</span> TARGETS="hello isr_sample" run_verilator
+</pre>
+
+<table>
+<tr><th>测试</th><th>内容</th><th>对应教程周次</th><th>运行速度</th></tr>
+<tr><td>hello</td><td>打印字符串，验证基本执行</td><td>第 6 周数据通路</td><td>秒级</td></tr>
+<tr><td>isr_sample</td><td>三种中断 + CSR 断言</td><td>第 4 周特权架构</td><td>秒级</td></tr>
+<tr><td>riscv_isa</td><td>RV32I/M/C 指令逐一测试</td><td>第 3 周 ISA</td><td>较慢</td></tr>
+<tr><td>riscv_compliance</td><td>官方合规测试</td><td>第 14 周验证</td><td>慢</td></tr>
+<tr><td>riscv_arch</td><td>架构特权级测试</td><td>第 4 周</td><td>较慢</td></tr>
+<tr><td>coremark / dhrystone</td><td>性能基准</td><td>第 14 周</td><td>很慢</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">方式 A 的用法建议</div>
+  方式 A 是最佳"冒烟测试"：每次你想确认"改过的代码/环境没坏"，跑一下 hello 即可。但它的学习价值有限——你只是看到 PASS/FAIL，不知道 CPU 内部发生了什么。要理解内部行为，需要用方式 B 配合 <code>.dump</code> 反汇编文件。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="method-b">四、方式 B：改现成程序</h2>
+<!-- ============================================================ -->
+
+<p>方式 B 是"同一套骨架，改几行看变化"。这是最有性价比的学习方式。</p>
+
+<h3>两个可改的现成程序</h3>
+
+<div class="box">
+  <div class="box-title">hello.c（C 语言，最短）</div>
+  <pre><span class="cm">// sim/tests/hello/hello.c 只有 6 行</span>
+<span class="cm">#include</span> <span class="str">"sc_print.h"</span>
+
+<span class="kw">int</span> main()
+{
+    sc_printf(<span class="str">"Hello from SCR1!\n"</span>);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+</div>
+
+<div class="box">
+  <div class="box-title">isr_sample.S（汇编，最长但最丰富）</div>
+  <p>291 行汇编，完整演示三种中断的触发、使能、处理、返回。配合第 4 周教程对照阅读效果最佳。</p>
+</div>
+
+<h3>改法示例</h3>
+
+<pre>
+<span class="cm">// 例 1：改 hello.c -- 加一个循环，观察 printf 输出重复 3 次</span>
+<span class="kw">int</span> main()
+{
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; <span class="num">3</span>; i++)
+        sc_printf(<span class="str">"Hello from SCR1! %d\n"</span>, i);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</pre>
+
+<pre>
+<span class="cm">// 例 2：改 isr_sample.S -- 把定时器到期值从 256 改成 1024</span>
+addi s1, s1, <span class="num">256</span>   <span class="cm">→  addi s1, s1, 1024</span>
+
+<span class="cm">// 或：删掉 csrs mie, a0 这一行使能，看测试是否 FAIL（验证"使能是必要条件"）</span>
+</pre>
+
+<div class="box warn">
+  <div class="box-title">改完怎么运行？</div>
+  和方式 A 完全一样！<code>make TARGETS=hello run_verilator</code>。make 检测到 .c 文件比 .hex 新，会自动重新编译，然后直接跑。你只需要观察输出的变化。
+</div>
+
+<div class="box tip">
+  <div class="box-title">配合 .dump 反汇编理解内部行为</div>
+  编译时自动生成 <code>hello.dump</code>，它把每条指令的地址、机器码、汇编一一列出。改程序后对比 dump，能直观看到"这行 C 代码被编译成了哪些 RISC-V 指令"。这是打通"C 语言层"和"CPU 硬件层"的最佳桥梁。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="method-c">五、方式 C：新建测试</h2>
+<!-- ============================================================ -->
+
+<p>方式 C 是从零建一个测试目录。骨架照着 hello 抄即可，只需两步：</p>
+
+<h3>第 1 步：建目录和 Makefile</h3>
+
+<pre>
+<span class="cm"># 在 sim/tests/ 下新建目录，例如 my_prog</span>
+mkdir sim/tests/my_prog
+
+<span class="cm"># 创建 sim/tests/my_prog/Makefile（仿照 hello 的模板）</span>
+<span class="cm"># 关键就 3 行：</span>
+src_dir := <span class="str">$(dir $(lastword $(MAKEFILE_LIST)))</span>
+
+c_src := sc_print.c my_prog.c            <span class="cm"># 你写的 C 文件</span>
+
+<span class="kw">include</span> <span class="str">$(inc_dir)/common.mk</span>           <span class="cm"># 复用编译规则</span>
+</pre>
+
+<h3>第 2 步：写测试源码</h3>
+
+<pre>
+<span class="cm">// sim/tests/my_prog/my_prog.c</span>
+<span class="cm">#include</span> <span class="str">"sc_print.h"</span>
+
+<span class="kw">int</span> main()
+{
+    <span class="cm">// 你想验证的逻辑写这里</span>
+    sc_printf(<span class="str">"my test running\n"</span>);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</pre>
+
+<h3>第 3 步：运行</h3>
+
+<pre>
+<span class="kw">make</span> TARGETS=my_prog run_verilator
+</pre>
+
+<div class="box tip">
+  <div class="box-title">想验证某个模块？可以从这几个点入手</div>
+  <ul style="margin:8px 0 0;">
+    <li><strong>第 6 周</strong>：写一段数据依赖的指令序列，观察流水线停顿（配合 waveform 或 dump）</li>
+    <li><strong>第 4 周</strong>：复制 isr_sample 的框架，只保留定时器中断，加自己的处理逻辑</li>
+    <li><strong>第 10 周</strong>：写一个乘法循环，观察 IALU 的 MUL 多周期执行</li>
+    <li><strong>第 7 周</strong>：写带分支的代码，观察预测/冲刷行为</li>
+  </ul>
+</div>
+
+<div class="box warn">
+  <div class="box-title">方式 C 的一个小坑</div>
+  新测试目录必须在顶层 <code>Makefile</code> 里能识别。SCR1 的 Makefile 只对预设的测试名有规则（hello/isr_sample/riscv_isa...）。如果直接 <code>make TARGETS=my_prog</code> 会报 "No rule to make target"。解决：把 <code>sim/tests/my_prog/Makefile</code> 仿照 <code>hello</code> 那样，在顶层 Makefile 加一行规则（或在 <code>tests</code> 目标的依赖里加上 <code>my_prog</code>）。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="workflow">六、三者的共同链路</h2>
+<!-- ============================================================ -->
+
+<p>无论哪种方式，编译→仿真→判定 的底层链路完全一样，只是"源码从哪来"不同：</p>
+
+<div class="flow">
+  <div class="flow-box" style="background:#e8f5e9;">源码<br>A: 现成 / B: 改的 / C: 新建</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">gcc 编译<br>.elf → .hex</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">testbench 加载<br>写入模拟 IMEM</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">Verilator 仿真<br>逐周期执行</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">判定<br>PASS / FAIL</div>
+</div>
+
+<table class="compare-table">
+<tr><th>环节</th><th>方式 A</th><th>方式 B</th><th>方式 C</th></tr>
+<tr><td>源码来自</td><td>仓库自带</td><td>现成文件改几行</td><td>自己新写的文件</td></tr>
+<tr><td>Makefile</td><td>已有 hello/Makefile</td><td>复用已有 Makefile</td><td>仿模板新建</td></tr>
+<tr><td>命令</td><td colspan="3" style="text-align:center;">完全相同：<code>make TARGETS=&lt;名&gt; run_verilator</code></td></tr>
+<tr><td>产物位置</td><td colspan="3" style="text-align:center;">都在 <code>build/verilator_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0/</code></td></tr>
+<tr><td>判定机制</td><td colspan="3" style="text-align:center;">testbench 检测 PC 到退出地址 + 检查返回值</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="path">七、推荐学习路径</h2>
+<!-- ============================================================ -->
+
+<p>三种方式不是三选一，而是三个阶段，从浅到深逐步升级：</p>
+
+<div class="flow">
+  <div class="flow-box" style="background:#e8f5e9;">阶段 1<br><strong>方式 A</strong><br>熟悉流程<br>确认环境</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#fffaf0;">阶段 2<br><strong>方式 B</strong><br>改几行<br>验证概念</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#fef2f0;">阶段 3<br><strong>方式 C</strong><br>自己建测试<br>系统验证</div>
+</div>
+
+<table>
+<tr><th>阶段</th><th>做什么</th><th>建议动作</th><th>对应教程</th></tr>
+<tr><td>1. 方式 A</td><td>跑通 hello + isr_sample</td><td>看输出、看 dump，搞懂流程</td><td>本页 + 方式 A 流程页</td></tr>
+<tr><td>2. 方式 B</td><td>改 hello.c 加循环/运算</td><td>对比 dump，理解 C→指令映射</td><td>第 6 周数据通路</td></tr>
+<tr><td>3. 方式 B+</td><td>改 isr_sample 中断逻辑</td><td>删/加使能位，观察行为变化</td><td>第 4 周特权架构</td></tr>
+<tr><td>4. 方式 C</td><td>写自己的最小测试</td><td>验证流水线停顿、MUL 多周期等</td><td>第 9-10 周</td></tr>
+</table>
+
+<div class="box">
+  <div class="box-title">一句话建议</div>
+  <strong>先 A 后 B 再 C</strong>。A 让你敢跑，B 让你看懂，C 让你会用。大部分学习时间应该花在 B 上——它是"改动最小、反馈最快、理解最深"的结合点。
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 仿真方式对比 | A / B / C</p>
+
+</body>
+</html>

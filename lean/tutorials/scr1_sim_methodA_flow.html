@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仿真方式 A：跑现成测试 -- 完整流程梳理</title>
+<style>
+  :root {
+    --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0;
+    --code-bg: #f1f3f4; --red: #d93025; --green: #188038;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.9; font-size: 16px; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 48px; padding: 10px 16px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); font-size: 1.25em; }
+  h3 { color: #2d3748; margin-top: 32px; font-size: 1.1em; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.85em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .str { color: #ce9178; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; }
+  .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 20px 0; }
+  .flow-box { border: 2px solid var(--blue); border-radius: 8px; padding: 10px 16px; text-align: center; background: var(--blue-light); min-width: 120px; font-weight: 600; }
+  .flow-arrow { font-size: 1.5em; color: var(--blue); align-self: center; font-weight: 700; }
+  .step { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .step-num { display: inline-block; background: var(--blue); color: white; width: 26px; height: 26px; border-radius: 50%; text-align: center; line-height: 26px; margin-right: 8px; font-weight: 700; font-size: 0.85em; }
+  .concept-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 14px 0; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .concept-card .cc-title { font-size: 1.05em; font-weight: 700; color: #1a365d; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<h1>仿真方式 A：跑现成测试 -- 完整流程梳理</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#overview">一、整体流程全景图</a>
+  <a href="#step0">二、前提：环境已就绪</a>
+  <a href="#step1">三、第 1 步：编译测试程序</a>
+  <a href="#step2">四、第 2 步：编译仿真器</a>
+  <a href="#step3">五、第 3 步：运行仿真</a>
+  <a href="#result">六、读懂仿真结果</a>
+  <a href="#artifacts">七、产出的文件分别是什么</a>
+  <a href="#deep">八、背后的关键文件</a>
+  <a href="#trouble">九、常见问题排查</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="overview">一、整体流程全景图</h2>
+<!-- ============================================================ -->
+
+<p>方式 A 是"零编写"验证——直接运行仓库自带的测试，一条命令搞定。它的完整流程是：</p>
+
+<div class="flow">
+  <div class="flow-box">① 编译测试<br>hello.c → .hex</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">② 编译仿真器<br>Verilog → C++</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">③ 运行仿真<br>.hex 被加载执行</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">④ 得到结果<br>PASS / FAIL</div>
+</div>
+
+<p>在 SCR1 中，这三步被一条 make 命令串起来：</p>
+
+<pre><span class="kw">make</span> TARGETS=hello run_verilator</pre>
+
+<div class="box tip">
+  <div class="box-title">为什么这条命令会"自动完成全部"</div>
+  SCR1 的顶层 <code>Makefile</code> 把编译测试和编译仿真器、运行仿真串成了依赖关系：<code>run_verilator</code> 目标依赖 <code>test_info</code>，而 <code>test_info</code> 依赖 <code>tests</code>（即 hello 测试的编译）。所以只要一条命令，make 会按依赖顺序自动执行。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step0">二、前提：环境已就绪</h2>
+<!-- ============================================================ -->
+
+<p>这套环境之前已经搭好，三个关键组件：</p>
+
+<table>
+<tr><th>组件</th><th>位置</th><th>作用</th></tr>
+<tr><td>RISC-V 交叉编译器</td><td><code>/usr/bin/riscv64-unknown-elf-gcc</code></td><td>把 C/汇编编译成 RISC-V 机器码</td></tr>
+<tr><td>Verilator</td><td><code>/usr/bin/verilator</code> (5.006)</td><td>把 SCR1 的 Verilog 代码编译成 C++ 可执行仿真器</td></tr>
+<tr><td>picolibc 运行时库</td><td>gcc 安装时附带</td><td>提供 <code>printf</code> 等基础库函数</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">唯一的坑：common.mk</div>
+  <code>sim/tests/common/common.mk</code> 第 15 行的 <code>--specs=nano.specs</code> 对 picolibc 无效，编译会报 <code>cannot read spec file 'nano.specs'</code>。已从该行移除（环境适配 hack，未提交 git）。如果以后从 git 重新拉取，需要再移除一次。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step1">三、第 1 步：编译测试程序（C 源码 → .hex）</h2>
+<!-- ============================================================ -->
+
+<p>当 make 执行到 hello 测试时，它会进入 <code>sim/tests/hello/</code> 目录，用 <code>common.mk</code> 里的规则编译。编译的原料：</p>
+
+<table>
+<tr><th>文件</th><th>作用</th></tr>
+<tr><td><code>sim/tests/hello/hello.c</code></td><td>测试源码，只有 6 行（main 里调用 sc_printf）</td></tr>
+<tr><td><code>sim/tests/common/sc_print.c</code></td><td>提供串口打印函数 sc_printf（输出到仿真控制台）</td></tr>
+<tr><td><code>sim/tests/common/crt_tcm.S</code></td><td>启动代码：设置栈指针、跳转 main</td></tr>
+<tr><td><code>sim/tests/common/link_tcm.ld</code></td><td>链接脚本：规定代码段/数据段/栈的地址布局</td></tr>
+</table>
+
+<h3>编译出的三个产物</h3>
+
+<div class="flow">
+  <div class="flow-box">hello.elf<br>ELF 可执行文件</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">hello.hex<br>16 进制指令文件<br>（testbench 加载这个）</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">hello.dump<br>反汇编清单<br>（给人看的）</div>
+</div>
+
+<p>对应的 gcc 命令（这就是 make 实际执行的东西）：</p>
+
+<pre>
+<span class="cm"># 1. 编译 .c / .S 成目标文件 .o</span>
+riscv64-unknown-elf-gcc -O3 ... -c hello.c  -o hello.o
+riscv64-unknown-elf-gcc -O3 ... -c crt_tcm.S -o crt_tcm.o
+
+<span class="cm"># 2. 链接成 .elf（用 link_tcm.ld 决定内存布局）</span>
+riscv64-unknown-elf-gcc -o hello.elf -T link_tcm.ld hello.o sc_print.o crt_tcm.o ...
+
+<span class="cm"># 3. 转成 testbench 能加载的 .hex（objcopy -O verilog）</span>
+riscv64-unknown-elf-objcopy -O verilog hello.elf hello.hex
+
+<span class="cm"># 4. 顺便生成反汇编 dump</span>
+riscv64-unknown-elf-objdump -D hello.elf > hello.dump
+</pre>
+
+<div class="box">
+  <div class="box-title">hello.hex 里到底长什么样</div>
+  .hex 就是纯文本的 16 进制指令流。CPU 复位后从地址 0 开始逐条取指执行。testbench 在仿真开始前把整个 .hex 读进模拟内存，相当于"烧录"了程序。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step2">四、第 2 步：编译仿真器（Verilog → C++）</h2>
+<!-- ============================================================ -->
+
+<p>SCR1 的 RTL 是 Verilog/SystemVerilog，Verilator 把它翻译成 C++，再用 g++ 编译成可执行仿真器。这一步由 <code>sim/Makefile</code> 的 <code>build_verilator</code> 目标完成。</p>
+
+<div class="flow">
+  <div class="flow-box">SRC 全部 .sv<br>（IFU/IDU/EXU/... + testbench）</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">Verilator<br>翻译成 C++</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">g++ 编译<br>+ 仿真 wrapper</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box">Vscr1_top_tb_ahb<br>可执行仿真器</div>
+</div>
+
+<p>关键点：</p>
+<ul>
+  <li><strong>哪些 RTL 文件参与编译</strong>：顶层 Makefile 按 AHB 总线选 <code>ahb_top.files</code>，它列出 core + top + tb 的所有 .sv 文件（IFU/IDU/EXU/CSR/MPRF/LSU/IALU/IPIC/CLKCTRL + testbench）</li>
+  <li><strong>--exe wrapper</strong>：<code>sim/verilator_wrap/scr1_ahb_wrapper.c</code> 提供 C 语言 <code>main()</code>，负责时钟循环、调用 testbench 的顶层模块</li>
+  <li><strong>快速版 vs 波形版</strong>：<code>build_verilator</code> 不带波形（快）；<code>build_verilator_wf</code> 带 VCD 波形（慢，学习迭代别用）</li>
+</ul>
+
+<div class="box warn">
+  <div class="box-title">注意：这一步很耗时但只做一次</div>
+  Verilator 编译整个 SCR1 需要几分钟，但它只在第一次或 RTL 改动后重新编译。只要没改 Verilog 代码，后续运行直接复用已编译好的仿真器（make 会检测文件时间戳）。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step3">五、第 3 步：运行仿真（.hex 被 CPU 执行）</h2>
+<!-- ============================================================ -->
+
+<p>make 最后执行编译好的仿真器，把测试列表传给它：</p>
+
+<pre>
+<span class="cm"># make 实际执行的命令（简化）</span>
+build/verilator_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0/verilator/Vscr1_top_tb_ahb \
+    +test_info=.../test_info \
+    +test_results=.../test_results.txt \
+    +imem_pattern=FFFFFFFF \
+    +dmem_pattern=FFFFFFFF
+</pre>
+
+<p>仿真器内部发生的事：</p>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>加载 .hex</strong>：<code>scr1_top_tb_runtests.sv</code> 读取 test_info 里的测试名（hello.hex），把指令写入模拟 IMEM
+</div>
+<div class="step">
+  <span class="step-num">2</span> <strong>复位</strong>：testbench 拉低复位信号几个周期，然后释放，CPU 从复位向量地址 0x0 开始取指
+</div>
+<div class="step">
+  <span class="step-num">3</span> <strong>逐周期执行</strong>：Verilator 在每个时钟边沿评估所有信号，模拟 IFU→IDU→EXU 流水线推进
+</div>
+<div class="step">
+  <span class="step-num">4</span> <strong>检测退出</strong>：testbench 持续监视 PC，当 PC 到达 <code>SCR1_SIM_EXIT_ADDR</code>（测试的退出地址）时判定程序结束
+</div>
+<div class="step">
+  <span class="step-num">5</span> <strong>判断 PASS/FAIL</strong>：testbench 检查退出时的返回值寄存器（a0），据此输出 PASS/FAIL
+</div>
+
+<!-- ============================================================ -->
+<h2 id="result">六、读懂仿真结果</h2>
+<!-- ============================================================ -->
+
+<p>运行结束后控制台输出三部分关键信息：</p>
+
+<pre>
+scr1_top_tb_ahb                                <span class="cm">← 仿真器顶层模块名</span>
+
+---Test:                        hello.hex       <span class="cm">← 正在运行哪个测试</span>
+Hello from SCR1!                                <span class="cm">← 程序自己的 printf 输出</span>
+Test passed                                     <span class="cm">← testbench 判定结果</span>
+
+#--------------------------------------
+# Summary: 1/1 tests passed                    <span class="cm">← 汇总</span>
+#--------------------------------------
+
+                    hello.hex		OK	  PASS    <span class="cm">← 汇总表</span>
+</pre>
+
+<table>
+<tr><th>输出段</th><th>含义</th></tr>
+<tr><td><code>---Test: hello.hex</code></td><td>testbench 开始加载并运行该测试</td></tr>
+<tr><td><code>Hello from SCR1!</code></td><td>程序通过串口打印输出到仿真控制台（来自 sc_printf）</td></tr>
+<tr><td><code>Test passed</code></td><td>testbench 检查退出返回值正确</td></tr>
+<tr><td><code>Summary: 1/1 tests passed</code></td><td>所有测试的汇总</td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">PASS 的判定依据</div>
+  testbench 检测 PC 到达退出地址后，读取返回值寄存器。hello 的 <code>main</code> 返回 0，testbench 检查 a0 是否为预期值——是则 PASS，否则 FAIL。这也解释了为什么你的测试程序最后要 <code>return 0</code>。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="artifacts">七、产出的文件分别是什么</h2>
+<!-- ============================================================ -->
+
+<p>所有产物都在构建目录 <code>build/verilator_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0/</code>：</p>
+
+<table>
+<tr><th>文件</th><th>类型</th><th>用途</th></tr>
+<tr><td><code>test_info</code></td><td>输入</td><td>要运行的测试列表（每行一个 .hex）</td></tr>
+<tr><td><code>test_results.txt</code></td><td>输出</td><td>每个测试的 PASS/FAIL 表</td></tr>
+<tr><td><code>sim_results.txt</code></td><td>输出</td><td>仿真控制台完整日志（含 printf）</td></tr>
+<tr><td><code>hello.elf</code></td><td>中间产物</td><td>ELF 可执行文件</td></tr>
+<tr><td><code>hello.hex</code></td><td>中间产物</td><td>testbench 加载的指令文件</td></tr>
+<tr><td><code>hello.dump</code></td><td>中间产物</td><td>反汇编清单（人看的，学习利器）</td></tr>
+<tr><td><code>verilator/Vscr1_top_tb_ahb</code></td><td>中间产物</td><td>编译好的可执行仿真器</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="deep">八、背后的关键文件</h2>
+<!-- ============================================================ -->
+
+<p>如果你想深入了解这套流程，按这个清单找文件：</p>
+
+<table>
+<tr><th>文件</th><th>作用</th></tr>
+<tr><td><code>Makefile</code>（根目录）</td><td>总控：配置选择（MAX/BUS）、串起编译+运行</td></tr>
+<tr><td><code>sim/tests/common/common.mk</code></td><td>测试编译规则（.c→.o→.elf→.hex）</td></tr>
+<tr><td><code>sim/tests/hello/Makefile</code></td><td>hello 测试专属配置（指定源码文件）</td></tr>
+<tr><td><code>sim/Makefile</code></td><td>Verilator/Modelsim/VCS 仿真器构建规则</td></tr>
+<tr><td><code>sim/verilator_wrap/scr1_ahb_wrapper.c</code></td><td>仿真器 C 入口 main()</td></tr>
+<tr><td><code>src/tb/scr1_top_tb_runtests.sv</code></td><td>testbench：加载 hex、监视 PC、判 PASS/FAIL</td></tr>
+<tr><td><code>src/tb/scr1_top_tb_ahb.sv</code></td><td>testbench 顶层：例化 CPU + 内存 + 外设</td></tr>
+<tr><td><code>src/tb/scr1_memory_tb_ahb.sv</code></td><td>模拟 IMEM/DMEM（AHB 从设备）</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="trouble">九、常见问题排查</h2>
+<!-- ============================================================ -->
+
+<div class="box warn">
+  <div class="box-title">问题 1：编译报 nano.specs 错误</div>
+  症状：<code>riscv64-unknown-elf-gcc: fatal error: cannot read spec file 'nano.specs'</code><br>
+  原因：picolibc 环境不提供 nano.specs<br>
+  解决：移除 <code>sim/tests/common/common.mk</code> 第 15 行的 <code>--specs=nano.specs</code>
+</div>
+
+<div class="box warn">
+  <div class="box-title">问题 2：直接跑 make 命令报 weird 错误</div>
+  症状：make 报 "mixed implicit and normal rules" 或 "No rule to make target"<br>
+  原因：直接在命令行传了多个 make 目标（如 <code>make clean_hex hello</code>），顶层 Makefile 的 <code>current_goal</code> 计算会乱<br>
+  解决：始终用 <code>make TARGETS=&lt;test&gt; run_verilator</code> 标准形式
+</div>
+
+<div class="box warn">
+  <div class="box-title">问题 3：用了 run_verilator_wf 非常慢</div>
+  症状：波形仿真跑了很久没结束，VCD 文件涨到 GB 级<br>
+  原因：波形版把所有信号都写盘<br>
+  解决：学习迭代一律用 <code>run_verilator</code>（无波形，秒级完成）；确需波形时再单独用 <code>run_verilator_wf</code>
+</div>
+
+<div class="box tip" style="margin-top:32px;">
+  <div class="box-title">一句话总结流程</div>
+  <strong>make 一条命令</strong> = 编译测试程序(.hex) + 编译仿真器 + 加载运行 + 自动判定结果。<strong>你只需要改代码，不需要碰任何仿真细节。</strong>
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 仿真流程梳理 | 方式 A（跑现成测试）</p>
+
+</body>
+</html>

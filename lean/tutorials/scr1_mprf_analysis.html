@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPRF 寄存器堆模块解析 | SCR1</title>
+<style>
+  :root { --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0; --code-bg: #f1f3f4; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1040px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.72; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 44px; padding: 8px 14px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); }
+  h3 { color: #2d3748; margin-top: 28px; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.87em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.81em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .str { color: #ce9178; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92em; }
+  th, td { padding: 9px 12px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 230px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.83em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; } .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .line-ref { color: var(--gray); font-size: 0.8em; font-weight: 400; }
+</style>
+</head>
+<body>
+
+<h1>scr1_pipe_mprf.sv -- MPRF 寄存器堆模块解析</h1>
+
+<nav class="nav">
+  <div class="nav-title">内容导航</div>
+  <a href="#overview">模块概述</a>
+  <a href="#interface">接口信号</a>
+  <a href="#two-modes">两种实现模式</a>
+  <a href="#x0-zero">x0 硬连线零</a>
+  <a href="#bypass">RAM 模式写优先旁路</a>
+  <a href="#sva">SVA 断言</a>
+  <a href="#dataflow">数据流总图</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="overview">模块概述</h2>
+<!-- ============================================================ -->
+
+<div class="box">
+  <div class="box-title">文件信息</div>
+  路径: <code>src/core/pipeline/scr1_pipe_mprf.sv</code><br>
+  行数: 167 行<br>
+  功能: 实现 32 个 32 位通用寄存器堆, 提供 2 读 1 写端口
+</div>
+
+<p>MPRF (Multi-Port Register File) 是 <strong>唯一直接与 32 个通用寄存器 x0-x31 交互</strong> 的模块。它由 EXU 驱动, 被动响应读写请求, 不包含任何控制逻辑。</p>
+
+<table>
+  <tr><th>特性</th><th>值</th></tr>
+  <tr><td>寄存器数量</td><td>32 个 (x0-x31)</td></tr>
+  <tr><td>位宽</td><td>32 位 (<code>SCR1_XLEN</code>)</td></tr>
+  <tr><td>读端口</td><td>2 个 (rs1 + rs2, 同时读取)</td></tr>
+  <tr><td>写端口</td><td>1 个 (rd)</td></tr>
+  <tr><td>物理存储</td><td>仅 31 个寄存器 (x0 不占存储, 硬连线为 0)</td></tr>
+  <tr><td>读取延迟</td><td>分布式逻辑: 0 周期 / RAM 模式: 1 周期</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="interface">一、接口信号 -- 与 EXU 单向通信 <span class="line-ref">(第 9-24 行)</span></h2>
+<!-- ============================================================ -->
+
+<p>MPRF 是完全被动的, 只接收 EXU 的命令, 返回数据。</p>
+
+<pre>
+<span class="cm">// 读端口 1 (rs1)</span>
+<span class="kw">input</span>  logic [4:0]       exu2mprf_rs1_addr_i,  <span class="cm">// 读地址: 0-31, 5 位</span>
+<span class="kw">output</span> logic [31:0]      mprf2exu_rs1_data_o,  <span class="cm">// 读数据: 32 位</span>
+
+<span class="cm">// 读端口 2 (rs2)</span>
+<span class="kw">input</span>  logic [4:0]       exu2mprf_rs2_addr_i,  <span class="cm">// 读地址</span>
+<span class="kw">output</span> logic [31:0]      mprf2exu_rs2_data_o,  <span class="cm">// 读数据</span>
+
+<span class="cm">// 写端口 (rd)</span>
+<span class="kw">input</span>  logic             exu2mprf_w_req_i,     <span class="cm">// 写请求: 1=有效</span>
+<span class="kw">input</span>  logic [4:0]       exu2mprf_rd_addr_i,   <span class="cm">// 写地址</span>
+<span class="kw">input</span>  logic [31:0]      exu2mprf_rd_data_i    <span class="cm">// 写数据</span></pre>
+
+<div class="box">
+  <div class="box-title">命名规范</div>
+  所有信号遵循 <code>源2目_信号名</code> 格式: <code>exu2mprf_xxx</code> 表示从 EXU 流向 MPRF, <code>mprf2exu_xxx</code> 表示从 MPRF 流向 EXU。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="two-modes">二、两种实现模式 -- <code>SCR1_MPRF_RAM</code> 宏分叉 <span class="line-ref">(第 62-64 行 vs 第 90-152 行)</span></h2>
+<!-- ============================================================ -->
+
+<p>通过 <code>`ifdef SCR1_MPRF_RAM</code> 宏, 在编译时选择两种完全不同的物理实现。</p>
+
+<table>
+  <tr><th></th><th>分布式逻辑 (默认)</th><th>RAM 宏 (FPGA)</th></tr>
+  <tr><td><strong>宏条件</strong></td><td><code>~SCR1_MPRF_RAM</code></td><td><code>SCR1_MPRF_RAM</code></td></tr>
+  <tr><td><strong>读延迟</strong></td><td>0 周期 (组合逻辑)</td><td>1 周期 (同步读, <code>posedge clk</code>)</td></tr>
+  <tr><td><strong>存储体数</strong></td><td>1 个 <code>mprf_int</code></td><td>2 个 <code>mprf_int</code> + <code>mprf_int2</code></td></tr>
+  <tr><td><strong>物理资源</strong></td><td>触发器 / 查找表</td><td>FPGA BRAM (M9K/M10K)</td></tr>
+  <tr><td><strong>面积</strong></td><td>大 (31x32=992 个 FF)</td><td>小 (复用 BRAM 硬核)</td></tr>
+  <tr><td><strong>时序</strong></td><td>读路径组合延迟, 高频受限</td><td>BRAM 同步读, 时序更好</td></tr>
+  <tr><td><strong>适用</strong></td><td>ASIC, 小设计, 高速</td><td>FPGA, 省逻辑资源</td></tr>
+</table>
+
+<h3>为什么 RAM 模式需要 2 个存储体? <span class="line-ref">(第 52-60 行)</span></h3>
+
+<p>FPGA 的 BRAM 是简单双端口: 1 读 + 1 写。但流水线可能同时发生 <strong>3 次访问</strong>:</p>
+<ul>
+  <li>rs1 读 (例如 <code>ADD x5, x3, x4</code> 中的 <code>x3</code>)</li>
+  <li>rs2 读 (例如 <code>x4</code>)</li>
+  <li>rd 写 (上一条指令的结果写入)</li>
+</ul>
+<p>2 个 BRAM 解决了 2 读 1 写的需求: <code>mprf_int</code> 负责 rs1 读 + rd 写, <code>mprf_int2</code> 负责 rs2 读 + rd 写。两个 BRAM 做相同的写入, 保证数据一致。</p>
+
+<div class="box tip">
+  <div class="box-title">FPGA 特定优化</div>
+  <code>ramstyle = "M9K"</code> / <code>"M10K"</code> 属性 (第 52-57 行) 是针对 Intel FPGA 的 BRAM 类型约束, 告诉综合工具使用指定的 RAM 块。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="x0-zero">三、x0 硬连线零 -- 核心技巧 <span class="line-ref">(第 71-74 行)</span></h2>
+<!-- ============================================================ -->
+
+<p>这是 MPRF 中最精妙的设计: <strong>用 3 行代码实现 x0 的零特性, 不消耗任何额外硬件</strong>。</p>
+
+<pre>
+assign  rs1_addr_vd  =   <span class="str">|exu2mprf_rs1_addr_i</span>;    <span class="cm">// 归约或: 5 位全 0 则结果为 0</span>
+assign  rs2_addr_vd  =   <span class="str">|exu2mprf_rs2_addr_i</span>;
+assign  wr_req_vd    =   exu2mprf_w_req_i <span class="str">&amp; |exu2mprf_rd_addr_i</span>;  <span class="cm">// 写 x0 时 wr_req_vd=0</span></pre>
+
+<h3>归约或运算符 <code>|</code> 的作用</h3>
+
+<table>
+  <tr><th>输入 <code>addr</code></th><th><code>|addr</code></th><th><code>_vd</code> 结果</th><th>行为</th></tr>
+  <tr><td><code>5'b00000</code> (x0)</td><td>0</td><td>0 (无效)</td><td>输出 <code>'0</code>, 写入被抑制</td></tr>
+  <tr><td><code>5'b00001</code> (x1)</td><td>1</td><td>1 (有效)</td><td>正常读写</td></tr>
+  <tr><td><code>5'bxxxxx</code> (任意非零)</td><td>1</td><td>1 (有效)</td><td>正常读写</td></tr>
+</table>
+
+<h3>三步联动实现 x0=0</h3>
+
+<pre>
+<span class="cm">// 步骤 1: rs1_addr_vd=0 时...</span>
+<span class="cm">//   分布式模式 (第 133 行):</span>
+mprf2exu_rs1_data_o = (rs1_addr_vd) ? mprf_int[addr] : <span class="str">'0</span>;
+<span class="cm">//   RAM 模式 (第 100 行):</span>
+mprf2exu_rs1_data_o = (rs1_new_data_req_ff) ? rd_data_ff : (rs1_addr_vd_ff) ? rs1_data_ff : <span class="str">'0</span>;
+
+<span class="cm">// 步骤 2: rs2_addr_vd=0 时... (同上)</span>
+
+<span class="cm">// 步骤 3: wr_req_vd=0 时... (第 122/142 行)</span>
+<span class="kw">if</span> (wr_req_vd) begin
+    mprf_int[rd_addr] &lt;= rd_data;  <span class="cm">// 写 x0 时不执行此行</span>
+<span class="kw">end</span></pre>
+
+<div class="box warn">
+  <div class="box-title">寄存器数组索引从 1 开始</div>
+  <code>mprf_int [1:SCR1_MPRF_SIZE-1]</code> (第 53-64 行), 即 <code>[1:31]</code>。<br>
+  x0 不占用任何物理存储单元, 只有 x1-x31 需要存储。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="bypass">四、RAM 模式的写优先旁路 <span class="line-ref">(第 78-111 行)</span></h2>
+<!-- ============================================================ -->
+
+<p>RAM 模式使用同步读 (1 周期延迟), 导致同一个寄存器被同时读写时, 读出的是旧值。旁路逻辑解决这个读写冲突。</p>
+
+<h3>冲突检测 (第 78-80 行)</h3>
+
+<pre>
+assign  rs1_new_data_req  = wr_req_vd &amp; (exu2mprf_rs1_addr_i == exu2mprf_rd_addr_i);
+assign  rs2_new_data_req  = wr_req_vd &amp; (exu2mprf_rs2_addr_i == exu2mprf_rd_addr_i);
+assign  read_new_data_req = rs1_new_data_req | rs2_new_data_req;</pre>
+
+<p>当 rs1 或 rs2 的读地址等于 rd 的写地址时, 标记"需要旁路"。</p>
+
+<h3>旁路数据选择 (第 100-106 行)</h3>
+
+<pre>
+assign  mprf2exu_rs1_data_o = (rs1_new_data_req_ff) ? rd_data_ff
+                                                  : (rs1_addr_vd_ff) ? rs1_data_ff
+                                                                     : <span class="str">'0</span>;
+
+assign  mprf2exu_rs2_data_o = (rs2_new_data_req_ff) ? rd_data_ff
+                                                  : (rs2_addr_vd_ff) ? rs2_data_ff
+                                                                     : <span class="str">'0</span>;</pre>
+
+<h3>时序图: 旁路工作流程 (延迟 2 周期)</h3>
+
+<pre>
+周期 N:   IDU 发出 rs1_addr=x5, rd_addr=x5 (同寄存器读写冲突)
+          检测到 rs1_new_data_req=1
+
+周期 N+1: RAM 同步读 x5 旧值 → rs1_data_ff=旧值
+          同时新数据 rd_data_ff=新值 (第 109-111 行寄存)
+          rs1_new_data_req_ff=1 (第 85 行延迟一拍)
+
+周期 N+1: mprf2exu_rs1_data_o = (rs1_new_data_req_ff=1) ? rd_data_ff(新值) : rs1_data_ff(旧值)
+          输出新值, 旁路成功</pre>
+
+<div class="box">
+  <div class="box-title">等价于 FPGA BRAM 的 RDW (Read-During-Write)</div>
+  标准的 FPGA BRAM 不支持 write-first 行为, 此旁路逻辑用外部寄存器和多路选择器模拟了 "读新不读旧" 的 write-first 语义。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sva">五、SVA 断言 <span class="line-ref">(第 154-165 行)</span></h2>
+<!-- ============================================================ -->
+
+<pre>
+<span class="str">`ifdef SCR1_TRGT_SIMULATION</span>
+<span class="str">`ifdef SCR1_MPRF_RST_EN</span>
+SCR1_SVA_MPRF_WRITEX : <span class="kw">assert property</span> (
+    <span class="str">@(negedge clk) disable iff (~rst_n)</span>
+    exu2mprf_w_req_i <span class="str">|-&gt;</span> <span class="str">!$isunknown</span>(
+        {exu2mprf_rd_addr_i,
+         (|exu2mprf_rd_addr_i ? exu2mprf_rd_data_i : `SCR1_XLEN'd0)}
+    )
+) <span class="kw">else</span> <span class="str">$error("MPRF error: unknown values")</span>;
+<span class="str">`endif</span>
+<span class="str">`endif</span></pre>
+
+<table>
+  <tr><th>断言</th><th>行号</th><th>检测条件</th><th>触发时刻</th></tr>
+  <tr><td><code>SCR1_SVA_MPRF_WRITEX</code></td><td>159-162</td><td>写请求有效时, 地址和数据必须无 X/Z 态</td><td><code>negedge clk</code></td></tr>
+</table>
+
+<p><strong>为什么用 <code>negedge clk</code>?</strong> 写操作发生在 <code>posedge clk</code>, 到 <code>negedge</code> 时, 来自 EXU 的 <code>rd_addr_i</code> 和 <code>rd_data_i</code> 已经稳定, 此时检查 X 态最可靠。</p>
+
+<p><strong>为什么检查 <code>rd_data_i</code> 时要判断 <code>|rd_addr_i</code>?</strong> 当写入 x0 时, 数据会被丢弃, 此时 <code>rd_data_i</code> 是否为 X 并不重要。所以构造检查表达式时, 如果 rd_addr=0 (写入 x0), 就用 <code>32'd0</code> 替代真实数据值, 避免误报。</p>
+
+<!-- ============================================================ -->
+<h2 id="dataflow">六、数据流总图</h2>
+<!-- ============================================================ -->
+
+<pre>
+                              SCR1 MPRF 数据流
+                              =================
+
+    exu2mprf_rs1_addr_i ──→ [|] → rs1_addr_vd ──→ 读 mprf_int[addr] ──→ ┐
+                           [归约或]                                          ├──→ mprf2exu_rs1_data_o
+                                                                            │
+    exu2mprf_rs2_addr_i ──→ [|] → rs2_addr_vd ──→ 读 mprf_int[addr] ──→ ┤
+                           [归约或]                                          ├──→ mprf2exu_rs2_data_o
+                                                                            │
+    exu2mprf_w_req_i ──→ [&amp;] ──→ wr_req_vd ──→ 写 mprf_int[rd_addr] ←──┤
+                           ↑                                               │
+    exu2mprf_rd_addr_i ──→ [|] → rd_addr_vd ─────┘                        │
+                           [归约或]                                          │
+    exu2mprf_rd_data_i ─────────────────────────────────────────────────────┘
+
+    关键点:
+    - [|] 是归约或: 地址为 5'b00000 (x0) 时输出 0, 抑制所有读写
+    - 寄存器数组 [1:31], x0 不占物理存储
+    - 分布式逻辑: 读为组合逻辑 (0 延迟)
+    - RAM 宏: 读为同步逻辑 (1 周期延迟) + 旁路处理同周期读写冲突
+</pre>
+
+<!-- ============================================================ -->
+<h2>七、与流水线其他模块的协作</h2>
+<!-- ============================================================ -->
+
+<table>
+  <tr><th>模块</th><th>角色</th><th>与 MPRF 的数据交互</th></tr>
+  <tr><td><strong>IDU</strong></td><td>译码出寄存器地址</td><td><code>rs1_addr / rs2_addr / rd_addr</code> 经 EXU 传递给 MPRF</td></tr>
+  <tr><td><strong>EXU</strong></td><td>仲裁写回数据源</td><td>通过 <code>rd_wb_sel</code> 六选一, 将 IALU/LSU/CSR 结果写回 MPRF</td></tr>
+  <tr><td><strong>IALU</strong></td><td>计算 rs1 op rs2</td><td>从 MPRF 读取 rs1/rs2, 结果经 EXU 写回 MPRF</td></tr>
+  <tr><td><strong>LSU</strong></td><td>加载操作</td><td><code>LW</code> 从内存读出的数据经 EXU 写回 MPRF 的目标寄存器</td></tr>
+  <tr><td><strong>CSR</strong></td><td>CSR 读写</td><td><code>CSRR*</code> 指令读出的 CSR 值经 EXU 写回 MPRF</td></tr>
+</table>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">scr1_pipe_mprf.sv 模块解析 | 167 行 | 1 个模块</p>
+</body>
+</html>

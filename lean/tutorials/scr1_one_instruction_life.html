@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>一条指令的一生 -- SCR1 主线串讲</title>
+<style>
+  :root {
+    --blue: #1a73e8; --blue-light: #e8f0fe; --gray: #5f6368; --border: #dadce0;
+    --code-bg: #f1f3f4; --red: #d93025; --green: #188038; --yellow: #f9ab00;
+    --purple: #8430ce; --purple-light: #f3e8ff;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #fff; color: #202124; line-height: 1.9; font-size: 16px; }
+  h1 { color: #1a365d; border-bottom: 3px solid var(--blue); padding-bottom: 12px; text-align: center; }
+  h2 { color: #1a365d; margin-top: 48px; padding: 10px 16px; background: var(--blue-light); border-radius: 6px; border-left: 5px solid var(--blue); font-size: 1.25em; }
+  h3 { color: #2d3748; margin-top: 32px; font-size: 1.1em; }
+  code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #d63384; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.85em; line-height: 1.5; }
+  pre .kw { color: #569cd6; } pre .num { color: #b5cea8; } pre .cm { color: #6a9955; } pre .str { color: #ce9178; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--blue-light); font-weight: 600; }
+  tr:hover td { background: #f8f9fa; }
+  .box { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .box-title { font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+  .warn { background: #fff3cd; border-color: #ffc107; } .warn .box-title { color: #856404; }
+  .tip { background: #d4edda; border-color: #28a745; } .tip .box-title { color: #155724; }
+  .nav { position: fixed; top: 20px; right: 20px; background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); max-width: 240px; z-index: 100; max-height: 80vh; overflow-y: auto; font-size: 0.85em; }
+  .nav a { display: block; padding: 3px 0; color: var(--blue); text-decoration: none; }
+  .nav a:hover { color: #1a365d; }
+  .nav-title { font-weight: 700; margin-bottom: 6px; color: #1a365d; font-size: 1em; }
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 20px 0; }
+  .flow-box { border: 2px solid var(--blue); border-radius: 8px; padding: 10px 16px; text-align: center; background: var(--blue-light); min-width: 120px; font-weight: 600; }
+  .flow-arrow { font-size: 1.5em; color: var(--blue); align-self: center; font-weight: 700; }
+  .stage { border-radius: 10px; padding: 16px 20px; margin: 16px 0; border-left: 6px solid; }
+  .stage-1 { background: #fff8f0; border-color: #ff8f00; }
+  .stage-2 { background: #f0f8ff; border-color: #1e88e5; }
+  .stage-3 { background: #f3f0ff; border-color: #7b1fa2; }
+  .stage-4 { background: #f0faf0; border-color: #2e7d32; }
+  .stage-5 { background: #fff0f6; border-color: #c2185b; }
+  .stage-title { font-size: 1.1em; font-weight: 700; margin-bottom: 6px; }
+  .stage .sig-flow { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-family: 'Fira Code', monospace; font-size: 0.8em; overflow-x: auto; white-space: nowrap; }
+  .diagram { font-family: 'Fira Code', monospace; font-size: 0.78em; background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; white-space: pre; }
+  .d-mod { color: #f1fa8c; font-weight: 700; }
+  .d-sig { color: #ffb86c; }
+  .d-cmt { color: #6a9955; }
+  .d-arr { color: #569cd6; }
+  .key-signal { background: #e8f0fe; border-radius: 4px; padding: 0 4px; font-weight: 700; color: #174ea6; }
+</style>
+</head>
+<body>
+
+<h1>一条指令的一生 -- SCR1 主线串讲</h1>
+
+<nav class="nav">
+  <div class="nav-title">课程导航</div>
+  <a href="#why">为什么你看不懂</a>
+  <a href="#bigpic">全景：架构图 + 数据流</a>
+  <a href="#stage1">第一站：取指 IFU</a>
+  <a href="#stage2">第二站：译码 IDU</a>
+  <a href="#stage3">第三站：执行 EXU</a>
+  <a href="#stage4">第四站：访存/写回 LSU+MPRF</a>
+  <a href="#stage5">第五站：控制 CSR</a>
+  <a href="#example">完整例子：一条 ADD</a>
+  <a href="#key-signals">关键信号白名单</a>
+  <a href="#backpressure">隐形主线：反压</a>
+  <a href="#map">与 14 周教程的映射</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="why">一、为什么你看不懂？</h2>
+<!-- ============================================================ -->
+
+<div class="box">
+  <div class="box-title">你的两个困惑，根源在这里</div>
+  <p><strong>困惑 1：缺乏整体主线</strong></p>
+  <p>教程按周次拆模块（第 8 周 IFU、第 9 周 IDU/EXU、第 10 周 IALU/LSU/MPRF...）。每个模块单独讲都很细，但你不知道它们在一条指令执行中如何接力。就像把汽车拆成发动机、变速箱、车架分别讲三遍，你没看过整车是怎么跑起来的。</p>
+  <p><strong>困惑 2：信号太多抓不住重点</strong></p>
+  <p>每个模块有 20-40 个端口。但一条指令在模块间流动时，真正起决定作用的信号 <strong>一只手数得过来</strong>。其他信号都是"电梯里的按钮"——存在，但你不坐电梯就碰不到。</p>
+</div>
+
+<div class="box tip">
+  <div class="box-title">本页的目标</div>
+  用<strong>一条指令从出生到退休</strong>的完整旅程，把 14 周内容串成一根主线。学完这一页，你会得到一个"思维骨架"——之后再看任何一周的细节，都能知道它挂在骨架的哪个位置。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="bigpic">二、全景：一条指令走过的 5 站</h2>
+<!-- ============================================================ -->
+
+<p>任何 RISC-V 指令都要走完这条流水线。SCR1 是 2 级流水线（IFU→IDU→EXU 三个模块，但 IDU 很薄），我们把"一条指令的一生"分成 5 个视角：</p>
+
+<div class="flow">
+  <div class="flow-box" style="background:#fff8f0;border-color:#ff8f00;">① 取指<br>IFU<br>从内存拿指令</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#f0f8ff;border-color:#1e88e5;">② 译码<br>IDU<br>识别指令意思</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#f3f0ff;border-color:#7b1fa2;">③ 执行<br>EXU<br>真正干活（运算）</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#f0faf0;border-color:#2e7d32;">④ 访存/写回<br>LSU+MPRF<br>存结果</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-box" style="background:#fff0f6;border-color:#c2185b;">⑤ 控制<br>CSR<br>异常/中断</div>
+</div>
+
+<h3>模块连接架构图</h3>
+
+<p>这是 SCR1 流水线核心的完整数据流图。盯住 <span class="d-sig">黄色信号</span>，它们就是"关键信号白名单"（最后有总结）：</p>
+
+<div class="diagram"><span class="d-cmt">┌────────────────────── 一条指令的数据通路 ──────────────────────┐</span>
+                          <span class="d-cmt">内存</span>
+                         <span class="d-mod">IMEM</span>
+                           <span class="d-sig">imem2ifu_instr_i</span>
+                           <span class="d-arr">│</span>
+   <span class="d-mod">IFU 取指</span> ◄────────────<span class="d-sig">exu2ifu_pc_new_i</span><span class="d-cmt">（新 PC）</span>
+   <span class="d-cmt">环形队列 4 条指令</span>    <span class="d-sig">exu2ifu_pc_new_req_i</span><span class="d-cmt">（跳转/刷新请求）</span>
+      <span class="d-sig">idu_req_data_o</span><span class="d-cmt">（原始 32 位指令）</span>
+      <span class="d-sig">idu_req_vd_o</span><span class="d-cmt">（有货）</span>          <span class="d-sig">idu2ifu_rdy_i</span><span class="d-cmt">（下游就绪=反压）</span>
+      <span class="d-arr">│</span>
+   <span class="d-mod">IDU 译码</span> ◄──────────── <span class="d-sig">exu2idu_rdy_i</span><span class="d-cmt">（反压）</span>
+      <span class="d-sig">idu2exu_cmd_o</span><span class="d-cmt">（18 字段命令结构体）</span>
+      <span class="d-sig">idu2exu_vd_o</span><span class="d-cmt">（命令有效）</span>
+      <span class="d-arr">│</span>
+   <span class="d-mod">EXU 执行</span> ──<span class="d-sig">exu2mprf_rs1_addr_o</span>──▶ <span class="d-mod">MPRF</span><span class="d-cmt">（读寄存器）</span>
+      <span class="d-cmt">IALU / 分支 / CSR 访问</span> ◄──<span class="d-sig">mprf2exu_rs1_data_i</span>──
+      <span class="d-sig">exu2mprf_w_req_o</span><span class="d-cmt">（写请求）</span>
+      <span class="d-sig">exu2mprf_rd_addr_o</span><span class="d-cmt">（写哪）</span>
+      <span class="d-sig">exu2mprf_rd_data_o</span><span class="d-cmt">（写什么）</span>
+      <span class="d-sig">exu2lsu_cmd_o</span><span class="d-cmt">（访存命令）</span> ──▶ <span class="d-mod">LSU</span> ──▶ <span class="d-mod">DMEM</span>
+      <span class="d-sig">exu2csr_rw_addr_o</span><span class="d-cmt">（CSR 访问）</span> ──▶ <span class="d-mod">CSR</span>
+      <span class="d-sig">exu2csr_take_irq_o</span> / <span class="d-sig">exu2csr_take_exc_o</span><span class="d-cmt">（事件）</span></div>
+
+<div class="box">
+  <div class="box-title">怎么读这张图</div>
+  <ul style="margin:8px 0 0;">
+    <li>指令数据流是<strong>自上而下</strong>：IFU→IDU→EXU→（MPRF/LSU/CSR）</li>
+    <li>控制信号（新 PC、反压）是<strong>反向/旁路</strong>：EXU 往回流</li>
+    <li>每个箭头都是模块间的一对 <strong>握手信号</strong>（vd=数据有效，rdy=接收就绪）</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage1">三、第一站：取指（IFU）</h2>
+<!-- ============================================================ -->
+
+<div class="stage stage-1">
+  <div class="stage-title">① 取指 IFU：去内存拿一条指令</div>
+  <p><strong>职责</strong>：按 PC（程序计数器）指定的地址，从指令内存 IMEM 取回指令，放进一个 4 条深的环形队列。</p>
+  <p><strong>为什么要有队列</strong>：IMEM 访问要 1-2 个周期，而执行可能很快。队列让 IFU 提前多取几条，避免 CPU 空转（解决"内存慢"和"执行快"的差距）。</p>
+  <div class="sig-flow">
+    IFU → IDU: <span class="key-signal">idu_req_data_o</span> = 原始指令(32位) │ <span class="key-signal">idu_req_vd_o</span> = 队列有货
+    <br>IDU → IFU: <span class="key-signal">idu2ifu_rdy_i</span> = IDU 能接收（反压信号）
+    <br>EXU → IFU: <span class="key-signal">exu2ifu_pc_new_i</span> = 新 PC │ <span class="key-signal">exu2ifu_pc_new_req_i</span> = 要换 PC
+  </div>
+  <p><strong>关键动作</strong>：预解码——IFU 看指令最低 2 位 <code>instr[1:0]</code> 判断这条是 16 位（RVC）还是 32 位（RVI），从而决定队列里占 1 格还是 2 格。</p>
+  <p><strong>对应源码</strong>：<code>src/core/pipeline/scr1_pipe_ifu.sv</code>（队列逻辑在第 320-370 行）</p>
+  <p><strong>信号很多，但你要记住的只有</strong>：<code>idu_req_data_o</code>（指令本身）+ <code>exu2ifu_pc_new_i</code>（下一条去哪）。其余全是辅助。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage2">四、第二站：译码（IDU）</h2>
+<!-- ============================================================ -->
+
+<div class="stage stage-2">
+  <div class="stage-title">② 译码 IDU：搞懂这条指令要干什么</div>
+  <p><strong>职责</strong>：把原始 32 位指令，翻译成一个 18 字段的命令结构体 <code>type_scr1_exu_cmd_s</code>，告诉下游 EXU"做什么、用哪个寄存器、立即数是多少"。</p>
+  <p><strong>译码结果就是一条"给 EXU 的命令"</strong>。指令里的一切都被拆解：</p>
+  <div class="sig-flow">
+    指令 addi x5, x1, 10  ──译码──▶  idu2exu_cmd_o = {
+    <br>&nbsp;&nbsp;ialu_cmd = ADD（做什么运算）,
+    <br>&nbsp;&nbsp;rs1_addr = x1（第一个操作数寄存器号）,
+    <br>&nbsp;&nbsp;rs2_addr = 0（第二个是立即数）,
+    <br>&nbsp;&nbsp;rd_addr  = x5（结果写哪）,
+    <br>&nbsp;&nbsp;imm = 10（立即数值）,
+    <br>&nbsp;&nbsp;rd_wb_sel = IALU（结果从哪来）}
+  </div>
+  <p><strong>还做一件事</strong>：检查这条指令是否合法（非法指令检测）。不认识的操作码 → 置 <code>exc_req</code> 异常标志。</p>
+  <p><strong>对应源码</strong>：<code>src/core/pipeline/scr1_pipe_idu.sv</code>（核心译码在 140-400 行）</p>
+  <p><strong>一句话记住</strong>：IDU 就是"翻译官"，把机器码翻译成硬件能直接执行的结构体命令。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage3">五、第三站：执行（EXU）</h2>
+<!-- ============================================================ -->
+
+<div class="stage stage-3">
+  <div class="stage-title">③ 执行 EXU：真正干活的地方</div>
+  <p><strong>职责</strong>：拿到 IDU 的命令结构体，读取寄存器值，做运算/跳转/访存/CSR 访问。</p>
+  <p><strong>EXU 内部有 4 个执行通路</strong>，根据命令分派：</p>
+  <table>
+    <tr><th>通路</th><th>干什么</th><th>例子</th></tr>
+    <tr><td>IALU 主通路</td><td>整数加减、逻辑、移位、比较</td><td>add / and / slli / slt</td></tr>
+    <tr><td>IALU 加法器 2</td><td>PC+立即数（跳转地址）、LUI/AUIPC</td><td>jal / auipc</td></tr>
+    <tr><td>LSU 通路</td><td>内存读写（load/store）</td><td>lw / sw</td></tr>
+    <tr><td>CSR 通路</td><td>读写控制状态寄存器</td><td>csrrw / mret</td></tr>
+  </table>
+  <div class="sig-flow">
+    EXU → MPRF: <span class="key-signal">exu2mprf_rs1_addr_o / rs2_addr_o</span> = 要读哪些寄存器
+    <br>MPRF → EXU: <span class="key-signal">mprf2exu_rs1_data_i / rs2_data_i</span> = 寄存器里的值
+    <br>EXU 内部: IALU 运算 → 得到结果 <span class="key-signal">ialu_main_res</span>
+    <br>EXU → MPRF: <span class="key-signal">exu2mprf_w_req_o / rd_addr_o / rd_data_o</span> = 把结果写回
+  </div>
+  <p><strong>还负责</strong>：分支判定（<code>jb_taken</code>）、计算新 PC、检测异常。指令在这里"退休"（退役，commit）。</p>
+  <p><strong>对应源码</strong>：<code>src/core/pipeline/scr1_pipe_exu.sv</code>（EXU 状态机 + 4 通路选择）</p>
+  <p><strong>一句话记住</strong>：EXU 是核心，所有"真正干活"都在这；它向外发出读寄存器、写寄存器、访存、访问 CSR 的请求。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage4">六、第四站：访存与写回（LSU + MPRF）</h2>
+<!-- ============================================================ -->
+
+<div class="stage stage-4">
+  <div class="stage-title">④ 访存 / 写回：把结果存下来</div>
+
+  <h3>MPRF：通用寄存器堆（x0-x31）</h3>
+  <p><strong>职责</strong>：存 32 个通用寄存器的值。EXU 需要时读出来，算完后写回去。</p>
+  <p><strong>三个关键特性</strong>：</p>
+  <ul>
+    <li>x0 硬连线为 0——写入忽略，读出恒为 0</li>
+    <li>读是组合逻辑（发出地址立即得到值，0 延迟）</li>
+    <li>写是时钟沿触发（同步写）</li>
+  </ul>
+  <div class="sig-flow">
+    写回: <span class="key-signal">exu2mprf_w_req_o</span> = 要写 │ <span class="key-signal">exu2mprf_rd_addr_o</span> = 写 x几 │ <span class="key-signal">exu2mprf_rd_data_o</span> = 写什么值
+  </div>
+
+  <h3>LSU：访存单元（load/store）</h3>
+  <p><strong>职责</strong>：EXU 把访存命令交给它，它负责和内存（DMEM）打交道。load 读回数据、store 写出去。</p>
+  <p><strong>LSU 是流水线里最"慢"的一环</strong>——内存访问要多个周期，所以它会给 EXU 发 <code>rdy=0</code> 反压，让前面的 IFU/IDU 都停下来等它。</p>
+  <div class="sig-flow">
+    EXU → LSU: <span class="key-signal">exu2lsu_cmd_o</span> = 访存命令（读/写/地址/数据）
+    <br>LSU → EXU: <span class="key-signal">lsu2exu_rdy_o</span> = 忙不忙（反压）│ <span class="key-signal">lsu2exu_data_o</span> = load 读回的数据
+  </div>
+  <p><strong>对应源码</strong>：<code>src/core/pipeline/scr1_pipe_mprf.sv</code>、<code>scr1_pipe_lsu.sv</code></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage5">七、第五站：控制（CSR）</h2>
+<!-- ============================================================ -->
+
+<div class="stage stage-5">
+  <div class="stage-title">⑤ 控制 CSR：例外与中断的枢纽</div>
+  <p><strong>职责</strong>：管中断/异常。平时它只是"挂着的门卫"，一旦 EXU 报告异常或外设来中断，它就接管 CPU：</p>
+  <div class="sig-flow">
+    EXU → CSR: <span class="key-signal">exu2csr_take_exc_o</span>（有异常）│ <span class="key-signal">exu2csr_take_irq_o</span>（有中断）
+    <br>CSR 自动: 保存 MEPC/MCAUSE/MTVAL → 关 MIE → 生成新 PC = MTVEC
+    <br>CSR → EXU: <span class="key-signal">csr2exu_new_pc_i</span>（跳去陷阱处理程序）│ <span class="key-signal">csr2exu_irq_o</span>（有中断要响应）
+  </div>
+  <p><strong>和正常数据流的关系</strong>：CSR 平时不参与运算，只在异常/中断/MRET 时"插入"一条新 PC 给 IFU，改变程序流向。</p>
+  <p><strong>对应源码</strong>：<code>src/core/pipeline/scr1_pipe_csr.sv</code>（陷阱流程 280-300 行，新 PC 生成 998 行）</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="example">八、完整例子：一条 ADD 指令的一生</h2>
+<!-- ============================================================ -->
+
+<p>把 5 站串起来，看一条指令 <code>add x5, x1, x2</code>（x5 = x1 + x2）在 SCR1 里如何走完全程：</p>
+
+<table>
+<tr><th>周期</th><th>发生的事</th><th>经过的模块</th><th>关键信号</th></tr>
+<tr><td>T0</td><td>IFU 按 PC 从 IMEM 取回 add 指令</td><td>IFU→IMEM</td><td><code>imem2ifu_instr_i</code></td></tr>
+<tr><td>T0</td><td>指令进入队列，IFU 通知 IDU"有货了"</td><td>IFU→IDU</td><td><code>idu_req_vd_o</code>, <code>idu_req_data_o</code></td></tr>
+<tr><td>T1</td><td>IDU 译码：这是 ADD，rs1=x1, rs2=x2, rd=x5</td><td>IDU</td><td><code>idu2exu_cmd_o</code>（结构体）</td></tr>
+<tr><td>T1</td><td>EXU 读 x1、x2 的值</td><td>EXU→MPRF</td><td><code>exu2mprf_rs1_addr_o</code></td></tr>
+<tr><td>T2</td><td>IALU 做加法，得到 x1+x2</td><td>EXU（IALU）</td><td><code>ialu_main_res</code></td></tr>
+<tr><td>T2</td><td>把结果写回 x5；指令退休</td><td>EXU→MPRF</td><td><code>exu2mprf_w_req_o</code></td></tr>
+<tr><td>T3</td><td>PC 正常加 4，IFU 取下一条</td><td>EXU→IFU</td><td><code>exu2ifu_pc_new_i</code></td></tr>
+</table>
+
+<div class="box tip">
+  <div class="box-title">注意流水线的"重叠"</div>
+  上面是"一条指令"的视角。实际运行时 3 条指令重叠：T1 周期 add 在译码时，上一条可能在执行，下一条正在取指。流水线并行就是这个意思——虽然一条指令要 3-4 周期，但平均每个周期都能退休一条（理想情况）。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="key-signals">九、关键信号白名单（解决"信号太多"）</h2>
+<!-- ============================================================ -->
+
+<p>整个 SCR1 流水线有上千个信号，但作为学习者，<strong>你只需要盯住这 10 个</strong>。看到它们，就能看懂任何一条指令在模块间怎么流动：</p>
+
+<table>
+<tr><th>#</th><th>信号</th><th>方向</th><th>含义</th><th>忘记就</th></tr>
+<tr><td>1</td><td><code>idu_req_data_o</code></td><td>IFU→IDU</td><td>原始指令（32 位机器码）</td><td>指令从哪来</td></tr>
+<tr><td>2</td><td><code>idu_req_vd_o</code> / <code>idu2ifu_rdy_i</code></td><td>IFU⇄IDU</td><td>取指级握手：有货 / 就绪</td><td>流水线推进</td></tr>
+<tr><td>3</td><td><code>idu2exu_cmd_o</code></td><td>IDU→EXU</td><td>18 字段命令结构体（含操作/寄存器/立即数）</td><td>译码结果</td></tr>
+<tr><td>4</td><td><code>idu2exu_vd_o</code> / <code>exu2idu_rdy_i</code></td><td>IDU⇄EXU</td><td>译码级握手</td><td>流水线推进</td></tr>
+<tr><td>5</td><td><code>exu2mprf_rs1_addr_o</code> + <code>mprf2exu_rs1_data_i</code></td><td>EXU⇄MPRF</td><td>读寄存器（地址→值）</td><td>操作数从哪来</td></tr>
+<tr><td>6</td><td><code>exu2mprf_w_req_o</code> + <code>rd_addr_o</code> + <code>rd_data_o</code></td><td>EXU→MPRF</td><td>写寄存器（结果写回）</td><td>结果去哪</td></tr>
+<tr><td>7</td><td><code>exu2ifu_pc_new_i</code> + <code>exu2ifu_pc_new_req_i</code></td><td>EXU→IFU</td><td>新 PC（跳转/异常/中断时）</td><td>程序流向怎么变</td></tr>
+<tr><td>8</td><td><code>lsu2exu_rdy_o</code></td><td>LSU→EXU</td><td>访存忙（反压源头）</td><td>为什么会停顿</td></tr>
+<tr><td>9</td><td><code>exu2csr_take_exc_o</code> / <code>exu2csr_take_irq_o</code></td><td>EXU→CSR</td><td>异常 / 中断请求</td><td>出大事了</td></tr>
+<tr><td>10</td><td><code>csr2exu_new_pc_i</code></td><td>CSR→EXU</td><td>陷阱入口地址（MTVEC）</td><td>处理程序入口</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">怎么用这张表</div>
+  之后再看任何一周教程，遇到新信号先问自己：<strong>"它属于这 10 个信号中的哪个环节？"</strong> 如果对不上，说明它是某个环节内部的辅助信号——先跳过。等你把主线吃透了，再看辅助信号就是水到渠成。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="backpressure">十、隐形主线：反压（Backpressure）</h2>
+<!-- ============================================================ -->
+
+<p>除了"指令向下流"这条明线，还有一条<strong>从后往前</strong>的暗线——反压。它回答"流水线为什么有时会停顿"。</p>
+
+<p>规则很简单：<strong>任何一级没准备好，就通过 rdy 信号让前面一级停下来</strong>。</p>
+
+<div class="diagram"><span class="d-cmt">                     反压传播方向（从后往前）</span>
+   <span class="d-mod">IFU</span> ◄──────── <span class="d-mod">IDU</span> ◄──────── <span class="d-mod">EXU</span> ◄──────── <span class="d-mod">LSU</span>
+   <span class="d-sig">idu2ifu_rdy</span>     <span class="d-sig">exu2idu_rdy</span>     <span class="d-sig">lsu2exu_rdy</span>
+   <span class="d-cmt">（0=停）</span>         <span class="d-cmt">（0=停）</span>        <span class="d-cmt">（0=访存忙）</span></div>
+
+<p><strong>最典型的场景</strong>：EXU 执行 load 指令，LSU 去 DMEM 读数据需要好几个周期，期间 <code>lsu2exu_rdy_o=0</code> → EXU 不能退休 → <code>exu2idu_rdy_o=0</code> → IDU 停止译码 → <code>idu2ifu_rdy_o=0</code> → IFU 停止取指。<strong>整条流水线为这一条 load 停下来等内存</strong>。</p>
+
+<div class="box">
+  <div class="box-title">为什么理解反压很重要</div>
+  反压是贯穿所有模块的"控制暗线"。当你看到教程里某模块有一堆 <code>rdy</code> 信号，别慌——它们全是这条暗线的节点，用途只有一句话：<strong>我忙，别给我塞活</strong>。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="map">十一、与 14 周教程的映射</h2>
+<!-- ============================================================ -->
+
+<p>学完这根主线后，14 周教程在骨架上的位置就清楚了：</p>
+
+<table>
+<tr><th>主线位置</th><th>对应周次</th><th>那周其实在讲什么</th></tr>
+<tr><td>流水线全景</td><td>第 5 周</td><td>架构总览（就是本页骨架的展开）</td></tr>
+<tr><td>数据通路</td><td>第 6 周</td><td>一条指令经过哪些硬件（本页的细化版）</td></tr>
+<tr><td>① 取指</td><td>第 7-8 周</td><td>IFU 内部：队列怎么填、跳转怎么刷新</td></tr>
+<tr><td>② 译码</td><td>第 3、9 周</td><td>每条指令怎么变成命令结构体</td></tr>
+<tr><td>③ 执行</td><td>第 9-10 周</td><td>EXU/IALU 怎么算、多周期怎么处理</td></tr>
+<tr><td>④ 访存/写回</td><td>第 10 周</td><td>LSU 访存、MPRF 寄存器堆实现</td></tr>
+<tr><td>⑤ 控制</td><td>第 4、11 周</td><td>CSR 陷阱流程、中断优先级</td></tr>
+<tr><td>暗线：反压</td><td>第 12 周</td><td>HDU 调试暂停（也是一种"反压"）</td></tr>
+<tr><td>对外接口</td><td>第 13 周</td><td>AHB 总线（IMEM/DMEM 怎么连）</td></tr>
+<tr><td>验证方法</td><td>第 14 周</td><td>怎么用仿真确认 CPU 对</td></tr>
+</table>
+
+<div class="box tip" style="margin-top:32px;">
+  <div class="box-title">现在该怎么做</div>
+  <ol style="margin:8px 0 0;">
+    <li>先把本页的架构图和 10 个关键信号看熟，直到能自己画出数据流方向</li>
+    <li>回到第 5 周（架构总览），现在你应该能看懂它在讲什么了</li>
+    <li>然后顺着主线下钻：这周的内容属于哪一站？它补充了哪个细节？</li>
+    <li>每学完一周，回来对照这张映射表，确认自己把它"挂"到了主线上</li>
+  </ol>
+</div>
+
+<p style="text-align:center;color:var(--gray);margin-top:40px;">SCR1 | 一条指令的一生 | 主线串讲</p>
+
+</body>
+</html>

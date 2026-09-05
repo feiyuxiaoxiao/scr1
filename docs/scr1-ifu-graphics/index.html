@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCR1 IFU 取指单元图解</title>
+<script src="./vendor/mermaid.min.js"></script>
+<style>
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         max-width: 1100px; margin: 0 auto; padding: 24px; background: #f7f8fa;
+         color: #1f2328; }
+  h1 { border-bottom: 3px solid #0969da; padding-bottom: 8px; }
+  h2 { color: #0969da; margin-top: 36px; }
+  .note { background: #fff8c5; border-left: 4px solid #d4a72c; padding: 8px 12px;
+          font-size: 14px; margin: 12px 0; }
+  .mermaid { background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
+             padding: 16px; margin: 12px 0; overflow-x: auto; }
+  footer { margin-top: 40px; color: #656d76; font-size: 13px;
+           border-top: 1px solid #d0d7de; padding-top: 12px; }
+  code { background: #eff1f3; padding: 1px 5px; border-radius: 4px;
+         font-family: "Cascadia Code", Consolas, monospace; }
+</style>
+</head>
+<body>
+
+<h1>SCR1 RISC-V IFU 取指单元图解</h1>
+<p>源码：<code>src/core/pipeline/scr1_pipe_ifu.sv</code>（826 行）。本页把 IFU 的接口、内部结构、
+控制流与关键时序用图表达，与学习笔记 "第 3 课重讲（深入版）" 配套。分支走向假设为
+MAX 配置（未定义 <code>SCR1_NO_DEC_STAGE</code> / <code>SCR1_NEW_PC_REG</code>）。</p>
+
+<!-- ============================ 图 1 ============================ -->
+<h2>图 1：模块接口框图（外部视图）</h2>
+<div class="mermaid">
+flowchart LR
+    subgraph IFU["scr1_pipe_ifu"]
+        core(["取指控制 + 指令队列"])
+    end
+    IMEM["IMEM 指令内存"]
+    EXU["EXU 执行单元"]
+    IDU["IDU 译码单元"]
+    HDU["HDU 调试子系统"]
+    TOP["pipe_top 顶层"]
+
+    TOP -- "clk / rst_n" --> core
+    TOP -- "pipe2ifu_stop_fetch_i" --> core
+    EXU -- "exu2ifu_pc_new_req_i" --> core
+    EXU -- "exu2ifu_pc_new_i" --> core
+    core -- "ifu2imem_req_o / cmd_o / addr_o" --> IMEM
+    IMEM -- "imem2ifu_rdata_i / resp_i" --> core
+    IMEM -- "imem2ifu_req_ack_i" --> core
+    core -- "ifu2idu_instr_o" --> IDU
+    core -- "ifu2idu_vd_o / imem_err_o / err_rvi_hi_o" --> IDU
+    IDU -- "idu2ifu_rdy_i" --> core
+    HDU -- "hdu2ifu_pbuf_fetch_i / vd_i / err_i / instr_i" --> core
+</div>
+<div class="note">对应源码 <code>:36-71</code>。四组接口：与顶层（复位/时钟/停取指）、与 IMEM
+（读请求+响应）、与 EXU（换 PC）、与 IDU（送指令）。HDU 程序缓冲仅在 <code>SCR1_DBG_EN</code>
+时接入。</div>
+
+<!-- ============================ 图 2 ============================ -->
+<h2>图 2：内部结构框图（数据通路）</h2>
+<div class="mermaid">
+flowchart TB
+    subgraph IFUINT["IFU 内部功能单元"]
+        direction TB
+        A["IMEM 接口 请求与响应译码"]
+        B["地址寄存器 imem_addr_ff"]
+        C["pending 计数 imem_pnd_txns_cnt"]
+        D["discard 计数 imem_resp_discard_cnt"]
+        E["指令类型译码 instr_type"]
+        F["指令队列 q_data/q_err 4x16bit"]
+        G["队列状态 rptr/wptr 空满判定"]
+        H["IFU FSM IDLE/FETCH"]
+        I["输出多路选择器 拼指令送 IDU"]
+        B2["new_pc_unaligned_ff 非对齐标志"]
+        B3["instr_hi_rvi_lo_ff 跨块欠账"]
+    end
+    IMEMOUT["IMEM"]
+    EXUOUT["EXU"]
+    IDUOUT["IDU"]
+
+    IMEMOUT -- "rdata" --> A
+    A -- "rdata 32bit" --> E
+    E --> B3
+    E -- "指令片段" --> F
+    C -- "停发控制" --> A
+    D -- "丢弃控制" --> A
+    H -- "使能请求" --> A
+    B2 --> E
+    B3 --> E
+    F --> G
+    G --> I
+    G -- "空/满反馈" --> A
+    B -- "取指地址" --> A
+    EXUOUT -- "new_pc_req/new_pc" --> H
+    EXUOUT -- "new_pc" --> B
+    I -- "ifu2idu_instr_o" --> IDUOUT
+</div>
+<div class="note">数据通路：IMEM 返回 32 位 → 类型译码（<code>:279-302</code>）判定半字组合 →
+按 <code>WR_FULL/WR_HI</code> 写入队列（<code>:340-373</code>）→ 读侧按
+<code>RD_WORD/RD_HWORD</code> 弹出（<code>:328-337</code>）→ 输出 mux 拼接（<code>:745-753</code>）。
+FSM 与两个计数器共同决定是否发下一个请求（<code>:596-605</code>）。</div>
+
+<!-- ============================ 图 3 ============================ -->
+<h2>图 3：IFU FSM 状态图</h2>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> FETCH: ifu_fetch_req
+    FETCH --> FETCH: 预取条件满足
+    FETCH --> IDLE: ifu_stop_req
+</div>
+<div class="note">仅两态（<code>:91-94</code>）。进入 FETCH 的唯一条件 = EXU 发来 new_pc 请求且未停取指
+（<code>:465</code>）。停在 FETCH 期间持续向 IMEM 发读请求；退出条件 = 顶层停取指或 IMEM
+错误待丢弃（<code>:466-467</code>）。MAX（无 <code>SCR1_NEW_PC_REG</code>）下 new_pc 请求在 IDLE 态
+可直接驱动请求线绕过状态转移（<code>:597</code>）。</div>
+
+<!-- ============================ 图 4 ============================ -->
+<h2>图 4：指令类型译码决策树</h2>
+<div class="mermaid">
+flowchart TD
+    R["收到 IMEM 响应 非丢弃"]
+    Q1{"new_pc_unaligned_ff?"}
+    Q2{"高半字是 RVI?"}
+    Q3{"instr_hi_rvi_lo_ff?"}
+    Q4{"高半字是 RVI?"}
+    Q5{"hi/lo 两位"}
+    T1["RVI_LO_NV"]
+    T2["RVC_NV"]
+    T3["RVI_LO_RVI_HI"]
+    T4["RVC_RVI_HI"]
+    T5["RVC_RVC"]
+    T6["RVI_LO_RVC"]
+    T7["RVI_HI_RVI_LO"]
+
+    R --> Q1
+    Q1 -- "是" --> Q2
+    Q2 -- "是" --> T1
+    Q2 -- "否" --> T2
+    Q1 -- "否" --> Q3
+    Q3 -- "是" --> Q4
+    Q4 -- "是" --> T3
+    Q4 -- "否" --> T4
+    Q3 -- "否" --> Q5
+    Q5 -- "00" --> T5
+    Q5 -- "10" --> T6
+    Q5 -- "01或11" --> T7
+</div>
+<div class="note">对应 <code>:282-302</code> 的 <code>always_comb</code>。判定顺序：非对齐 new_pc
+优先（只看高半字），其次跨块欠账标志（低半字是上一 RVI 的高半），最后按
+<code>{instr_hi_is_rvi, instr_lo_is_rvi}</code> 解码。8 种类型的含义见学习笔记表格。</div>
+
+<!-- ============================ 图 5 ============================ -->
+<h2>图 5：指令队列（4 槽半字环形缓冲）</h2>
+<div class="mermaid">
+flowchart LR
+    subgraph Q["指令队列 q_data[0..3] 每槽16bit"]
+        direction LR
+        S0["槽0"]
+        S1["槽1"]
+        S2["槽2"]
+        S3["槽3"]
+    end
+    W["wptr 写指针 +1 或 +2"]
+    Rp["rptr 读指针 +1 或 +2"]
+    R["读侧判定 q_head_is_rvc/rvi"]
+    Q1["空判定 rptr 等于 wptr"]
+
+    S0 --> S1 --> S2 --> S3
+    S3 --> S0
+    W -- "WR_HI=1槽 WR_FULL=2槽" --> Q
+    Rp --> Q1
+    R -- "RVC读1槽 RVI读2槽" --> Rp
+    Q1 --> R
+</div>
+<div class="note">环形缓冲容量 = 2 个 32 位字 = 4 个半字槽（<code>:77-78</code>）。写入按指令片段
+宽度推进 <code>wptr</code>（<code>:394-396</code>），读出按队头类型推进 <code>rptr</code>
+（<code>:409-411</code>）。读写指针相等即空（<code>:453</code>）。按半字存储是为了支持 RVC
+变长指令与跨块 RVI 拼接（半字是 RVC / RVI / 取指块三者的公共最小单位）。</div>
+
+<!-- ============================ 图 6 ============================ -->
+<h2>图 6：跨块 RVI 拼接时序</h2>
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant IMEM as IMEM 指令内存
+    participant IFU as IFU
+    participant Q as 队列四半字
+    Note over IFU: new_pc 指向非4对齐位置
+    IFU->>IMEM: 请求块A 地址对齐到4
+    IMEM-->>IFU: rdata_A 高半槽为某RVI低半
+    Note over IFU: 高半槽是RVI低半
+    Note over IFU: instr_hi_rvi_lo_next 置位
+    IFU->>Q: 按宽度写入 2 槽
+    IFU->>IMEM: 请求块B 地址加4
+    IMEM-->>IFU: rdata_B 低半槽为RVI高半
+    Note over IFU: 低半槽先拼队内悬空低半
+    IFU->>Q: 继续写入
+    IFU->>IDU: 输出 q_data_next 拼 q_data_head
+    Note over IDU: 完整 RVI 被还原
+</div>
+<div class="note">32 位 RVI 若从块地址 +2 开始，其低 16 位落在块 A 的高半槽、高 16 位落在块 B
+的低半槽，两个半字相隔一次取指延迟到达。IFU 用 1 bit 欠账标志记录状态
+（<code>:308-322</code>），到块 B 时把低半槽内容当 <code>RVI_HI</code> 拼接而非独立指令
+（<code>:290-293</code>）。</div>
+
+<!-- ============================ 图 7 ============================ -->
+<h2>图 7：IMEM 请求-响应握手与在飞计数</h2>
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant IFU as IFU
+    participant IMEM as IMEM
+    Note over IFU: pnd=0 discard=0
+    IFU->>IMEM: req_o=1 addr_o=PC
+    IMEM-->>IFU: req_ack_i=1 握手完成
+    Note over IFU: pnd 0转1 在飞一笔
+    IMEM-->>IFU: resp_i=RDY_OK
+    Note over IFU: pnd 1转0 数据入队
+    IFU->>IMEM: req_o=1 addr_o=PC+4
+    IMEM-->>IFU: req_ack_i=1
+    Note over IFU: pnd 0转1
+    IMEM-->>IFU: resp_i=RDY_ER 错误
+    Note over IFU: pnd 1转0
+    Note over IFU: discard 增加 响应作废
+    Note over IFU: FSM 回 IDLE 停发
+</div>
+<div class="note">请求侧握手：<code>req 与 ack</code> 同时为 1 即成交（<code>:513</code>）。
+pending 计数器在握手上沿 +1、响应到达 -1（<code>:543-553</code>），用于支持 IMEM 多拍后响应。
+错误响应触发 discard 计数（<code>:569-591</code>），把出错后所有在飞/队列指令按序清掉。</div>
+
+<!-- ============================ 图 8 ============================ -->
+<h2>图 8：错误注入 → 精确异常链路</h2>
+<div class="mermaid">
+flowchart LR
+    ER["IMEM resp=ER"] --> S1["错误写入队列 q_err 随槽存储"]
+    S1 --> S2["取指侧刹车 FSM回IDLE"]
+    S1 --> S3["队头带错指令出队"]
+    S2 --> S4["丢弃后续在飞指令"]
+    S3 --> S5["ifu2idu_imem_err_o=1"]
+    S5 --> S6["IDU 不译码 生成访问异常"]
+    S6 --> S7["EXU 到 CSR trap"]
+    S7 --> S8["MCAUSE=1 MEPC=出错指令"]
+</div>
+<div class="note">IMEM 出错时错误被伪装成一条指令注入队列，与正常指令一起按序流动，到 IDU/EXU
+才翻牌成异常——这是 RISC-V 精确异常的关键（<code>:419-444</code>；
+<code>scr1_pipe_idu.sv:134-137</code>）。取指侧同时踩刹车清掉错误之后的指令，避免其产生副作用。</div>
+
+<!-- ============================ 图 9 ============================ -->
+<h2>图 9：预取超前于执行（VCD 观测到的现象）</h2>
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant IMEM as IMEM
+    participant IFU as IFU 预取
+    participant IDU as IDU
+    participant EXU as EXU 执行
+    Note over IFU: 复位后立即进入 FETCH
+    IFU->>IMEM: 请求 PC+0
+    IFU->>IMEM: 请求 PC+4
+    IMEM-->>IFU: rdata PC+0
+    IMEM-->>IFU: rdata PC+4
+    IFU->>IDU: 指令0 出队
+    IFU->>IDU: 指令1 出队
+    IDU->>EXU: 指令0 译码命令
+    Note over EXU: curr_pc 滞后约3拍才开始
+    EXU-->>IFU: 顺序执行 new_pc=inc_pc
+</div>
+<div class="note">波形观测（学习笔记第 9 课补充）：<code>pipe2imem_addr_o</code> 领先
+<code>curr_pc</code> 约 3 拍——IFU 持续预取把指令囤进队列，EXU 逐条消费。RVC 步长 +2 与 RVI 步长
++4 交替，即 <code>RD_HWORD</code> / <code>RD_WORD</code> 交替消费的体现。</div>
+
+<footer>
+  生成：/workspace/docs/scr1-ifu-graphics/index.html ·
+  配套笔记：/workspace/docs/learning-notes.md "第 3 课重讲（深入版）" ·
+  配套文档：/workspace/docs/scr1-pipe-ifu/design-spec.md 与 verification.md ·
+  依赖：本地 vendor/mermaid.min.js（Mermaid v11）
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral",
+    securityLevel: "strict"
+  });
+</script>
+</body>
+</html>

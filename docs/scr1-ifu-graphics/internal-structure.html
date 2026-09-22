@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCR1 IFU 内部结构框图</title>
+<script src="./vendor/mermaid.min.js"></script>
+<style>
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         max-width: 1200px; margin: 0 auto; padding: 24px; background: #f7f8fa;
+         color: #1f2328; }
+  h1 { border-bottom: 3px solid #0969da; padding-bottom: 8px; }
+  h2 { color: #0969da; margin-top: 36px; }
+  .note { background: #fff8c5; border-left: 4px solid #d4a72c; padding: 8px 12px;
+          font-size: 14px; margin: 12px 0; }
+  .mermaid { background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
+             padding: 16px; margin: 12px 0; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; }
+  th { background: #eff1f3; }
+  footer { margin-top: 40px; color: #656d76; font-size: 13px;
+           border-top: 1px solid #d0d7de; padding-top: 12px; }
+  code { background: #eff1f3; padding: 1px 5px; border-radius: 4px;
+         font-family: "Cascadia Code", Consolas, monospace; }
+  a { color: #0969da; }
+</style>
+</head>
+<body>
+
+<h1>SCR1 IFU 内部结构框图</h1>
+<p>源码：<code>src/core/pipeline/scr1_pipe_ifu.sv</code>（826 行）。本页聚焦
+<strong>模块内部的功能划分与信号连接</strong>，与
+<a href="./index.html">IFU 图解首页</a>、<code>docs/scr1-pipe-ifu/design-spec.md</code> 配套。
+分支走向假设为 MAX 配置（未定义 <code>SCR1_NO_DEC_STAGE</code> / <code>SCR1_NEW_PC_REG</code>）。</p>
+
+<h2>图 1：内部结构框图（功能单元与数据/控制流）</h2>
+<div class="mermaid">
+flowchart TB
+    subgraph EXT["外部接口"]
+        RST["clk / rst_n"]
+        STOP["pipe2ifu_stop_fetch 停取指"]
+        NPREQ["exu2ifu_pc_new_req_i 换PC请求"]
+        NPDATA["exu2ifu_pc_new_i 新PC值"]
+        IMEMOUT["ifu2imem req/addr/cmd 取指请求"]
+        IMEMIN["imem2ifu rdata/resp/req_ack 内存响应"]
+        IDURDY["idu2ifu_rdy_i IDU就绪"]
+        PBUF["hdu2ifu_pbuf 调试注入"]
+        IDU["IDU 译码单元"]
+    end
+
+    subgraph REQCTRL["请求控制"]
+        FSM["IFU FSM IDLE/FETCH"]
+        REQGEN["请求生成与门控 req/addr/cmd"]
+    end
+
+    subgraph ADDR["地址单元"]
+        ADDRFF["imem_addr_ff 取指地址寄存器"]
+        ADDRNEXT["窄加法 顺序+1 边界进位"]
+    end
+
+    subgraph CNT["在飞与丢弃计数"]
+        PND["imem_pnd_txns_cnt 在飞总账"]
+        FULL["q_full 在飞满"]
+        DISC["imem_resp_discard_cnt 待丢废单"]
+        DREQ["discard_req 丢弃窗口"]
+        VDPND["vd_pnd 有效在飞"]
+    end
+
+    subgraph DEC["响应译码与标志"]
+        RDEC["响应译码 ok/er/received/vd"]
+        HS["handshake_done 握手"]
+        UNAL["new_pc_unaligned_ff 非对齐标志"]
+        CROSS["instr_hi_rvi_lo_ff 跨块欠账"]
+        TYPE["instr_type 8 型译码"]
+    end
+
+    subgraph QU["指令队列 半字环形缓冲"]
+        WR["写大小译码 WR_FULL/WR_HI/WR_NONE"]
+        QDATA["q_data 4 槽 / q_err 4 槽"]
+        PTR["q_wptr / q_rptr 读写指针"]
+        QST["队列状态 空/占用/空闲/队头类型"]
+        RDSZ["读大小译码 RD_WORD/RD_HWORD"]
+    end
+
+    subgraph OUT["输出单元"]
+        MUX["输出多路选择 拼 RVC/RVI"]
+        ERROUT["imem_err / err_rvi_hi"]
+    end
+
+    subgraph OBS["断言观察"]
+        SVA["10 条 SVA 断言"]
+    end
+
+    RST -.-> FSM
+    RST -.-> ADDRFF
+    STOP -.-> REQGEN
+    STOP -.-> DISC
+    NPREQ -.-> FSM
+    NPREQ -.-> DISC
+    NPDATA -.-> ADDRFF
+    NPDATA -.-> UNAL
+    PBUF -.-> MUX
+    PBUF -.-> ERROUT
+
+    IMEMIN --> RDEC
+    RDEC --> HS
+    RDEC --> TYPE
+    RDEC -.-> DISC
+    IMEMIN -.-> ADDRNEXT
+    ADDRNEXT --> ADDRFF
+    ADDRFF --> REQGEN
+    REQGEN --> IMEMOUT
+    HS -.-> PND
+    FSM --> REQGEN
+    PND --> FULL
+    PND --> VDPND
+    DISC --> VDPND
+    DISC --> DREQ
+    FULL -.-> REQGEN
+    VDPND -.-> REQGEN
+    QST -.-> REQGEN
+
+    TYPE -.-> CROSS
+    CROSS -.-> TYPE
+    UNAL -.-> TYPE
+    TYPE --> WR
+    WR --> QDATA
+    PTR --> QDATA
+    QDATA --> QST
+    QST --> PTR
+    QST --> RDSZ
+    RDSZ --> PTR
+    DREQ -.-> WR
+    IDURDY -.-> RDSZ
+    QDATA --> MUX
+    QDATA --> ERROUT
+    MUX --> IDU
+    ERROUT --> IDU
+
+    classDef ext fill:#f3f0ff,stroke:#8250df,color:#1f2328;
+    classDef ctrl fill:#fff8c5,stroke:#d4a72c,color:#1f2328;
+    classDef data fill:#ddf4ff,stroke:#0969da,color:#1f2328;
+    classDef cnt fill:#ffeef0,stroke:#cf222e,color:#1f2328;
+    classDef queue fill:#dafbe1,stroke:#1a7f37,color:#1f2328;
+    classDef obs fill:#eff1f3,stroke:#8c959f,color:#1f2328;
+    class RST,STOP,NPREQ,NPDATA,IMEMOUT,IMEMIN,IDURDY,PBUF,IDU ext;
+    class FSM,REQGEN ctrl;
+    class ADDRFF,ADDRNEXT data;
+    class PND,FULL,DISC,DREQ,VDPND cnt;
+    class RDEC,HS,UNAL,CROSS,TYPE data;
+    class WR,QDATA,PTR,QST,RDSZ queue;
+    class MUX,ERROUT data;
+    class SVA obs;
+</div>
+<div class="note">
+实线 = 数据路径（32/16 位指令数据、地址）；虚线 = 控制/状态。颜色：紫=外部接口，
+黄=请求控制，蓝=数据通路，红=计数器，绿=指令队列，灰=断言。
+核心闭环：IMEM 响应 → 译码/标志 → 按大小写队列 → 读出拼装 → 送 IDU；
+同时握手与响应驱动两个计数器，计数结果反过来门控"发不发请求"和"响应入不入队"。
+</div>
+
+<h2>图 2：两个计数器如何门控请求与入队</h2>
+<div class="mermaid">
+flowchart LR
+    HS["握手成功 handshake_done"] -->|"+1"| PND["在飞总账 imem_pnd_txns_cnt"]
+    RESP["响应到货 received"] -->|"-1"| PND
+    PND --> FULL{"在飞全满?"}
+    NEWPC["换 PC new_pc_req"] -->|"装载在飞数"| DISC["待丢废单 imem_resp_discard_cnt"]
+    FIRSTERR["首个错误 er_discard_pnd"] -->|"装载在飞数"| DISC
+    DISC -->|"每丢一笔 -1"| DISC
+    DISC --> DREQ{"丢弃窗口开?"}
+    PND --> VD["有效在飞 vd_pnd = pnd - discard"]
+    DISC --> VD
+    QFREE["队列空闲 q_free_w_next"] --> FREE{"有空槽?"}
+    VD --> FREE
+    FULL -->|"满则停"| GEN["发请求门控"]
+    FREE -->|"有座才发"| GEN
+    GEN --> REQ["ifu2imem_req_o"]
+    DREQ -->|"窗口内响应丢弃"| DROPPED["响应不入队"]
+    VD -->|"反馈是否可继续取指"| QST["队列状态"]
+
+    classDef cnt fill:#ffeef0,stroke:#cf222e,color:#1f2328;
+    classDef ctrl fill:#fff8c5,stroke:#d4a72c,color:#1f2328;
+    classDef ext fill:#f3f0ff,stroke:#8250df,color:#1f2328;
+    class PND,DISC,VD,DREQ cnt;
+    class FULL,FREE,GEN,QST ctrl;
+    class HS,RESP,NEWPC,FIRSTERR,QFREE,REQ,DROPPED ext;
+</div>
+<div class="note">
+<code>pnd</code> 记"在飞总数"（握手 +1、响应 -1）；<code>discard</code> 记"其中到货即扔的废单"
+（换 PC/首错装载、每丢一笔 -1）。两者相减得 <code>vd_pnd</code>，与队列空闲一起决定能否继续发请求；
+<code>discard_req</code> 非 0 时窗口内的响应直接丢弃、不入队。对应源码
+<code>:543-554</code>、<code>:569-591</code>、<code>:449-458</code>、<code>:596-605</code>。
+</div>
+
+<h2>功能块与源码位置对照</h2>
+<table>
+<tr><th>功能块</th><th>主要信号</th><th>源码行</th></tr>
+<tr><td>响应译码</td><td><code>imem_resp_ok / er / received / vd</code></td><td>:507-513</td></tr>
+<tr><td>握手</td><td><code>imem_handshake_done</code></td><td>:513</td></tr>
+<tr><td>地址寄存器与窄加法</td><td><code>imem_addr_ff / imem_addr_next</code></td><td>:515-535</td></tr>
+<tr><td>在飞计数</td><td><code>imem_pnd_txns_cnt / q_full</code></td><td>:538-554</td></tr>
+<tr><td>丢弃计数</td><td><code>imem_resp_discard_cnt / discard_req</code></td><td>:556-591</td></tr>
+<tr><td>非对齐标志</td><td><code>new_pc_unaligned_ff</code></td><td>:259-274</td></tr>
+<tr><td>跨块欠账</td><td><code>instr_hi_rvi_lo_ff</code></td><td>:304-322</td></tr>
+<tr><td>类型译码</td><td><code>instr_type</code></td><td>:276-302</td></tr>
+<tr><td>写大小译码</td><td><code>q_wr_size</code></td><td>:340-373</td></tr>
+<tr><td>队列存储与指针</td><td><code>q_data / q_err / q_wptr / q_rptr</code></td><td>:161-180, :381-411</td></tr>
+<tr><td>队列状态</td><td><code>q_is_empty / q_ocpd_h / q_has_free_slots</code></td><td>:449-458</td></tr>
+<tr><td>读大小译码</td><td><code>q_rd_hword / q_rd_word</code></td><td>:328-337</td></tr>
+<tr><td>输出多路选择</td><td><code>ifu2idu_instr_o</code></td><td>:745-753</td></tr>
+<tr><td>错误输出</td><td><code>ifu2idu_imem_err_o / err_rvi_hi_o</code></td><td>:720-740</td></tr>
+<tr><td>FSM</td><td><code>ifu_fetch_req / ifu_stop_req</code></td><td>:91-94, :464-490</td></tr>
+<tr><td>请求生成</td><td><code>ifu2imem_req_o / addr_o / cmd_o</code></td><td>:596-607</td></tr>
+<tr><td>断言</td><td>10 条 <code>SCR1_SVA_IFU_*</code></td><td>:769-822</td></tr>
+</table>
+
+<footer>
+  生成：/workspace/docs/scr1-ifu-graphics/internal-structure.html ·
+  首页：/workspace/docs/scr1-ifu-graphics/index.html ·
+  设计规格：/workspace/docs/scr1-pipe-ifu/design-spec.md ·
+  依赖：本地 vendor/mermaid.min.js（Mermaid v11）
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral",
+    securityLevel: "strict"
+  });
+</script>
+</body>
+</html>

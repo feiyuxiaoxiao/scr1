@@ -810,6 +810,13 @@ MPRF 单独成文的两份文档：
 - 设计规格：`docs/scr1-pipe-mprf/design-spec.md`（2 读 1 写/x0/分布式 vs RAM/写优先）
 - 验证文档：`docs/scr1-pipe-mprf/verification.md`（FC-MPRF-1~15 覆盖点/断言核对/回归流程/结论）
 
+### 配套交付物（docs/scr1-pipe-csr/）
+
+CSR 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-pipe-csr/design-spec.md`（CSR 读写译码/trap 事件/MSTATUS~MIP/计数器/IPIC·HDU·TDU 桥接/New PC）
+- 验证文档：`docs/scr1-pipe-csr/verification.md`（FC-CSR-1~42 覆盖点/14 断言核对/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

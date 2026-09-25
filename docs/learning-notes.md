@@ -789,6 +789,13 @@ EXU 单独成文的两份文档：
 - 设计规格：`docs/scr1-pipe-exu/design-spec.md`（接口/队列/IALU/异常/WFI/PC/LSU/CSR/配置宏）
 - 验证文档：`docs/scr1-pipe-exu/verification.md`（FC-EXU-1~33 覆盖点/断言核对/回归流程/结论）
 
+### 配套交付物（docs/scr1-pipe-lsu/）
+
+LSU 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-pipe-lsu/design-spec.md`（接口/FSM/命令寄存器/异常/数据扩展/TDU）
+- 验证文档：`docs/scr1-pipe-lsu/verification.md`（FC-LSU-1~27 覆盖点/断言核对/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

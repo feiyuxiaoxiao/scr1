@@ -817,6 +817,13 @@ CSR 单独成文的两份文档：
 - 设计规格：`docs/scr1-pipe-csr/design-spec.md`（CSR 读写译码/trap 事件/MSTATUS~MIP/计数器/IPIC·HDU·TDU 桥接/New PC）
 - 验证文档：`docs/scr1-pipe-csr/verification.md`（FC-CSR-1~42 覆盖点/14 断言核对/回归流程/结论）
 
+### 配套交付物（docs/scr1-pipe-top/）
+
+流水线顶层 `scr1_pipe_top` 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-pipe-top/design-spec.md`（子模块例化索引/互连/时钟复位域/配置宏/控制派生）
+- 验证文档：`docs/scr1-pipe-top/verification.md`（FC-TOP-1~30 覆盖点/配置矩阵/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

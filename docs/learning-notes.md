@@ -803,6 +803,13 @@ IALU 单独成文的两份文档：
 - 设计规格：`docs/scr1-pipe-ialu/design-spec.md`（主加法器/地址加法器/移位/MDU 乘除/结果 mux）
 - 验证文档：`docs/scr1-pipe-ialu/verification.md`（FC-IALU-1~30 覆盖点/断言核对/回归流程/结论）
 
+### 配套交付物（docs/scr1-pipe-mprf/）
+
+MPRF 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-pipe-mprf/design-spec.md`（2 读 1 写/x0/分布式 vs RAM/写优先）
+- 验证文档：`docs/scr1-pipe-mprf/verification.md`（FC-MPRF-1~15 覆盖点/断言核对/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

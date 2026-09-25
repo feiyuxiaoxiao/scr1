@@ -775,6 +775,13 @@ IFU 单独成文的两份文档，与本节互为印证：
 - 验证文档：`docs/scr1-pipe-ifu/verification.md`（覆盖点/断言核对/回归流程/结论）
 - 图形化文档：`docs/scr1-ifu-graphics/index.html`（9 张 Mermaid 图：模块视图、FSM、类型译码树、环形队列、跨块拼接、IMEM 时序等）
 
+### 配套交付物（docs/scr1-pipe-idu/）
+
+IDU 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-pipe-idu/design-spec.md`（接口/4 层译码/指令总表/立即数重组/配置宏影响）
+- 验证文档：`docs/scr1-pipe-idu/verification.md`（FC-1~26 覆盖点/断言核对/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

@@ -824,6 +824,34 @@ CSR 单独成文的两份文档：
 - 设计规格：`docs/scr1-pipe-top/design-spec.md`（子模块例化索引/互连/时钟复位域/配置宏/控制派生）
 - 验证文档：`docs/scr1-pipe-top/verification.md`（FC-TOP-1~30 覆盖点/配置矩阵/回归流程/结论）
 
+### 配套交付物（docs/scr1-ipic/）
+
+IPIC 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-ipic/design-spec.md`（接口/寄存器映射/优先编码/服务与优先级/配置宏）
+- 验证文档：`docs/scr1-ipic/verification.md`（FC-IPIC-1~29 覆盖点/回归流程/结论）
+
+### 配套交付物（docs/scr1-tdu/）
+
+TDU 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-tdu/design-spec.md`（接口/CSR 映射/MCONTROL/ICOUNT/exec·ldst 命中/dmode 请求）
+- 验证文档：`docs/scr1-tdu/verification.md`（FC-TDU-1~28 覆盖点/11 断言核对/回归流程/结论）
+
+### 配套交付物（docs/scr1-hdu/）
+
+HDU 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-hdu/design-spec.md`（接口/FSM/PBUF/调试 CSR/停机原因与优先级/握手时序）
+- 验证文档：`docs/scr1-hdu/verification.md`（FC-HDU-1~35 覆盖点/5 断言核对/回归流程/结论）
+
+### 配套交付物（docs/scr1-tracelog/）
+
+Tracelog 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-tracelog/design-spec.md`（接口/采样时序/事件类型/CSR 快照/输出格式/配置宏）
+- 验证文档：`docs/scr1-tracelog/verification.md`（FC-TRACE-1~27 覆盖点/无 SVA/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

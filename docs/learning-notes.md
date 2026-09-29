@@ -852,6 +852,41 @@ Tracelog 单独成文的两份文档：
 - 设计规格：`docs/scr1-tracelog/design-spec.md`（接口/采样时序/事件类型/CSR 快照/输出格式/配置宏）
 - 验证文档：`docs/scr1-tracelog/verification.md`（FC-TRACE-1~27 覆盖点/无 SVA/回归流程/结论）
 
+### 配套交付物（docs/scr1-core-top/）
+
+核心顶层 `scr1_core_top` 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-core-top/design-spec.md`（复位双路径/流水线装配/调试子系统/RDC 掩码/时钟门控）
+- 验证文档：`docs/scr1-core-top/verification.md`（FC-CORE-1~25 覆盖点/配置矩阵/回归流程/结论）
+
+### 配套交付物（docs/scr1-dm/）
+
+Debug Module 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-dm/design-spec.md`（寄存器映射/抽象命令 FSM/DHI FSM/抽象指令/PBUF/cmderr）
+- 验证文档：`docs/scr1-dm/verification.md`（FC-DM-1~37 覆盖点/6 断言核对/回归流程/结论）
+
+### 配套交付物（docs/scr1-dmi/）
+
+DMI 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-dmi/design-spec.md`（TAPC↔DM 桥/DTMCS 与 DMI access/op 解码/读缓存）
+- 验证文档：`docs/scr1-dmi/verification.md`（FC-DMI-1~16 覆盖点/无 SVA/回归流程/结论）
+
+### 配套交付物（docs/scr1-scu/）
+
+SCU 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-scu/design-spec.md`（SCU CSR/四路复位表达式/RDC qualifier/STICKY）
+- 验证文档：`docs/scr1-scu/verification.md`（FC-SCU-1~25 覆盖点/6 断言核对/回归流程/结论）
+
+### 配套交付物（docs/scr1-tapc/）
+
+TAP Controller 单独成文的两份文档：
+
+- 设计规格：`docs/scr1-tapc/design-spec.md`（16 态 TAP FSM/IR/DR/指令译码/TDO/链转发）
+- 验证文档：`docs/scr1-tapc/verification.md`（FC-TAPC-1~26 覆盖点/2 断言核对/回归流程/结论）
+
 ---
 
 *笔记持续更新中。*

@@ -887,6 +887,55 @@ TAP Controller 单独成文的两份文档：
 - 设计规格：`docs/scr1-tapc/design-spec.md`（16 态 TAP FSM/IR/DR/指令译码/TDO/链转发）
 - 验证文档：`docs/scr1-tapc/verification.md`（FC-TAPC-1~26 覆盖点/2 断言核对/回归流程/结论）
 
+### 配套交付物（docs/scr1-clk-ctrl/）
+
+时钟控制器单独成文的两份文档：
+
+- 设计规格：`docs/scr1-clk-ctrl/design-spec.md`（复位路径/门控使能 FSM/时钟门控例化/使能来源）
+- 验证文档：`docs/scr1-clk-ctrl/verification.md`（FC-CLKCTL-1~8 覆盖点/无 SVA/回归流程/结论）
+
+### 配套交付物（docs/scr1-top-ahb/ 与 docs/scr1-top-axi/）
+
+系统顶层单独成文的两份文档（AHB 与 AXI 各一套）：
+
+- 设计规格：`docs/scr1-top-ahb/design-spec.md`、`docs/scr1-top-axi/design-spec.md`（复位同步/核心与存储互连/路由/AHB 或 AXI 桥）
+- 验证文档：`docs/scr1-top-ahb/verification.md`、`docs/scr1-top-axi/verification.md`（FC-AHBTOP/AXITOP 覆盖点/无 SVA/回归流程/结论）
+
+### 配套交付物（docs/scr1-imem-ahb/ 与 docs/scr1-imem-router/）
+
+指令存储桥与路由器单独成文的两份文档：
+
+- 设计规格：`docs/scr1-imem-ahb/design-spec.md`（请求 FIFO/两态 FSM/响应处理/AHB 常量）、`docs/scr1-imem-router/design-spec.md`（地址判定/端口选择/请求分发）
+- 验证文档：`docs/scr1-imem-ahb/verification.md`（FC-IAHB-1~11/5 断言核对）、`docs/scr1-imem-router/verification.md`（FC-IRT-1~8/1 断言核对）
+
+### 配套交付物（docs/scr1-dmem-ahb/ 与 docs/scr1-dmem-router/）
+
+数据存储桥与路由器单独成文的两份文档：
+
+- 设计规格：`docs/scr1-dmem-ahb/design-spec.md`（宽度/字节偏移转换/data FIFO/AHB 接口）、`docs/scr1-dmem-router/design-spec.md`（三端口优先级/请求分发/响应回选）
+- 验证文档：`docs/scr1-dmem-ahb/verification.md`（FC-DAHB-1~12/无 SVA）、`docs/scr1-dmem-router/verification.md`（FC-DRT-1~8/1 断言核对）
+
+### 配套交付物（docs/scr1-mem-axi/）
+
+AXI 存储桥单独成文的两份文档：
+
+- 设计规格：`docs/scr1-mem-axi/design-spec.md`（请求状态队列/三指针/bypass/数据适配/AXI 常量）
+- 验证文档：`docs/scr1-mem-axi/verification.md`（FC-MAXI-1~15/4 断言核对/回归流程/结论）
+
+### 配套交付物（docs/scr1-tcm/、docs/scr1-dp-memory/ 与 docs/scr1-timer/）
+
+TCM、双端口存储与内存映射定时器单独成文的两份文档：
+
+- 设计规格：`docs/scr1-tcm/design-spec.md`（单拍应答/读写控制/回对齐）、`docs/scr1-dp-memory/design-spec.md`（双端口/字节使能/两种实现）、`docs/scr1-timer/design-spec.md`（寄存器映射/计数分频/RTC/中断）
+- 验证文档：`docs/scr1-tcm/verification.md`（FC-TCM-1~9）、`docs/scr1-dp-memory/verification.md`（FC-DPM-1~6）、`docs/scr1-timer/verification.md`（FC-TMR-1~14）
+
+### 配套交付物（docs/scr1-cg/、docs/scr1-reset-cells/、docs/scr1-tapc-shift-reg/ 与 docs/scr1-tapc-synchronizer/）
+
+原语与支持模块单独成文的两份文档：
+
+- 设计规格：`docs/scr1-cg/design-spec.md`（时钟门控模型）、`docs/scr1-reset-cells/design-spec.md`（7 个复位原语）、`docs/scr1-tapc-shift-reg/design-spec.md`（参数化移位寄存器）、`docs/scr1-tapc-synchronizer/design-spec.md`（TCK↔sys 同步）
+- 验证文档：`docs/scr1-cg/verification.md`、`docs/scr1-reset-cells/verification.md`、`docs/scr1-tapc-shift-reg/verification.md`（含 1 断言）、`docs/scr1-tapc-synchronizer/verification.md`
+
 ---
 
 *笔记持续更新中。*

@@ -938,4 +938,457 @@ TCM、双端口存储与内存映射定时器单独成文的两份文档：
 
 ---
 
-*笔记持续更新中。*
+## 第 10 课：总线桥与存储系统全解
+
+> 按学习逻辑重新编排：先讲清三类桥的架构差异，再理解顶层如何装配它们。对照 `scr1_imem_ahb.sv`（319 行）、`scr1_dmem_ahb.sv`（480 行）、`scr1_mem_axi.sv`（363 行）、`scr1_imem_router.sv`（185 行）、`scr1_dmem_router.sv`（278 行）、`scr1_tcm.sv`（131 行）、`scr1_dp_memory.sv`（111 行）、`scr1_timer.sv`（271 行）。
+
+### 三类桥的共性与差异
+
+**共性**：把内部 `req/ack/rdata/resp` 协议翻译成总线时序（AHB 或 AXI）。
+
+**差异根源**：AHB 是单通道顺序总线，一次只能有一个事务在途；AXI 有 5 个独立通道（AR/AW/R/W/B），且 AW（写地址）和 W（写数据）可以不同拍完成。
+
+| 模块 | 缓冲结构 | 控制方式 | 在途事务 | 写数据 | 读回数据 |
+|---|---|---|---|---|---|
+| imem_ahb | 2 深 FIFO | 两态 FSM | 1~2 | 无需 | 原样 |
+| dmem_ahb | 2 深 FIFO + data_fifo | 两态 FSM | 1~2 | 字节路对齐 | 从字节路抽取 |
+| mem_axi | N 深环形队列 + 三指针 | 四位状态机 | N（可配） | wdata + wstrb | 右移对齐 |
+
+### 一、`scr1_imem_ahb.sv` —— 最简桥
+
+#### 两个 FIFO
+
+**请求 FIFO**（`:67-174`）：默认深度 2（`:38`），开 `SCR1_IMEM_AHB_OUT_BP` 退化成 1 深（`:99-120`）。用计数器和数组手工实现四种读写组合（`:127-154`）。`imem_req_ack = ~req_fifo_full`（`:85`）——满了就压住核。
+
+**响应 FIFO**（`:227-246`）：1 深。开 `SCR1_IMEM_AHB_IN_BP` 时变纯组合（`:228-230`），省一拍延迟。
+
+#### 两态 FSM（`:179-222`）
+
+```
+ADDR: hready 有效 → 有请求进 DATA，否则留 ADDR
+DATA: hready 有效 → hresp 成功且有新请求留 DATA，否则回 ADDR
+```
+
+#### AHB 输出全是常量（`:251-281`）
+
+```systemverilog
+hburst = SINGLE; hsize = 32B; hmastlock = 0;
+hprot  = 全 0;                    // 指令口：非数据、非特权、非缓冲、非缓存
+htrans = ADDR 态有请求 ? NONSEQ : IDLE;
+```
+
+**关键点**：`hprot[HPROT_DATA] = 0`（`:251`）——这是指令口，告诉从设备"这是取指"。数据口是 1。
+
+### 二、`scr1_dmem_ahb.sv` —— 多了三件事
+
+#### 1. 请求 FIFO 携带更多字段（`:59-64`）
+
+```systemverilog
+typedef struct packed {
+    logic hwrite;                    // 读还是写
+    logic [2:0] hwidth;              // HSIZE
+    logic [ADDR_WIDTH-1:0] haddr;
+    logic [ADDR_WIDTH-1:0] hwdata;   // 预对齐后的写数据
+} type_scr1_req_fifo_s;
+```
+
+#### 2. 单独的 `data_fifo`（`:219`、`:388-411`）
+
+为什么 imem 版不需要而 dmem 版需要？因为 **AHB 写操作的 `hwdata` 是在数据相位才出现的**，而地址在地址相位就发出去了。所以得把写数据先扣住：
+
+```systemverilog
+assign hwdata = data_fifo.hwdata;   // :478
+```
+
+`data_fifo` 在 ADDR 态且有请求时装入 `req_fifo[0]` 的内容（`:391-395`）。
+
+#### 3. 三个转换函数（重点）
+
+**`scr1_conv_mem2ahb_width`**（`:82-103`）：宽度枚举 → HSIZE：BYTE→8B，HWORD→16B，WORD→32B。
+
+**`scr1_conv_mem2ahb_wdata`**（`:105-156`）—— **字节路对齐**
+
+核给的写数据总在低位，但 AHB 要求数据落在**实际地址对应的字节路**上：
+
+| 地址低 2 位 | BYTE 写到哪 |
+|---|---|
+| 00 | `tmp[7:0]`（`:121`） |
+| 01 | `tmp[15:8]`（`:124`） |
+| 10 | `tmp[23:16]`（`:127`） |
+| 11 | `tmp[31:24]`（`:130`） |
+
+HWORD 类似，按 `addr[1]` 放到 `[15:0]` 或 `[31:16]`（`:137-143`）。WORD 原样（`:149`）。
+
+**`scr1_conv_ahb2mem_rdata`**（`:158-197`）—— **反向抽取**
+
+从设备回的数据也在字节路上，要抽回低位。注意它用的是 `resp_fifo.hwidth`/`haddr`（`:229`）——**响应相位必须记住当初请求的宽度和地址**，所以 `resp_fifo` 里也存了这两个字段（`:72-77`）。
+
+其余部分（FSM `:338-383`、`hprot[DATA]=1`（`:444`）、`hsize` 来自 FIFO（`:450`））与 imem 版一致。
+
+### 三、`scr1_mem_axi.sv` —— 环形队列 + 三指针
+
+#### 1. 为什么要变
+
+AHB 是单通道，一次只能有一个事务在途，所以"FIFO + 两态 FSM"就够了。
+
+AXI 有 **5 个独立通道**，而且 **AW（写地址）和 W（写数据）可以任意顺序完成**。一个事务的"地址相位"和"数据相位"可能相差好几拍，桥必须能同时跟踪多个事务的不同阶段。
+
+#### 2. 环形缓冲区 + 三指针（`:111-117`）
+
+```systemverilog
+req_fifo[SCR1_REQ_BUF_SIZE]      // 事务内容（width/addr/wdata）
+req_status[SCR1_REQ_BUF_SIZE]    // 每个事务的四位状态
+req_aval_ptr, req_proc_ptr, req_done_ptr
+```
+
+三个指针各管一段：
+- `aval_ptr`：**收新请求**的位置（先进）
+- `proc_ptr`：**发 AXI 请求**的位置（中间）
+- `done_ptr`：**收 AXI 响应**的位置（最旧）
+
+因为是环形的，`pos - avail` 就是在途事务数。
+
+#### 3. 四位状态（`:103-108`）
+
+```systemverilog
+typedef struct packed {
+    logic req_write;   // 这是写还是读
+    logic req_addr;    // 地址相位还没做完
+    logic req_data;    // 数据相位还没做完（仅写）
+    logic req_resp;    // 事务还在途（占用标志）
+} type_scr1_req_status_s;
+```
+
+**这是整个模块的关键**：`req_addr` 和 `req_data` 分开记，正因为 AW 和 W 可能不同拍完成。
+
+看 `proc_ptr` 的推进条件（`:218-221`）：
+
+```systemverilog
+if ((awvalid & awready & wvalid & wready & wlast) |                 // 写：地址 + 数据同拍完成
+    (~force_write & ~req_data & awvalid & awready) |                // 写：地址先完成
+    (~force_write & ~req_addr & wvalid & wready & wlast) |          // 写：数据后完成
+    (~req_data & arvalid & arready))                                // 读：地址完成即可
+```
+
+四种情况，说明它**同时兼容 AW 先、W 先、两者同拍**这三种从设备行为。
+
+#### 4. 状态更新（`:157-194`）
+
+- 新请求进来（`:164-175`）：置 `req_resp=1`（占用），置 `req_write`、`req_addr`、`req_data`
+- 地址相位完成（`:178-181`）：清 `req_addr`
+- 数据相位完成（`:184-187`）：清 `req_data`
+- 事务完成（`:190-193`）：清 `req_resp`（释放槽位）
+
+注意 `:170-174` 那两个 `~(force_xxx & ready)`：如果开了 bypass 且这一拍就完成了，就不必置对应标志位，省一拍。
+
+#### 5. 背压和空闲（`:126-144`）
+
+```systemverilog
+core_req_ack = ~axi_reinit & ~req_status[aval_ptr].req_resp & core_resp != RDY_ER;
+core_idle    = 所有槽位的 req_resp 都为 0;
+```
+
+`core_idle` 就是上一轮讲 `scr1_top_axi` 时 `axi_reinit` 等的那个信号（`:139-144`）——两个桥都 idle 了才放开总线。
+
+#### 6. AXI 输出固定值（`:318-341`）
+
+```systemverilog
+awlen/arlen = 0;        // 单拍突发
+awburst = 2'd1;         // INCR
+awcache = 4'd2;         // modifiable + bufferable
+awid = 1; arid = 0;     // 读写用不同 ID
+wlast = 1;              // 永远最后一拍
+```
+
+因为 `len=0`，每个事务就是一拍，所以 `wlast` 恒 1、`rlast` 也是恒 1。
+
+#### 7. 字节路处理（`:266-297`）
+
+AXI 用 `wstrb` 掩码，比 AHB 的"数据搬到对应字节路"更直接：
+
+```systemverilog
+wstrb = (1 << addr[1:0])     // BYTE  :269
+wstrb = (3 << addr[1:0])     // HWORD :270
+wstrb = (f << addr[1:0])     // WORD  :271
+
+wdata = core_wdata << (8*addr[1:0]);    // :285
+```
+
+读回时反向右移（`:292-294`）。
+
+#### 8. 两个 bypass（`:300-313`）
+
+- `SCR1_AXI_RESP_BP=1`：响应走组合（`:302-303`）
+- `=0`：响应打一拍（`:305-311`）
+
+### 四、存储层次与路由器
+
+#### 1. 地址译码（`scr1_dmem_router.sv` `:88-95`）
+
+```systemverilog
+if ((addr & PORT1_MASK) == PORT1_PATTERN) → PORT1 (TCM)
+else if ((addr & PORT2_MASK) == PORT2_PATTERN) → PORT2 (Timer)
+else → PORT0 (AHB bridge)
+```
+
+地址掩码/模式参数在 `scr1_arch_description.svh` 定义（TCM 在 `0x00480000`，Timer 在 `0x00490000`）。
+
+Router 还有**两态 FSM**（`ADDR`/`DATA`，`:97-130`）：ADDR 态选端口并锁存 `port_sel_r`，DATA 态等所选端口响应。注意 ADDR 与 DATA 之间有一个寄存器的延迟——桥接到慢速总线（AHB）时靠这个流水化。
+
+#### 2. TCM（`scr1_tcm.sv`）
+
+TCM 是核心本地的高速内存，单周期访问。`ack` 恒为 1（`:71-72`），`resp` 用 XOR 技巧（`:52-53`）。写对齐（`:80-95`）；读 shift 由锁存的 `addr[1:0]` 决定（`:121-127`）。
+
+#### 3. `scr1_dp_memory.sv` —— 双端口 RAM
+
+Intel FPGA 用字节数组+`ramstyle`（`:30-66`）；否则用字数组（`:68-107`）。Port A 只读（`:85-89`）；Port B 字节使能读写（`:94-105`）。**无写旁路**。
+
+#### 4. Timer（`scr1_timer.sv`）
+
+寄存器映射（`:33-39`）：CONTROL（`:41-42` 分频/使能）、DIVIDER（`:43`）、MTIMELO/HI、MTIMECMPLO/HI。`time_posedge`（`:101`），mtime+1（`:106`），软件写（`:108-113`）。RTC 翻转+3 级同步 + 边沿检测（`:184-207`），`rtc_ext_pulse`（`:187`）。比较器用 `mtimecmp_new`（`:150-164`），sticky irq（`:156-162`）。内存接口只支持字对齐访问（`:212-244`），否则 `RDY_ER`（`:237`），`ack=1`（`:215`）。
+
+---
+
+## 第 11 课：原语层——最小但最关键
+
+> 对照 `scr1_cg.sv`（32 行）、`scr1_reset_cells.sv`（231 行）、`scr1_tapc_shift_reg.sv`（112 行）、`scr1_tapc_synchronizer.sv`（183 行）。
+
+### 一、`scr1_cg.sv` —— 门控时钟
+
+```systemverilog
+always_latch begin
+    if (~clk) latch_en <= test_mode | clk_en;   // :22-26
+end
+assign clk_out = latch_en & clk;                // :28
+```
+
+**为什么用锁存器而不是触发器？**
+
+门控时钟最怕毛刺。如果 `clk_en` 在 `clk=1` 期间变化，`clk_out = clk_en & clk` 就会在 `clk_out` 上切出一个窄脉冲，下游触发器直接崩。
+
+用低电平透明的锁存器，`clk_en` **只能在 `clk=0` 期间被采进去**，`clk=1` 期间锁存值保持不变。于是 `clk_out` 的高电平永远是完整的一拍。
+
+这就是工业界标准的 ICG（Integrated Clock Gating Cell）行为。注释（`:16-18`）明说了：**这是仿真模型，综合时要替换成工艺库单元。**
+
+`test_mode` 或进去（`:24`），是为了 DFT 测试时强制打开时钟，让扫描链能工作。
+
+### 二、`scr1_reset_cells.sv` —— 六个复位单元
+
+#### 1. `scr1_reset_buf_cell`（`:9-44`）复位缓冲
+
+```systemverilog
+always_ff @(negedge rst_n_mux, posedge clk)     // :25
+    reset_n_ff <= reset_n_in;
+```
+
+**异步复位、同步释放**：`rst_n_mux` 拉低立刻清零（negedge 敏感），但撤销时要等 `clk` 上升沿才跟着变。
+
+两个输出 `reset_n_out` 和 `reset_n_status`（`:33`、`:42`）逻辑完全一样，但用**两个独立的触发器**（`:25-31`、`:35-41`）。为什么？给后端时序分析分成两条路径——一条驱动功能逻辑，一条当"状态指示"往外送，避免负载耦合。
+
+`rst_n_mux = test_mode ? test_rst_n : rst_n`（`:23`），测试时绕开功能复位。
+
+#### 2. `scr1_reset_sync_cell`（`:49-96`）复位同步器
+
+```systemverilog
+rst_n_dff <= {rst_n_dff[STAGES_AMOUNT-2:0], rst_n_in};   // :87
+assign rst_n_out = rst_n_dff[STAGES_AMOUNT-1];           // :94
+```
+
+标准多级复位同步：**异步置位（立刻生效），同步释放（移位出去）**。目的是消除释放时刻的 recovery/removal 违例。`STAGES_AMOUNT=1` 时单独一个分支（`:69-77`）。
+
+#### 3. `scr1_data_sync_cell`（`:101-144`）单比特 CDC
+
+就是普通的多级触发器同步器，用于跨时钟域传 1 位数据。
+
+#### 4. `scr1_reset_qlfy_adapter_cell_sync`（`:154-195`）限定信号适配器
+
+```systemverilog
+reset_n_front_ff    <= reset_n_in_sync;     // :175   前级同步
+assign reset_n_out_qlfy = reset_n_front_ff; // :181   限定信号
+scr1_reset_buf_cell i_reset_output_buf(...);// :184-193 再打一拍
+```
+
+**这是整个复位体系最巧的一个单元。** 同一个复位源出了两个信号：
+
+| 输出 | 位置 | 含义 |
+|---|---|---|
+| `reset_n_out_qlfy` | 前级 FF 之后（`:181`） | **比复位早一拍**拉低 |
+| `reset_n_out` | 再经缓冲（`:191`） | 真正的复位 |
+
+上一轮讲 `scr1_scu` 时提到的 SVA（`:487-510`）"限定信号比复位早落一拍"，根因就在这——`:181` 和 `:191` 之间差了一级 `scr1_reset_buf_cell`。
+
+用途：跨复位域时，目的域先看到限定信号去清掉自己的跨域通路，下一拍真正的复位才到。
+
+总级数 = 1 前级同步 + 1 输出缓冲 = 2（`:150-153`）。
+
+#### 5-6. 组合小单元
+
+```systemverilog
+scr1_reset_and2_cell : rst_n_out = test ? test_rst_n : (&rst_n_in);  // :204
+scr1_reset_and3_cell : 同上三输入                                                // :216
+scr1_reset_mux2_cell : rst_n_out = test ? test_rst_n : rst_n_in[select]; // :229
+```
+
+`top_ahb` 里 `tapc_trst_n = trst_n & pwrup_rst_n` 用的就是 and2。
+
+### 三、`scr1_tapc_shift_reg.sv` —— JTAG 移位寄存器
+
+```systemverilog
+else if (fsm_dr_select & fsm_dr_capture) begin
+    shift_reg <= din_parallel;                                  // :49  捕获
+end
+else if (fsm_dr_select & fsm_dr_shift) begin
+    shift_reg <= {din_serial, shift_reg[SCR1_WIDTH-1:1]};       // :52  右移
+end
+```
+
+三个要点：
+
+**优先级**（`:42-53`）：异步复位 > 同步复位 > capture > shift。两个复位都直接回 `SCR1_RESET_VALUE`。
+
+**移位方向**：`{din_serial, shift_reg[W-1:1]}` 是新数据进最高位、整体右移；`dout_serial = shift_reg[0]`（`:86`）。所以是 **LSB 先出**——这正是 IEEE 1149.1 的规定。
+
+**宽度 1 的特例**（`:57-75`）：移位就等于直接装串行输入，因为 `{din, shift[0:1]}` 这种写法对宽度 1 不合法，必须单独分支。
+
+### 四、`scr1_tapc_synchronizer.sv` —— TCK 到系统时钟的 CDC
+
+**这是全项目最难的一个 CDC**，因为跨的不是两个有固定关系的时钟，而是**完全无关、频率未知的 TCK**。
+
+普通两级触发器同步器在这里失效：如果 SysCLK 比 TCK 快很多，TCK 域的电平可能被采样到多次；如果慢很多，可能完全漏掉。
+
+#### 解法：先降频，再边沿检测
+
+**第一步：TCK 二分频**
+```systemverilog
+always_ff @(posedge tapc_tck) tck_divpos <= ~tck_divpos;   // :68-74
+always_ff @(negedge tapc_tck) tck_divneg <= ~tck_divneg;   // :76-82
+```
+
+在 TCK 的上升沿和下降沿各做一个翻转寄存器。这样把一个可能很快的 TCK 变成**至少 2 个 TCK 周期宽的电平**，慢到 SysCLK 能可靠采到。
+
+**第二步：四拍同步**
+```systemverilog
+tck_divpos_sync <= {tck_divpos_sync[2:0], tck_divpos};   // :89
+```
+
+**第三步：边沿检测出单拍脉冲**
+```systemverilog
+assign tck_rise_load  = tck_divpos_sync[2] ^ tck_divpos_sync[1];   // :94
+assign tck_rise_reset = tck_divpos_sync[3] ^ tck_divpos_sync[2];   // :95
+```
+
+`[2]^[1]` 检测到翻转 → 拉高一拍 `tck_rise_load`；`[3]^[2]` 晚一拍检测到同一个翻转 → 拉高 `tck_rise_reset`。两个脉冲配合使用：
+
+```systemverilog
+if (tck_rise_load)  tapcsync2core_ch_capture_o <= dmi_ch_capture_sync[2];  // :145-148
+else if (tck_rise_reset) tapcsync2core_ch_capture_o <= '0;                  // :149-152
+```
+
+结果：**TCK 域的一个事件，在 SysCLK 域变成一个干净的单拍脉冲**。
+
+`tck_fall_load`/`tck_fall_reset`（`:96-97`）同理，服务 `update` 信号（`:99-109`）。
+
+#### 数据通路
+
+跨域信号分三种待遇：
+
+| 信号 | 处理 |
+|---|---|
+| `capture`/`shift`/`tdi` | 先在**下降沿 TCK** 采进 stage0（`:111-119`），再两拍 SysCLK（`:121-129`），最后在 `tck_rise_load` 时装入 |
+| `ch_id`/`ch_sel` | 准静态，直接在 `tck_rise_load` 时采（`:157-177`） |
+| `tdo` | **完全不同步**，直接连（`:179`） |
+
+`tdo` 为什么不用同步？因为回程方向是 SysCLK → TCK，而 `scr1_tapc` 本身就在 **TCK 下降沿**驱动 TDO（上轮讲过 `:326`/`:341`）。TCK 域自己采样自己的下降沿，天然无竞争。
+
+#### 代价
+
+`tck_divpos` 翻转一次要 2 个 TCK 周期，加上 3~4 拍 SysCLK 同步，一次 capture 传到核里要**好几个 TCK 周期**。JTAG 本来就慢（MHz 量级），这点延迟无所谓。
+
+---
+
+## 附录 A：33 个非 TB 模块索引
+
+按目录结构排列，行数统计基于 `SCR1_CFG_RV32IMC_MAX` 配置。
+
+| 文件 | 行数 | 一句话职责 |
+|---|---|---|
+| `src/core/pipeline/scr1_pipe_ifu.sv` | 826 | 取指 + 指令队列 + RVC 对齐 |
+| `src/core/pipeline/scr1_pipe_idu.sv` | 940 | 指令译码 → 生成执行命令 |
+| `src/core/pipeline/scr1_pipe_exu.sv` | 1086 | ALU 运算 + 异常 + PC 控制 |
+| `src/core/pipeline/scr1_pipe_lsu.sv` | 351 | 访存 + 地址对齐检查 |
+| `src/core/pipeline/scr1_pipe_ialu.sv` | 720 | 双加法器 + 移位 + MDU 乘除 |
+| `src/core/pipeline/scr1_pipe_mprf.sv` | 167 | 2 读 1 写寄存器堆（x0 恒 0） |
+| `src/core/pipeline/scr1_pipe_csr.sv` | 1169 | 特权状态 + trap 进出 + 计数器 |
+| `src/core/pipeline/scr1_pipe_top.sv` | 825 | 流水线顶层（9 子模块 +  glue logic） |
+| `src/core/scr1_ipic.sv` | 605 | 中断控制器（优先编码 + 服务中跟踪） |
+| `src/core/scr1_tdu.sv` | 610 | 硬件触发器（4 个 MCONTROL + 事件匹配） |
+| `src/core/scr1_hdu.sv` | 904 | 调试单元（FSM + PBUF + 调试 CSR + 停机原因） |
+| `src/core/scr1_tracelog.sv` | 453 | 轨迹日志（PC/异常/中断快照输出） |
+| `src/core/scr1_core_top.sv` | 521 | 核心顶层（复位双路径 + 流水线装配 + 调试子系统） |
+| `src/core/scr1_tapc.sv` | 457 | JTAG TAP 控制器（16 态 FSM + IR/DR） |
+| `src/core/scr1_dmi.sv` | 182 | DMI 桥（TAPC↔DM 两步协议） |
+| `src/core/scr1_dm.sv` | 1427 | Debug Module（寄存器映射 + 抽象命令 FSM + DHI） |
+| `src/core/scr1_scu.sv` | 516 | 系统控制单元（四路复位 + RDC qualifier） |
+| `src/core/scr1_clk_ctrl.sv` | 55 | 时钟控制器（复位路径 + 门控 FSM + ICG） |
+| `src/core/scr1_tapc_shift_reg.sv` | 112 | 参数化 JTAG 移位寄存器 |
+| `src/core/scr1_tapc_synchronizer.sv` | 183 | TCK↔SysCLK CDC（二分频 + 边沿检测） |
+| `src/core/primitives/scr1_cg.sv` | 32 | 时钟门控单元（ICG 仿真模型） |
+| `src/core/primitives/scr1_reset_cells.sv` | 231 | 7 个复位原语（buf/sync/qlfy/and/mux） |
+| `src/top/scr1_imem_ahb.sv` | 319 | 指令 AHB 桥（2 深 FIFO + 两态 FSM） |
+| `src/top/scr1_dmem_ahb.sv` | 480 | 数据 AHB 桥（FIFO + data_fifo + 字节路转换） |
+| `src/top/scr1_mem_axi.sv` | 363 | AXI 桥（环形队列 + 三指针 + 四位状态） |
+| `src/top/scr1_imem_router.sv` | 185 | 指令路由器（地址判定 + 端口选择） |
+| `src/top/scr1_dmem_router.sv` | 278 | 数据路由器（三端口优先级 + 请求分发） |
+| `src/top/scr1_tcm.sv` | 131 | TCM（单拍应答 + 字节路访问） |
+| `src/top/scr1_dp_memory.sv` | 111 | 双端口 RAM（Intel/通用两种实现） |
+| `src/top/scr1_timer.sv` | 271 | 内存映射定时器（MTIME/MTIMECMP + RTC） |
+| `src/top/scr1_top_ahb.sv` | 513 | AHB 顶层（核心 + 存储 + 双 AHB 桥） |
+| `src/top/scr1_top_axi.sv` | 701 | AXI 顶层（核心 + 存储 + 双 AXI 桥复用） |
+| `src/tb/scr1_top_tb_axi.sv` | 963 | AXI Testbench（已文档化，未计入 33） |
+
+**注**：测试文件（`src/tb/`）未计入 33 个模块，已单独成文。
+
+---
+
+## 附录 B：配套文档索引
+
+每个模块对应两份文档（设计规格 + 验证文档），存放于 `docs/` 下：
+
+| 模块 | 设计规格 | 验证文档 |
+|---|---|---|
+| IFU | `docs/scr1-pipe-ifu/design-spec.md` | `docs/scr1-pipe-ifu/verification.md` |
+| IDU | `docs/scr1-pipe-idu/design-spec.md` | `docs/scr1-pipe-idu/verification.md` |
+| EXU | `docs/scr1-pipe-exu/design-spec.md` | `docs/scr1-pipe-exu/verification.md` |
+| LSU | `docs/scr1-pipe-lsu/design-spec.md` | `docs/scr1-pipe-lsu/verification.md` |
+| IALU | `docs/scr1-pipe-ialu/design-spec.md` | `docs/scr1-pipe-ialu/verification.md` |
+| MPRF | `docs/scr1-pipe-mprf/design-spec.md` | `docs/scr1-pipe-mprf/verification.md` |
+| CSR | `docs/scr1-pipe-csr/design-spec.md` | `docs/scr1-pipe-csr/verification.md` |
+| Pipe Top | `docs/scr1-pipe-top/design-spec.md` | `docs/scr1-pipe-top/verification.md` |
+| IPIC | `docs/scr1-ipic/design-spec.md` | `docs/scr1-ipic/verification.md` |
+| TDU | `docs/scr1-tdu/design-spec.md` | `docs/scr1-tdu/verification.md` |
+| HDU | `docs/scr1-hdu/design-spec.md` | `docs/scr1-hdu/verification.md` |
+| Tracelog | `docs/scr1-tracelog/design-spec.md` | `docs/scr1-tracelog/verification.md` |
+| Core Top | `docs/scr1-core-top/design-spec.md` | `docs/scr1-core-top/verification.md` |
+| TAPC | `docs/scr1-tapc/design-spec.md` | `docs/scr1-tapc/verification.md` |
+| DMI | `docs/scr1-dmi/design-spec.md` | `docs/scr1-dmi/verification.md` |
+| DM | `docs/scr1-dm/design-spec.md` | `docs/scr1-dm/verification.md` |
+| SCU | `docs/scr1-scu/design-spec.md` | `docs/scr1-scu/verification.md` |
+| Clk Ctrl | `docs/scr1-clk-ctrl/design-spec.md` | `docs/scr1-clk-ctrl/verification.md` |
+| Imem AHB | `docs/scr1-imem-ahb/design-spec.md` | `docs/scr1-imem-ahb/verification.md` |
+| Dmem AHB | `docs/scr1-dmem-ahb/design-spec.md` | `docs/scr1-dmem-ahb/verification.md` |
+| Mem AXI | `docs/scr1-mem-axi/design-spec.md` | `docs/scr1-mem-axi/verification.md` |
+| Imem Router | `docs/scr1-imem-router/design-spec.md` | `docs/scr1-imem-router/verification.md` |
+| Dmem Router | `docs/scr1-dmem-router/design-spec.md` | `docs/scr1-dmem-router/verification.md` |
+| TCM | `docs/scr1-tcm/design-spec.md` | `docs/scr1-tcm/verification.md` |
+| DP Memory | `docs/scr1-dp-memory/design-spec.md` | `docs/scr1-dp-memory/verification.md` |
+| Timer | `docs/scr1-timer/design-spec.md` | `docs/scr1-timer/verification.md` |
+| Top AHB | `docs/scr1-top-ahb/design-spec.md` | `docs/scr1-top-ahb/verification.md` |
+| Top AXI | `docs/scr1-top-axi/design-spec.md` | `docs/scr1-top-axi/verification.md` |
+| CG | `docs/scr1-cg/design-spec.md` | `docs/scr1-cg/verification.md` |
+| Reset Cells | `docs/scr1-reset-cells/design-spec.md` | `docs/scr1-reset-cells/verification.md` |
+| TAPC Shift Reg | `docs/scr1-tapc-shift-reg/design-spec.md` | `docs/scr1-tapc-shift-reg/verification.md` |
+| TAPC Sync | `docs/scr1-tapc-synchronizer/design-spec.md` | `docs/scr1-tapc-synchronizer/verification.md` |
+
+---
+
+*笔记更新至 v1.0（全部 33 个非 TB 模块讲解完成）。*
